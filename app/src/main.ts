@@ -1,7 +1,8 @@
-import { NestFactory } from '@nestjs/core';
+import { NestFactory, Reflector } from '@nestjs/core';
 import { AppModule } from './app.module';
-import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { ValidationPipe } from '@nestjs/common';
+import { HttpExceptionFilter } from './common/filters/http-exception.filter';
+import { ResponseTransformerInterceptor } from './common/interceptors/response-transformer.interceptor';
 import { ConfigService } from '@nestjs/config';
 
 
@@ -30,17 +31,14 @@ async function bootstrap() {
         },
       }),
     );
-
-    const config = new DocumentBuilder()
-    .setTitle('LMS Microservice')
-    .setDescription('LMS API documentation')
-    .setVersion('1.0')
-    .addTag('lms')
-    .build();
-
-  const document = SwaggerModule.createDocument(app, config);
-  SwaggerModule.setup('api/docs', app, document);
-        
+    
+    // Set global filters
+    const reflector = app.get(Reflector);
+    app.useGlobalFilters(new HttpExceptionFilter(reflector));
+    
+    // Set global interceptors
+    app.useGlobalInterceptors(new ResponseTransformerInterceptor(reflector));
+    
     // Start the application
     await app.listen(port, '0.0.0.0');
     console.log(`Application is running on: http://localhost:${port}`);
