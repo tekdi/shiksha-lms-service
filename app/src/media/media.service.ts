@@ -8,7 +8,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, FindOptionsWhere, Not, Equal, ILike, FindManyOptions, FindOptionsOrder } from 'typeorm';
 import * as fs from 'fs';
 import * as path from 'path';
-import { Media, MediaFormat } from './entities/media.entity';
+import { Media } from './entities/media.entity';
 import { Lesson } from '../lessons/entities/lesson.entity';
 import { AssociatedFile } from './entities/associated-file.entity';
 import { RESPONSE_MESSAGES } from '../common/constants/response-messages.constant';

@@ -12,17 +12,33 @@ import {
   Matches,
   MaxLength,
   MinLength,
+  ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { RESPONSE_MESSAGES, VALIDATION_MESSAGES } from '../../common/constants/response-messages.constant';
 import { LessonFormat, AttemptsGradeMethod } from '../entities/lesson.entity';
 import { LessonStatus } from '../entities/lesson.entity';
 import { CreateLessonDto } from './create-lesson.dto';
+import { MediaContentDto } from './media-content.dto';
 
-// Inherits all fields from CreateLessonDto as optional, except for format and mediaId which shouldn't be updatable
+// Inherits all fields from CreateLessonDto as optional, except for format which shouldn't be updatable
 export class UpdateLessonDto extends PartialType(
   OmitType(CreateLessonDto, ['format', 'mediaContent'] as const)
 ) {
+  @IsOptional()
+  @IsString()
+  mediaId?: string;
+
+  @ApiProperty({
+    description: VALIDATION_MESSAGES.LESSON.MEDIA_CONTENT,
+    type: MediaContentDto,
+    required: false
+  })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => MediaContentDto)
+  mediaContent?: MediaContentDto;
+
   @ApiProperty({
     description: 'User ID who checked out the lesson',
     format: 'uuid',

@@ -26,7 +26,7 @@ import { CreateCourseDto } from './dto/create-course.dto';
 import { UpdateCourseDto } from './dto/update-course.dto';
 import { PaginationDto } from '../common/dto/pagination.dto';
 import { API_IDS } from '../common/constants/api-ids.constant';
-import { Course,CourseStatus } from './entities/course.entity';
+import { Course } from './entities/course.entity';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { SearchCourseDto } from './dto/search-course.dto';
 import { CommonQueryDto } from '../common/dto/common-query.dto';
@@ -218,7 +218,7 @@ export class CoursesController {
       userId,
       tenantOrg.tenantId,
       tenantOrg.organisationId
-    );
+      );
     return courseHierarchyWithTracking;
   }
 

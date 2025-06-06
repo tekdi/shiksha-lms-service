@@ -71,15 +71,6 @@ export class CreateLessonDto {
   image?: string;
 
   @ApiProperty({
-    description: 'Tenant ID',
-    format: 'uuid',
-    required: false
-  })
-  @IsOptional()
-  @IsUUID('4', { message: VALIDATION_MESSAGES.COMMON.UUID('Tenant ID') })
-  tenantId?: string;
-
-  @ApiProperty({
     description: 'User ID who checked out the lesson',
     format: 'uuid',
     required: false
@@ -228,7 +219,7 @@ export class CreateLessonDto {
     format: 'uuid',
     required: false,
   })
-  @IsOptional()
+  @IsNotEmpty({ message: VALIDATION_MESSAGES.COMMON.REQUIRED('Course ID') })
   @IsUUID('4', { message: VALIDATION_MESSAGES.COMMON.UUID('Course ID') })
   courseId?: string;
 
@@ -237,7 +228,7 @@ export class CreateLessonDto {
     format: 'uuid',
     required: false,
   })
-  @IsOptional()
+  @IsNotEmpty({ message: VALIDATION_MESSAGES.COMMON.REQUIRED('Module ID') })
   @IsUUID('4', { message: VALIDATION_MESSAGES.COMMON.UUID('Module ID') })
   moduleId?: string;
 
@@ -250,7 +241,7 @@ export class CreateLessonDto {
   @IsOptional()
   @IsBoolean({ message: VALIDATION_MESSAGES.COMMON.BOOLEAN('Free lesson') })
   @Type(() => Boolean)
-  freeLesson?: boolean = false;
+  sampleLesson?: boolean = false;
 
   @ApiProperty({
     description: 'Whether to consider this lesson for passing',

@@ -9,10 +9,11 @@ import {
   JoinColumn,
   Index,
 } from 'typeorm';
-import { CourseLesson } from './course-lesson.entity';
 import { Media } from '../../media/entities/media.entity';
 import { LessonTrack } from '../../tracking/entities/lesson-track.entity';
 import { AssociatedFile } from 'src/media/entities/associated-file.entity';
+import { Course } from '../../courses/entities/course.entity';
+import { Module } from '../../modules/entities/module.entity';
 
 export enum LessonFormat {
   VIDEO = 'video',
@@ -122,6 +123,21 @@ export class Lesson {
   @Column({ type: 'jsonb', nullable: true })
   params: Record<string, any>;
 
+  // Course-specific fields
+  @Column({ type: 'uuid', nullable: true })
+  @Index()
+  courseId: string;
+
+  @Column({ type: 'uuid', nullable: true })
+  @Index()
+  moduleId: string;
+
+  @Column({ type: 'boolean', default: false })
+  sampleLesson: boolean;
+
+  @Column({ type: 'boolean', default: true })
+  considerForPassing: boolean;
+
   @CreateDateColumn({ type: 'timestamptz' })
   createdAt: Date;
 
@@ -135,8 +151,13 @@ export class Lesson {
   updatedBy: string;
 
   // Relationships
-  @OneToMany(() => CourseLesson, (courseLesson) => courseLesson.lesson)
-  courseLessons: CourseLesson[];
+  @ManyToOne(() => Course, { nullable: true })
+  @JoinColumn({ name: 'courseId' })
+  course: Course;
+
+  @ManyToOne(() => Module, { nullable: true })
+  @JoinColumn({ name: 'moduleId' })
+  module: Module;
 
   @ManyToOne(() => Media, (media) => media.lessons, { nullable: true })
   @JoinColumn({ name: 'mediaId' })

@@ -25,12 +25,11 @@ import { PaginationDto } from '../common/dto/pagination.dto';
 import { API_IDS } from '../common/constants/api-ids.constant';
 import { CreateMediaDto } from './dto/create-media.dto';
 import { CommonQueryDto } from '../common/dto/common-query.dto';
-import { MediaFormat } from './entities/media.entity';
 import { ApiId } from '../common/decorators/api-id.decorator';
 import { getUploadPath } from '../common/utils/upload.util';
 import { uploadConfigs } from '../config/file-validation.config';
 import { TenantOrg } from '../common/decorators/tenant-org.decorator';
-
+import { LessonFormat } from '../lessons/entities/lesson.entity';
 @ApiTags('Media')
 @Controller('media')
 export class MediaController {
@@ -50,7 +49,7 @@ export class MediaController {
     @TenantOrg() tenantOrg: { tenantId: string; organisationId: string },
   ) {
     // Check if file is required based on format
-    if (createMediaDto.format === MediaFormat.DOCUMENT && !file) {
+    if (createMediaDto.format === LessonFormat.DOCUMENT && !file) {
       throw new BadRequestException('File is required for document format');
     }
     if (file) {
@@ -146,7 +145,7 @@ export class MediaController {
     );
   }
 
-  @Delete(':mediaId/disassociate/:lessonId')
+  @Delete(':mediaId/associate/:lessonId')
   @ApiId(API_IDS.REMOVE_MEDIA_ASSOCIATION)
   @ApiOperation({ summary: 'Remove media association from lesson' })
   @ApiParam({ name: 'mediaId', description: 'Media ID', type: 'string', format: 'uuid' })

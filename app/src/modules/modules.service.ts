@@ -6,14 +6,15 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, FindOptionsWhere, Not, Equal, ILike } from 'typeorm';
+import { Repository, FindOptionsWhere, Not } from 'typeorm';
 import { Module, ModuleStatus } from './entities/module.entity';
 import { Course, CourseStatus } from '../courses/entities/course.entity';
-import { CourseLesson, CourseLessonStatus } from '../lessons/entities/course-lesson.entity';
+import { Lesson } from '../lessons/entities/lesson.entity';
+import { CourseTrack } from '../tracking/entities/course-track.entity';
+import { LessonTrack } from '../tracking/entities/lesson-track.entity';
 import { RESPONSE_MESSAGES } from '../common/constants/response-messages.constant';
 import { CreateModuleDto } from './dto/create-module.dto';
 import { UpdateModuleDto } from './dto/update-module.dto';
-import { PaginationDto } from '../common/dto/pagination.dto';
 import { CacheService } from '../cache/cache.service';
 import { ConfigService } from '@nestjs/config';
 
@@ -31,16 +32,20 @@ export class ModulesService {
     private readonly moduleRepository: Repository<Module>,
     @InjectRepository(Course)
     private readonly courseRepository: Repository<Course>,
-    @InjectRepository(CourseLesson)
-    private readonly courseLessonRepository: Repository<CourseLesson>,
+    @InjectRepository(Lesson)
+    private readonly lessonRepository: Repository<Lesson>,
+    @InjectRepository(CourseTrack)
+    private readonly courseTrackRepository: Repository<CourseTrack>,
+    @InjectRepository(LessonTrack)
+    private readonly lessonTrackRepository: Repository<LessonTrack>,
     private readonly cacheService: CacheService,
     private readonly configService: ConfigService,
   ) {
-    this.cache_enabled = this.configService.get('CACHE_ENABLED') || true;
-    this.cache_ttl_default = this.configService.get('CACHE_DEFAULT_TTL') || 3600;
-    this.cache_prefix_module = this.configService.get('CACHE_MODULE_PREFIX') || 'modules';
-    this.cache_prefix_course = this.configService.get('CACHE_COURSE_PREFIX') || 'courses';
-    this.cache_prefix_lesson = this.configService.get('CACHE_LESSON_PREFIX') || 'lessons';
+    this.cache_enabled = this.configService.get('CACHE_ENABLED') === true;
+    this.cache_ttl_default = parseInt(this.configService.get('CACHE_TTL_DEFAULT') || '3600', 10);
+    this.cache_prefix_module = this.configService.get('CACHE_MODULE_PREFIX') || 'module';
+    this.cache_prefix_course = this.configService.get('CACHE_COURSE_PREFIX') || 'course';
+    this.cache_prefix_lesson = this.configService.get('CACHE_LESSON_PREFIX') || 'lesson';
   }
 
   /**

@@ -11,6 +11,7 @@ import { AppService } from './app.service';
 import { EnrollmentsModule } from './enrollments/enrollments.module';
 import { HealthModule } from './health/health.module';
 import { CacheModule } from './cache/cache.module';
+import { TrackingModule } from './tracking/tracking.module';
 
 @Module({
   imports: [
@@ -29,7 +30,8 @@ import { CacheModule } from './cache/cache.module';
     LessonsModule,
     MediaModule,
     EnrollmentsModule,
-    HealthModule
+    HealthModule,
+    TrackingModule
   ],
   controllers: [AppController],
   providers: [AppService],

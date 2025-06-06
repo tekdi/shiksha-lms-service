@@ -6,7 +6,7 @@ import {
   IsNotEmpty,
 } from 'class-validator';
 import { RESPONSE_MESSAGES, VALIDATION_MESSAGES } from '../../common/constants/response-messages.constant';
-
+import { LessonFormat } from '../../lessons/entities/lesson.entity';
 export enum MediaFormat {
   VIDEO = 'video',
   DOCUMENT = 'document',
@@ -14,15 +14,15 @@ export enum MediaFormat {
   EVENT = 'event',
 }
 
-export class CreateMediaDto {
+export class  CreateMediaDto {
   @ApiProperty({
     description: VALIDATION_MESSAGES.MEDIA.TYPE,
     example: 'video',
     required: true,
   })
-  @IsEnum(MediaFormat, { message: VALIDATION_MESSAGES.COMMON.ENUM('Format') })
+  @IsEnum(LessonFormat, { message: VALIDATION_MESSAGES.COMMON.ENUM('Format') })
   @IsNotEmpty({ message: VALIDATION_MESSAGES.COMMON.REQUIRED('Format') })
-  format: MediaFormat;
+  format: LessonFormat;
 
   @ApiProperty({
     description: 'Media sub-format',

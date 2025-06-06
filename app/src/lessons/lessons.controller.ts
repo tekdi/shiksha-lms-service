@@ -20,12 +20,10 @@ import {
   ApiBody,
   ApiParam,
   ApiQuery,
-  ApiHeader,
 } from '@nestjs/swagger';
 import { LessonsService } from './lessons.service';
 import { CreateLessonDto } from './dto/create-lesson.dto';
 import { UpdateLessonDto } from './dto/update-lesson.dto';
-import { AddLessonToCourseDto } from './dto/add-lesson-to-course.dto';
 import { PaginationDto } from '../common/dto/pagination.dto';
 import { API_IDS } from '../common/constants/api-ids.constant';
 import { CommonQueryDto } from '../common/dto/common-query.dto';
@@ -37,8 +35,6 @@ import { TenantOrg } from '../common/decorators/tenant-org.decorator';
 
 @ApiTags('Lessons')
 @Controller('lessons')
-@ApiHeader({ name: 'x-tenant-id', required: true })
-@ApiHeader({ name: 'x-organisation-id', required: true })
 export class LessonsController {
   constructor(
     private readonly lessonsService: LessonsService,
@@ -97,33 +93,7 @@ export class LessonsController {
       tenantOrg.organisationId
     );
   }
-
-  @Post('course/:courseId/module/:moduleId')
-  @ApiId(API_IDS.ADD_LESSON_TO_COURSE)
-  @ApiOperation({ summary: 'Add lesson to course/module' })
-  @ApiResponse({ status: 201, description: 'Lesson added to course successfully' })
-  @ApiResponse({ status: 400, description: 'Bad request' })
-  @ApiResponse({ status: 404, description: 'Lesson or course/module not found' })
-  @ApiParam({ name: 'courseId', description: 'UUID of the course' })
-  @ApiParam({ name: 'moduleId', description: 'UUID of the module' })
-  @ApiBody({ type: AddLessonToCourseDto })
-  async addLessonToCourse(
-    @Param('courseId', ParseUUIDPipe) courseId: string,
-    @Param('moduleId', ParseUUIDPipe) moduleId: string,
-    @Body() addLessonToCourseDto: AddLessonToCourseDto,
-    @Query() query: CommonQueryDto,
-    @TenantOrg() tenantOrg: { tenantId: string; organisationId: string },
-  ) {
-    return this.lessonsService.addToCourse(
-      addLessonToCourseDto,
-      courseId,
-      moduleId,
-      query.userId,
-      tenantOrg.tenantId,
-      tenantOrg.organisationId
-    );
-  }
-
+  
   @Get(':lessonId')
   @ApiId(API_IDS.GET_LESSON_BY_ID)
   @ApiOperation({ summary: 'Get lesson by ID' })
@@ -205,46 +175,10 @@ export class LessonsController {
   ) {
     return this.lessonsService.remove(
       lessonId,
+      query.userId,
       tenantOrg.tenantId,
       tenantOrg.organisationId
     );
   }
 
-  @Delete('course/:courseLessonId')
-  @ApiId(API_IDS.REMOVE_LESSON_FROM_COURSE)
-  @ApiOperation({ summary: 'Remove lesson from course/module' })
-  @ApiResponse({ status: 200, description: 'Lesson removed from course successfully' })
-  @ApiResponse({ status: 404, description: 'Course lesson association not found' })
-  @ApiParam({ name: 'courseLessonId', type: String, format: 'uuid' })
-  async removeLessonFromCourse(
-    @Param('courseLessonId', ParseUUIDPipe) courseLessonId: string,
-    @Query() query: CommonQueryDto,
-    @TenantOrg() tenantOrg: { tenantId: string; organisationId: string },
-  ) {
-    return this.lessonsService.removeFromCourse(
-      courseLessonId,
-      tenantOrg.tenantId,
-      tenantOrg.organisationId
-    );
-  }
-
-  @Get(':lessonId/display')
-  @ApiId(API_IDS.GET_LESSON_TO_DISPLAY)
-  @ApiOperation({ summary: 'Get lesson to display' })
-  @ApiResponse({ status: 200, description: 'Lesson retrieved successfully' })
-  @ApiResponse({ status: 404, description: 'Lesson not found' })
-  @ApiParam({ name: 'lessonId', type: String, format: 'uuid' })
-  @ApiQuery({ name: 'courseLessonId', required: false, type: String, format: 'uuid' })
-  async getLessonToDisplay(
-    @Param('lessonId', ParseUUIDPipe) lessonId: string,
-    @TenantOrg() tenantOrg: { tenantId: string; organisationId: string },
-    @Query('courseLessonId') courseLessonId?: string,
-  ) {
-    return this.lessonsService.findToDisplay(
-      lessonId,
-      courseLessonId,
-      tenantOrg.tenantId,
-      tenantOrg.organisationId
-    );
-  }
 }

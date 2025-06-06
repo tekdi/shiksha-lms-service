@@ -3,65 +3,57 @@ import {
   NotFoundException,
   BadRequestException,
   InternalServerErrorException,
-  ConflictException,
   Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Not, FindOneOptions } from 'typeorm';
-import { v4 as uuidv4 } from 'uuid';
-import { Lesson } from './entities/lesson.entity';
-import { LessonStatus } from './entities/lesson.entity';
-import { CourseLesson, CourseLessonStatus } from './entities/course-lesson.entity';
-import { Course, CourseStatus } from '../courses/entities/course.entity';
+import { Lesson, LessonStatus, AttemptsGradeMethod, LessonFormat } from './entities/lesson.entity';
+import { Course } from '../courses/entities/course.entity';
 import { Module, ModuleStatus } from '../modules/entities/module.entity';
-import { Media } from '../media/entities/media.entity';
+import { Media, MediaStatus } from '../media/entities/media.entity';
 import { LessonTrack } from '../tracking/entities/lesson-track.entity';
 import { CreateLessonDto } from './dto/create-lesson.dto';
 import { UpdateLessonDto } from './dto/update-lesson.dto';
-import { AddLessonToCourseDto } from './dto/add-lesson-to-course.dto';
 import { PaginationDto } from '../common/dto/pagination.dto';
 import { HelperUtil } from '../common/utils/helper.util';
 import { RESPONSE_MESSAGES } from '../common/constants/response-messages.constant';
-import { MediaContentDto, MediaFormat, MediaSubFormat } from './dto/media-content.dto';
-import { AttemptsGradeMethod } from './entities/lesson.entity';
 import { CacheService } from '../cache/cache.service';
 import { ConfigService } from '@nestjs/config';
 
 @Injectable()
 export class LessonsService {
   private readonly logger = new Logger(LessonsService.name);
+  private readonly cache_enabled: boolean;
   private readonly cache_ttl_default: number;
   private readonly cache_ttl_user: number;
   private readonly cache_prefix_lesson: string;
-  private readonly cache_prefix_module: string;
   private readonly cache_prefix_course: string;
   private readonly cache_prefix_media: string;
-  private readonly cache_enabled: boolean;
+  private readonly cache_prefix_module: string;
 
   constructor(
     @InjectRepository(Lesson)
-    private readonly lessonRepository: Repository<Lesson>,
-    @InjectRepository(CourseLesson)
-    private readonly courseLessonRepository: Repository<CourseLesson>,
+    private lessonRepository: Repository<Lesson>,
     @InjectRepository(Course)
-    private readonly courseRepository: Repository<Course>,
+    private courseRepository: Repository<Course>,
     @InjectRepository(Module)
-    private readonly moduleRepository: Repository<Module>,
+    private moduleRepository: Repository<Module>,
     @InjectRepository(Media)
-    private readonly mediaRepository: Repository<Media>,
+    private mediaRepository: Repository<Media>,
     @InjectRepository(LessonTrack)
-    private readonly lessonTrackRepository: Repository<LessonTrack>,
-    private readonly cacheService: CacheService,
-    private readonly configService: ConfigService,
+    private lessonTrackRepository: Repository<LessonTrack>,
+    private cacheService: CacheService,
+    private configService: ConfigService,
   ) {
-    this.cache_enabled = this.configService.get('CACHE_ENABLED')  || true;
-    this.cache_ttl_default = this.configService.get('CACHE_DEFAULT_TTL') || 3600;
-    this.cache_ttl_user = this.configService.get('CACHE_USER_TTL') || 600;
-    this.cache_prefix_lesson = this.configService.get('CACHE_LESSON_PREFIX') || 'lessons';
-    this.cache_prefix_module = this.configService.get('CACHE_MODULE_PREFIX') || 'modules';
-    this.cache_prefix_course = this.configService.get('CACHE_COURSE_PREFIX') || 'courses';
+    this.cache_enabled = this.configService.get('CACHE_ENABLED') === 'true';
+    this.cache_ttl_default = parseInt(this.configService.get('CACHE_TTL_DEFAULT') || '3600', 10);
+    this.cache_ttl_user = parseInt(this.configService.get('CACHE_TTL_USER') || '1800', 10);
+    this.cache_prefix_lesson = this.configService.get('CACHE_LESSON_PREFIX') || 'lesson';
+    this.cache_prefix_course = this.configService.get('CACHE_COURSE_PREFIX') || 'course';
     this.cache_prefix_media = this.configService.get('CACHE_MEDIA_PREFIX') || 'media';
+    this.cache_prefix_module = this.configService.get('CACHE_MODULE_PREFIX') || 'module';
   }
+  
 
   /**
    * Create a new lesson with optional course association
@@ -77,7 +69,7 @@ export class LessonsService {
     userId: string, 
     tenantId: string,
     organisationId: string,
-  ): Promise<Lesson | CourseLesson> {
+  ): Promise<Lesson> {
     try {
 
       if (!createLessonDto.alias) {
@@ -124,7 +116,7 @@ export class LessonsService {
       // Create media first based on the format
       let mediaId: string;
       
-      if (createLessonDto.mediaContent.format === MediaFormat.DOCUMENT) {
+      if (createLessonDto.format === LessonFormat.DOCUMENT) {
         // For document format, use the provided mediaId
         if (!createLessonDto.mediaContent.mediaId) {
           throw new BadRequestException('Media ID is required for document format');
@@ -133,8 +125,10 @@ export class LessonsService {
       } else {
         // Create new media for other formats
         const mediaData: Partial<Media> = {
-          format: createLessonDto.mediaContent.format as any, // Type assertion needed due to enum mismatch
-          subFormat: createLessonDto.mediaContent.subFormat || this.getDefaultSubFormat(createLessonDto.mediaContent.format),
+          tenantId: tenantId,
+          organisationId: organisationId,
+          format: createLessonDto.format,
+          subFormat: createLessonDto.mediaContent.subFormat,
           source: createLessonDto.mediaContent.source,
           storage: createLessonDto.mediaContent.storage || 'local',
           createdBy: userId,
@@ -158,7 +152,7 @@ export class LessonsService {
         startDatetime: createLessonDto.startDatetime ? new Date(createLessonDto.startDatetime) : undefined,
         endDatetime: createLessonDto.endDatetime ? new Date(createLessonDto.endDatetime) : undefined,
         storage: createLessonDto.storage || 'local',
-        noOfAttempts: createLessonDto.noOfAttempts || 1,
+        noOfAttempts: createLessonDto.noOfAttempts || 0,
         attemptsGrade: createLessonDto.attemptsGrade || AttemptsGradeMethod.HIGHEST,
         eligibilityCriteria: createLessonDto.eligibilityCriteria,
         idealTime: createLessonDto.idealTime,
@@ -170,300 +164,20 @@ export class LessonsService {
         updatedBy: userId,
         tenantId: tenantId,
         organisationId: organisationId,
+        // Course-specific fields
+        courseId: createLessonDto.courseId,
+        moduleId: createLessonDto.moduleId,
+        sampleLesson: createLessonDto.sampleLesson || false,
+        considerForPassing: createLessonDto.considerForPassing || true,
       };
 
-      
-
-      // Create a new lesson with lesson entity fields only
+      // Create and save the lesson
       const lesson = this.lessonRepository.create(lessonData);
       const savedLesson = await this.lessonRepository.save(lesson);
-      const result = Array.isArray(savedLesson) ? savedLesson[0] : savedLesson;
-      
-      // Check if courseId and moduleId are provided to create course association
-      if (createLessonDto.courseId) {
-        // Validate course exists
-        const course = await this.courseRepository.findOne({
-          where: { 
-            courseId: createLessonDto.courseId,
-            ...(tenantId && { tenantId }),
-            ...(organisationId && { organisationId }),
-            status: Not(CourseStatus.ARCHIVED as any),
-          },
-        });
-        
-        if (!course) {
-          throw new NotFoundException('Course not found');
-        }
-        
-        // If moduleId is provided, validate it exists and belongs to the course
-        if (createLessonDto.moduleId) {
-          const module = await this.moduleRepository.findOne({
-            where: { 
-              moduleId: createLessonDto.moduleId,
-              courseId: createLessonDto.courseId,
-              ...(tenantId && { tenantId }),
-              ...(organisationId && { organisationId }),
-              status: Not(ModuleStatus.ARCHIVED as any),
-            },
-          });
-          
-          if (!module) {
-            throw new NotFoundException('Module not found or does not belong to the specified course');
-          }
-        }
-        
-        // Create course-lesson association
-        const courseLessonId = uuidv4();
-        const courseLessonData = {
-          courseLessonId,
-          lessonId: savedLesson.lessonId,
-          courseId: createLessonDto.courseId,
-          moduleId: createLessonDto.moduleId || undefined,
-          tenantId,
-          organisationId,
-          freeLesson: createLessonDto.freeLesson || false,
-          considerForPassing: createLessonDto.considerForPassing || true,
-          status: CourseLessonStatus.PUBLISHED,
-          startDatetime: createLessonDto.startDatetime ? new Date(createLessonDto.startDatetime) : undefined,
-          endDatetime: createLessonDto.endDatetime ? new Date(createLessonDto.endDatetime) : undefined,
-          noOfAttempts: createLessonDto.noOfAttempts,
-          attemptsGrade: createLessonDto.attemptsGrade,
-          eligibilityCriteria: createLessonDto.eligibilityCriteria,
-          idealTime: createLessonDto.idealTime,
-          resume: createLessonDto.resume,
-          totalMarks: createLessonDto.totalMarks,
-          passingMarks: createLessonDto.passingMarks,
-          params: createLessonDto.params,
-          createdBy: userId,
-          updatedBy: userId,
-        };
-        
-        // Create and save the course-lesson association
-        const courseLesson = this.courseLessonRepository.create(courseLessonData);
-        const savedCourseLesson = await this.courseLessonRepository.save(courseLesson);
-        const courseLessonResult = Array.isArray(savedCourseLesson) ? savedCourseLesson[0] : savedCourseLesson;
-
-        // Invalidate and set new cache values
-        if (this.cache_enabled) {
-          const courseLessonCacheKey = `${this.cache_prefix_lesson}:course:${createLessonDto.courseId}:${tenantId}:${organisationId}`;
-          const moduleLessonCacheKey = createLessonDto.moduleId ? 
-            `${this.cache_prefix_lesson}:module:${createLessonDto.moduleId}:${tenantId}:${organisationId}` : null;
-          const courseHierarchyCacheKey = `${this.cache_prefix_course}:hierarchy:${createLessonDto.courseId}:${tenantId}:${organisationId}`;
-          const entityCacheKey = `${this.cache_prefix_lesson}:${result.lessonId}:${tenantId}:${organisationId}`;
-
-          await Promise.all([
-            this.cacheService.del(courseLessonCacheKey),
-            moduleLessonCacheKey ? this.cacheService.del(moduleLessonCacheKey) : Promise.resolve(),
-            this.cacheService.del(courseHierarchyCacheKey),
-            this.cacheService.set(entityCacheKey, result, this.cache_ttl_default)
-          ]);
-        }
-        
-        return courseLessonResult;
-      }
-          
-      return result;
+      return Array.isArray(savedLesson) ? savedLesson[0] : savedLesson;
     } catch (error) {
-      this.logger.error(`Error creating lesson: ${error.message}`);
-      if (
-        error instanceof BadRequestException ||
-        error instanceof NotFoundException
-      ) {
-        throw error;
-      }
-      throw new InternalServerErrorException('Error creating lesson');
-    }
-  }
-
-  private getDefaultSubFormat(format: MediaFormat): MediaSubFormat {
-    switch (format) {
-      case MediaFormat.VIDEO:
-        return MediaSubFormat.VIDEO_YOUTUBE;
-      case MediaFormat.EVENT:
-        return MediaSubFormat.EVENT;
-      case MediaFormat.TEST:
-        return MediaSubFormat.TEST_QUIZ;
-      default:
-        throw new BadRequestException('Invalid media format');
-    }
-  }
-
-  /**
-   * Add a lesson to a course and/or module
-   */
-  async addToCourse(
-    addLessonToCourseDto: AddLessonToCourseDto,
-    courseId: string,
-    moduleId: string,
-    userId: string,
-    tenantId?: string,
-    organisationId?: string
-  ): Promise<CourseLesson> {
-    try {
-      const { lessonId, ...restDto } = addLessonToCourseDto;
-
-      // Build where clause with data isolation
-      const lessonWhereClause: any = { 
-        lessonId, 
-        status: Not('archived') as any 
-      };
-      
-      // Add tenant and org filters if provided
-      if (tenantId) {
-        lessonWhereClause.tenantId = tenantId;
-      }
-      
-      if (organisationId) {
-        lessonWhereClause.organisationId = organisationId;
-      }
-
-      // Validate lesson exists with data isolation
-      const lesson = await this.lessonRepository.findOne({
-        where: lessonWhereClause,
-      });
-      
-      if (!lesson) {
-        throw new NotFoundException('Lesson not found');
-      }
-
-      // Validate course exists with data isolation
-      const courseWhereClause: any = { 
-        courseId, 
-        status: Not(CourseStatus.ARCHIVED as any) 
-      };
-      
-      // Add tenant and org filters if provided
-      if (tenantId) {
-        courseWhereClause.tenantId = tenantId;
-      }
-      
-      if (organisationId) {
-        courseWhereClause.organisationId = organisationId;
-      }
-      
-      const course = await this.courseRepository.findOne({
-        where: courseWhereClause as any,
-      });
-      
-      if (!course) {
-        throw new NotFoundException('Course not found');
-      }
-
-      // Validate module exists if moduleId is provided with data isolation
-      if (moduleId) {
-        const moduleWhereClause: any = { 
-          moduleId, 
-          courseId,
-          status: Not(ModuleStatus.ARCHIVED as any) 
-        };
-        
-        // Add tenant and org filters if provided
-        if (tenantId) {
-          moduleWhereClause.tenantId = tenantId;
-        }
-        
-        if (organisationId) {
-          moduleWhereClause.organisationId = organisationId;
-        }
-        
-        const module = await this.moduleRepository.findOne({
-          where: moduleWhereClause as any,
-        });
-        
-        if (!module) {
-          throw new NotFoundException('Module not found or not associated with the course');
-        }
-      }
-
-      // Check if the lesson is already associated with the course and module with data isolation
-      const existingCourseLessonWhereClause: any = {
-        lessonId,
-        courseId,
-        moduleId,
-        status: Not(CourseLessonStatus.ARCHIVED as any),
-      };
-      
-      // Add tenant and org filters if provided
-      if (tenantId) {
-        existingCourseLessonWhereClause.tenantId = tenantId;
-      }
-      
-      if (organisationId) {
-        existingCourseLessonWhereClause.organisationId = organisationId;
-      }
-      
-      const existingCourseLesson = await this.courseLessonRepository.findOne({
-        where: existingCourseLessonWhereClause,
-      });
-      
-      if (existingCourseLesson) {
-        throw new ConflictException(RESPONSE_MESSAGES.ERROR.LESSON_ALREADY_EXISTS);
-      }
-
-      // Generate a unique ID for the association
-      const courseLessonId = uuidv4();
-
-      // Create the course-lesson association - extract only the fields in the entity
-      const courseLesson = this.courseLessonRepository.create({
-        courseLessonId,
-        lessonId,
-        courseId,
-        moduleId,
-        tenantId,
-        organisationId,
-        freeLesson: restDto.freeLesson,
-        considerForPassing: restDto.considerForPassing,
-        status: restDto.status || CourseLessonStatus.PUBLISHED,
-        startDatetime: restDto.startDatetime ? new Date(restDto.startDatetime) : undefined,
-        endDatetime: restDto.endDatetime ? new Date(restDto.endDatetime) : undefined,
-        noOfAttempts: restDto.noOfAttempts,
-        attemptsGrade: restDto.attemptsGrade,
-        eligibilityCriteria: restDto.eligibilityCriteria,
-        idealTime: restDto.idealTime,
-        resume: restDto.resume,
-        totalMarks: restDto.totalMarks,
-        passingMarks: restDto.passingMarks,
-        params: restDto.params,
-        createdBy: userId,
-        updatedBy: userId,
-      });
-
-      // Save the association
-      const savedCourseLesson = await this.courseLessonRepository.save(courseLesson);
-      // TypeORM returns an array when saving an entity, but we need a single entity
-      const result = Array.isArray(savedCourseLesson) ? savedCourseLesson[0] : savedCourseLesson;
-
-      // Handle cache invalidation
-      if (this.cache_enabled) {
-        const courseLessonCacheKey = `${this.cache_prefix_lesson}:course:${courseId}:${tenantId}:${organisationId}`;
-        const moduleLessonCacheKey = moduleId ? 
-          `${this.cache_prefix_lesson}:module:${moduleId}:${tenantId}:${organisationId}` : undefined;
-        const courseHierarchyCacheKey = `${this.cache_prefix_course}:hierarchy:${courseId}:${tenantId}:${organisationId}`;
-
-        // Invalidate existing caches
-        const cacheDeletionPromises = [
-          this.cacheService.del(courseLessonCacheKey),
-          this.cacheService.del(courseHierarchyCacheKey),
-        ];
-
-        if (moduleLessonCacheKey) {
-          cacheDeletionPromises.push(this.cacheService.del(moduleLessonCacheKey));
-        }
-
-        await Promise.all(cacheDeletionPromises);
-
-      }
-
-      return result;
-    } catch (error) {
-      this.logger.error(`Error adding lesson to course: ${error.message}`);
-      if (
-        error instanceof NotFoundException ||
-        error instanceof ConflictException
-      ) {
-        throw error;
-      }
-      throw new InternalServerErrorException('Error adding lesson to course');
+      this.logger.error(`Error creating lesson: ${error.message}`, error.stack);
+      throw new InternalServerErrorException(error.message);
     }
   }
 
@@ -498,7 +212,7 @@ export class LessonsService {
 
       // Build query with filters
       const whereConditions: any = {
-        status: Not('archived'), // Exclude archived lessons by default
+        status: Not(LessonStatus.ARCHIVED), // Exclude archived lessons by default
       };
 
       // Add optional filters
@@ -640,41 +354,16 @@ export class LessonsService {
       throw new NotFoundException('Module not found');
     }
 
-    // Build where clause for course lessons
-    const courseLessonWhereClause: any = { 
-      moduleId, 
-      status: Not(CourseLessonStatus.ARCHIVED as any) 
-    };
-    
-    // Add tenant and org filters to course lessons if provided
-    if (tenantId) {
-      courseLessonWhereClause.tenantId = tenantId;
-    }
-    
-    if (organisationId) {
-      courseLessonWhereClause.organisationId = organisationId;
-    }
-    
-    // Get all course-lesson associations for this module with filtering
-    const courseLessons = await this.courseLessonRepository.find({
-      where: courseLessonWhereClause,
-      relations: ['lesson', 'lesson.media'],
+    // Get all lessons for this module with filtering
+    const lessons = await this.lessonRepository.find({
+      where: { 
+        moduleId, 
+        status: Not(LessonStatus.ARCHIVED),
+        ...(tenantId && { tenantId }),
+        ...(organisationId && { organisationId }),
+      },
+      relations: ['media','associatedFiles.media'],
     });
-
-    // Transform the data for the response
-    const lessons = courseLessons.map(courseLesson => ({
-      courseLessonId: courseLesson.courseLessonId,
-      lessonId: courseLesson.lessonId,
-      courseId: courseLesson.courseId,
-      title: courseLesson.lesson.title,
-      description: courseLesson.lesson.description,
-      format: courseLesson.lesson.format,
-      freeLesson: courseLesson.freeLesson,
-      totalMarks: courseLesson.totalMarks,
-      passingMarks: courseLesson.passingMarks,
-      status: courseLesson.status,
-      media: courseLesson.lesson.media,
-    }));
 
     if (this.cache_enabled) {
       await this.cacheService.set(cacheKey, lessons, this.cache_ttl_default);
@@ -700,7 +389,9 @@ export class LessonsService {
     image?: Express.Multer.File,
   ): Promise<Lesson> {
     try {
-      const lesson = await this.findOne(lessonId, tenantId, organisationId);
+      const lesson = await this.lessonRepository.findOne({
+        where: { lessonId, tenantId, organisationId }
+      });
 
       if (!lesson) {
         throw new NotFoundException(RESPONSE_MESSAGES.ERROR.LESSON_NOT_FOUND);
@@ -711,13 +402,79 @@ export class LessonsService {
         throw new BadRequestException('Lesson is checked out by another user');
       }
 
-           // Parse JSON params if they are provided as a string
+      // Parse JSON params if they are provided as a string
       if (updateLessonDto.params && typeof updateLessonDto.params === 'string') {
         try {
           updateLessonDto.params = JSON.parse(updateLessonDto.params);
         } catch (error) {
           this.logger.error(`Error parsing params JSON: ${error.message}`);
           throw new BadRequestException('Invalid params JSON format');
+        }
+      }
+
+      // Handle media updates if mediaContent is provided
+      if (updateLessonDto.mediaContent) {
+        // Get the current media
+        const currentMedia = lesson.mediaId ? await this.mediaRepository.findOne({
+          where: { mediaId: lesson.mediaId }
+        }) : null;
+        
+          // For other formats
+          // Validate format matches lesson format
+          if (lesson.format !== updateLessonDto.mediaContent.format as LessonFormat) {
+            throw new BadRequestException('Cannot change lesson format during update');
+          }
+
+          // Validate mediaId is provided
+          if (!updateLessonDto.mediaContent.mediaId) {
+            throw new BadRequestException('Media ID is required in mediaContent for non-document formats');
+          }
+
+          if (!currentMedia) {
+            throw new NotFoundException(RESPONSE_MESSAGES.ERROR.MEDIA_NOT_FOUND);
+          }
+
+          // Update the media content
+          await this.mediaRepository.update(currentMedia.mediaId, {
+            tenantId: tenantId,
+            organisationId: organisationId,
+            format: updateLessonDto.mediaContent.format as LessonFormat,
+            subFormat: updateLessonDto.mediaContent.subFormat,
+            source: updateLessonDto.mediaContent.source,
+            storage: updateLessonDto.mediaContent.storage || 'local',
+            updatedBy: userId,
+            updatedAt: new Date()
+          });
+      } else if (updateLessonDto.mediaId) {
+        // Handle direct mediaId update
+        const newMedia = await this.mediaRepository.findOne({
+          where: { mediaId: updateLessonDto.mediaId }
+        });
+
+        if (!newMedia) {
+          throw new NotFoundException(RESPONSE_MESSAGES.ERROR.MEDIA_NOT_FOUND);
+        }
+
+        // Get the current media
+        const currentMedia = lesson.mediaId ? await this.mediaRepository.findOne({
+          where: { mediaId: lesson.mediaId }
+        }) : null;
+
+        // If the media is the same, do nothing
+        if (currentMedia && currentMedia.mediaId === newMedia.mediaId) {
+          // Remove mediaId from update data since it's the same
+          updateLessonDto.mediaId = undefined;
+        } else {
+          // If different media, archive old and use new
+          if (currentMedia) {
+            await this.mediaRepository.update(currentMedia.mediaId, {
+              status: MediaStatus.ARCHIVED,
+              updatedBy: userId,
+              updatedAt: new Date()
+            });
+          }
+          // Set the new mediaId in the lesson entity
+          lesson.mediaId = newMedia.mediaId;
         }
       }
 
@@ -764,10 +521,10 @@ export class LessonsService {
         }
       }
 
-
       // Map DTO properties to entity properties that exist in the DTO
       const updateData: any = {
-        updatedBy: updateLessonDto.updatedBy || 'system',
+        updatedBy: userId,
+        updatedAt: new Date(),
       };
       
       // Map fields that exist in both DTO and entity
@@ -783,7 +540,6 @@ export class LessonsService {
         updateData.status = updateLessonDto.status;
       }
           
-      
       if (updateLessonDto.alias !== undefined) {
         updateData.alias = updateLessonDto.alias;
       }
@@ -836,6 +592,10 @@ export class LessonsService {
       if (updateLessonDto.params !== undefined) {
         updateData.params = updateLessonDto.params;
       }
+
+      if (updateLessonDto.mediaId !== undefined) {
+        updateData.mediaId = updateLessonDto.mediaId;
+      }
       
       // Update the lesson
       const updatedLesson = this.lessonRepository.merge(lesson, updateData);
@@ -861,7 +621,6 @@ export class LessonsService {
         await Promise.all([
           this.cacheService.set(entityCacheKey, savedLesson, this.cache_ttl_default)
         ]);
-
       }
 
       return savedLesson;
@@ -891,7 +650,9 @@ export class LessonsService {
     organisationId?: string,
   ): Promise<Lesson> {
     try {
-      const lesson = await this.findOne(lessonId, tenantId, organisationId);
+      const lesson = await this.lessonRepository.findOne({
+        where: { lessonId, tenantId, organisationId }
+      });
 
       if (!lesson) {
         throw new NotFoundException(RESPONSE_MESSAGES.ERROR.LESSON_NOT_FOUND);
@@ -932,153 +693,4 @@ export class LessonsService {
     }
   }
 
-  /**
-   * Remove a lesson from a course/module
-   * @param courseLessonId The course-lesson ID to remove
-   * @param tenantId The tenant ID for data isolation
-   * @param organisationId The organization ID for data isolation
-   */
-  async removeFromCourse(
-    courseLessonId: string,
-    tenantId?: string,
-    organisationId?: string
-  ): Promise<{ success: boolean; message: string }> {
-    try {
-      // Build where clause with required filters
-      const courseLessonWhereClause: any = { 
-        courseLessonId
-      };
-      
-      // Add tenant and org filters if provided
-      if (tenantId) {
-        courseLessonWhereClause.tenantId = tenantId;
-      }
-      
-      if (organisationId) {
-        courseLessonWhereClause.organisationId = organisationId;
-      }
-      
-      // Find the course-lesson association with proper filtering
-      const courseLesson = await this.courseLessonRepository.findOne({
-        where: courseLessonWhereClause,
-      });
-
-      if (!courseLesson) {
-        throw new NotFoundException('Course-lesson association not found');
-      }
-
-      // Perform hard delete
-      await this.courseLessonRepository.remove(courseLesson);
-
-      return { success: true, message: 'Lesson removed from course successfully' };
-    } catch (error) {
-      this.logger.error(`Error removing lesson from course: ${error.message}`);
-      if (error instanceof NotFoundException) {
-        throw error;
-      }
-      throw new InternalServerErrorException('Error removing lesson from course');
-    }
-  }
-
-  /**
-   * Find lesson to display (with course-specific parameters if available)
-   * @param lessonId The lesson ID to find
-   * @param courseLessonId Optional course-lesson association ID
-   * @param tenantId The tenant ID for data isolation
-   * @param organisationId The organization ID for data isolation
-   */
-  async findToDisplay(
-    lessonId: string, 
-    courseLessonId?: string,
-    tenantId?: string,
-    organisationId?: string
-  ): Promise<any> {
-    const cacheKey = `${this.cache_prefix_lesson}:display:${lessonId}:${courseLessonId}:${tenantId}:${organisationId}`;
-    
-    if (this.cache_enabled) {
-      const cachedResult = await this.cacheService.get<any>(cacheKey);
-      if (cachedResult) {
-        return cachedResult;
-      }
-    }
-
-    // Build where clause for lesson with required filters
-    const lessonWhereClause: any = { 
-      lessonId, 
-      status: Not(LessonStatus.ARCHIVED) 
-    };
-    
-    // Add tenant and org filters if provided
-    if (tenantId) {
-      lessonWhereClause.tenantId = tenantId;
-    }
-    
-    if (organisationId) {
-      lessonWhereClause.organisationId = organisationId;
-    }
-    
-    // Find the lesson with proper filtering
-    const lesson = await this.lessonRepository.findOne({
-      where: lessonWhereClause,
-      relations: ['media', 'associatedFiles', 'associatedFiles.media'],
-    });
-
-    if (!lesson) {
-      throw new NotFoundException(RESPONSE_MESSAGES.ERROR.LESSON_NOT_FOUND);
-    }
-
-    let courseLesson: CourseLesson | null = null;
-    if (courseLessonId) {
-      // Build where clause for course-lesson with required filters
-      const courseLessonWhereClause: any = { 
-        courseLessonId, 
-        status: Not(CourseLessonStatus.ARCHIVED as any) 
-      };
-      
-      // Add tenant and org filters if provided
-      if (tenantId) {
-        courseLessonWhereClause.tenantId = tenantId;
-      }
-      
-      if (organisationId) {
-        courseLessonWhereClause.organisationId = organisationId;
-      }
-      
-      courseLesson = await this.courseLessonRepository.findOne({
-        where: courseLessonWhereClause,
-      });
-      
-      if (!courseLesson) {
-        throw new NotFoundException('Course-lesson association not found');
-      }
-    }
-
-    // Combine lesson and course-specific parameters
-    const result = {
-      ...lesson,
-      courseSpecific: courseLesson ? {
-        courseLessonId: courseLesson.courseLessonId,
-        courseId: courseLesson.courseId,
-        moduleId: courseLesson.moduleId,
-        freeLesson: courseLesson.freeLesson,
-        considerForPassing: courseLesson.considerForPassing,
-        startDatetime: courseLesson.startDatetime,
-        endDatetime: courseLesson.endDatetime,
-        noOfAttempts: courseLesson.noOfAttempts,
-        attemptsGrade: courseLesson.attemptsGrade,
-        eligibilityCriteria: courseLesson.eligibilityCriteria,
-        idealTime: courseLesson.idealTime,
-        resume: courseLesson.resume,
-        totalMarks: courseLesson.totalMarks,
-        passingMarks: courseLesson.passingMarks,
-        params: courseLesson.params,
-      } : null,
-    };
-
-    if (this.cache_enabled) {
-      await this.cacheService.set(cacheKey, result, this.cache_ttl_user);
-    }
-
-    return result;
-  }
 }

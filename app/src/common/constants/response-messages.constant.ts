@@ -57,6 +57,7 @@ export const RESPONSE_MESSAGES = {
     COURSE_NOT_FOUND: 'Course not found',
     MODULE_NOT_FOUND: 'Module not found',
     LESSON_NOT_FOUND: 'Lesson not found',
+    COURSE_LESSON_NOT_FOUND: 'Lesson not found in course',
     MEDIA_NOT_FOUND: 'Media not found',
     ENROLLMENT_NOT_FOUND: 'Enrollment not found',
     TRACKING_NOT_FOUND: 'Tracking not found',
@@ -78,6 +79,8 @@ export const RESPONSE_MESSAGES = {
     MEDIA_ASSOCIATED_WITH_LESSON: 'Media is associated with a lesson and cannot be deleted',
     MEDIA_ASSOCIATED_WITH_ASSOCIATED_FILE: 'Media is associated with an associated file and cannot be deleted',
     MEDIA_NOT_ASSOCIATED_WITH_LESSON: 'The specified lesson is not associated with this media',
+    COURSE_TRACKING_NOT_FOUND: 'Course tracking not found',
+    COURSE_COMPLETED: 'Course is completed',
   },
 };
 

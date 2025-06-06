@@ -3,7 +3,6 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { LessonsController } from './lessons.controller';
 import { LessonsService } from './lessons.service';
 import { Lesson } from './entities/lesson.entity';
-import { CourseLesson } from './entities/course-lesson.entity';
 import { Course } from '../courses/entities/course.entity';
 import { Module as CourseModule } from '../modules/entities/module.entity';
 import { Media } from '../media/entities/media.entity';
@@ -16,7 +15,6 @@ import { CacheModule } from '../cache/cache.module';
   imports: [
     TypeOrmModule.forFeature([
       Lesson,
-      CourseLesson,
       Course,
       CourseModule,
       Media,
