@@ -4,40 +4,44 @@ import {
   Post,
   Body,
   Param,
-  Delete,
+  Delete,  
   ParseUUIDPipe,
   HttpStatus,
   HttpCode,
   UseInterceptors,
   UploadedFile,
+  BadRequestException,
   Query,
   Patch,
+  InternalServerErrorException,
 } from '@nestjs/common';
 import { 
   ApiTags, 
   ApiOperation, 
   ApiResponse, 
   ApiParam, 
+  ApiBody, 
   ApiConsumes,
-  ApiBody,
 } from '@nestjs/swagger';
-import { FileInterceptor } from '@nestjs/platform-express';
 import { ModulesService } from './modules.service';
-import { API_IDS } from '../common/constants/api-ids.constant';
-import { Module } from './entities/module.entity';
 import { CreateModuleDto } from './dto/create-module.dto';
 import { UpdateModuleDto } from './dto/update-module.dto';
+import { PaginationDto } from '../common/dto/pagination.dto';
+import { API_IDS } from '../common/constants/api-ids.constant';
+import { Module } from './entities/module.entity';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { CommonQueryDto } from '../common/dto/common-query.dto';
 import { ApiId } from '../common/decorators/api-id.decorator';
-import { getUploadPath } from '../common/utils/upload.util';
-import { uploadConfigs } from '../config/file-validation.config';
 import { TenantOrg } from '../common/decorators/tenant-org.decorator';
+import { FileUploadService } from '../storage/providers/local-storage.service';
+import { RESPONSE_MESSAGES } from 'src/common/constants/response-messages.constant';
 
 @ApiTags('Modules')
 @Controller('modules')
 export class ModulesController {
   constructor(
     private readonly modulesService: ModulesService,
+    private readonly fileUploadService: FileUploadService,
   ) {}
 
   @Post()
@@ -51,17 +55,22 @@ export class ModulesController {
   })
   @ApiResponse({ status: 400, description: 'Bad request' })
   @ApiConsumes('multipart/form-data')
-  @UseInterceptors(FileInterceptor('image', uploadConfigs.modules))
+  @UseInterceptors(FileInterceptor('image'))
   async createModule(
     @Body() createModuleDto: CreateModuleDto,
     @Query() query: CommonQueryDto,
     @TenantOrg() tenantOrg: { tenantId: string; organisationId: string },
     @UploadedFile() file?: Express.Multer.File,
   ) {
-    if (file) {
-      const imagePath = getUploadPath('module', file.filename);
-      createModuleDto.image = imagePath;
-    }
+    try {
+      if (file) {
+        // Upload file and get the path
+        createModuleDto.image = await this.fileUploadService.uploadFile(file, { type: 'module' });
+      }
+      } catch (error) {
+    throw new InternalServerErrorException(`${RESPONSE_MESSAGES.ERROR.FAILED_TO_UPLOAD_FILE}: ${error.message}`);
+      }
+
     const module = await this.modulesService.create(
       createModuleDto,
       query.userId,
@@ -94,15 +103,12 @@ export class ModulesController {
 
   @Get('course/:courseId')
   @ApiId(API_IDS.GET_MODULES_BY_COURSE)
-  @ApiOperation({ summary: 'Get modules by course ID' })
+  @ApiOperation({ summary: 'Get all modules for a course' })
   @ApiParam({ name: 'courseId', type: 'string', format: 'uuid', description: 'Course ID' })
   @ApiResponse({ 
     status: 200, 
     description: 'Modules retrieved successfully',
-    schema: {
-      type: 'array',
-      items: { $ref: '#/components/schemas/Module' }
-    }
+    type: [Module]
   })
   async getModulesByCourse(
     @Param('courseId', ParseUUIDPipe) courseId: string,
@@ -150,18 +156,26 @@ export class ModulesController {
   @ApiResponse({ status: 400, description: 'Bad request' })
   @ApiResponse({ status: 404, description: 'Module not found' })
   @ApiConsumes('multipart/form-data')
-  @UseInterceptors(FileInterceptor('image', uploadConfigs.modules))
+  @UseInterceptors(FileInterceptor('image'))
   async updateModule(
-    @Param('moduleId') moduleId: string,
+    @Param('moduleId', ParseUUIDPipe) moduleId: string,
     @Body() updateModuleDto: UpdateModuleDto,
     @Query() query: CommonQueryDto,
     @TenantOrg() tenantOrg: { tenantId: string; organisationId: string },
     @UploadedFile() file?: Express.Multer.File,
   ) {
-    if (file) {
-      const imagePath = getUploadPath('module', file.filename);
-      updateModuleDto.image = imagePath;
+
+    try {
+      if (file) {
+        // Upload file and get the path
+        updateModuleDto.image = await this.fileUploadService.uploadFile(file, { 
+        type: 'module',
+      });
     }
+    } catch (error) {
+  throw new InternalServerErrorException(`${RESPONSE_MESSAGES.ERROR.FAILED_TO_UPLOAD_FILE}: ${error.message}`);
+    }
+
     const module = await this.modulesService.update(
       moduleId,
       updateModuleDto,
@@ -169,6 +183,7 @@ export class ModulesController {
       tenantOrg.tenantId,
       tenantOrg.organisationId,
     );
+
     return module;
   }
 
@@ -191,13 +206,14 @@ export class ModulesController {
   async deleteModule(
     @Param('moduleId', ParseUUIDPipe) moduleId: string,
     @Query() query: CommonQueryDto,
-    @TenantOrg() tenantOrg: { tenantId: string; organisationId: string }
+    @TenantOrg() tenantOrg: { tenantId: string; organisationId: string },
   ) {
-    return this.modulesService.remove(
+    const result = await this.modulesService.remove(
       moduleId,
       query.userId,
       tenantOrg.tenantId,
       tenantOrg.organisationId
     );
+    return result;
   }
 }
