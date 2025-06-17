@@ -74,8 +74,8 @@ export class EnrollmentsController {
       }
     }
   })
-  @ApiQuery({ name: 'learnerId', required: false, type: String, format: 'uuid' })
-  @ApiQuery({ name: 'courseId', required: false, type: String, format: 'uuid' })
+  @ApiQuery({ name: 'learnerId', required: false, type: String })
+  @ApiQuery({ name: 'courseId', required: false, type: String })
   @ApiQuery({ 
     name: 'status', 
     required: false, 
@@ -85,19 +85,19 @@ export class EnrollmentsController {
   @ApiQuery({ name: 'page', required: false, type: Number })
   @ApiQuery({ name: 'limit', required: false, type: Number })
   async getUserEnrollments(
-    @Query() paginationDto: PaginationDto,
     @TenantOrg() tenantOrg: { tenantId: string; organisationId: string },
+    @Query() paginationDto: PaginationDto,
     @Query('learnerId') learnerId?: string,
     @Query('courseId') courseId?: string,
     @Query('status') status?: EnrollmentStatus,
   ) {
     return this.enrollmentsService.findAll(
+      tenantOrg.tenantId,
+      tenantOrg.organisationId,
       paginationDto,      
       learnerId,
       courseId,
       status,
-      tenantOrg.tenantId,
-      tenantOrg.organisationId
     );
   }
 

@@ -14,20 +14,12 @@ import { Module, ModuleStatus } from '../modules/entities/module.entity';
 import { RESPONSE_MESSAGES } from '../common/constants/response-messages.constant';
 import { UpdateLessonTrackingDto } from './dto/update-lesson-tracking.dto';
 import { LessonStatusDto } from './dto/lesson-status.dto';
-import { CacheService } from '../cache/cache.service';
 import { ConfigService } from '@nestjs/config';
 import { ModuleTrack, ModuleTrackStatus } from './entities/module-track.entity';
 
 @Injectable()
 export class TrackingService {
   private readonly logger = new Logger(TrackingService.name);
-  private readonly cache_enabled: boolean;
-  private readonly cache_ttl_default: number;
-  private readonly cache_ttl_user: number;
-  private readonly cache_prefix_tracking: string;
-  private readonly cache_prefix_course: string;
-  private readonly cache_prefix_lesson: string;
-  private readonly cache_prefix_module: string;
 
   constructor(
     @InjectRepository(CourseTrack)
@@ -42,17 +34,8 @@ export class TrackingService {
     private readonly moduleRepository: Repository<Module>,
     @InjectRepository(ModuleTrack)
     private readonly moduleTrackRepository: Repository<ModuleTrack>,
-    private readonly cacheService: CacheService,
     private readonly configService: ConfigService,
-  ) {
-    this.cache_enabled = this.configService.get('CACHE_ENABLED') === 'true';
-    this.cache_ttl_default = parseInt(this.configService.get('CACHE_TTL_DEFAULT') || '3600', 10);
-    this.cache_ttl_user = parseInt(this.configService.get('CACHE_TTL_USER') || '1800', 10);
-    this.cache_prefix_tracking = this.configService.get('CACHE_TRACKING_PREFIX') || 'tracking';
-    this.cache_prefix_course = this.configService.get('CACHE_COURSE_PREFIX') || 'course';
-    this.cache_prefix_lesson = this.configService.get('CACHE_LESSON_PREFIX') || 'lesson';
-    this.cache_prefix_module = this.configService.get('CACHE_MODULE_PREFIX') || 'module';
-  }
+  ) {}
 
 
   /**

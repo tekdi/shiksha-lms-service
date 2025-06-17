@@ -21,15 +21,12 @@ import { CacheService } from '../cache/cache.service';
 import { ConfigService } from '@nestjs/config';
 import { Lesson, LessonStatus } from '../lessons/entities/lesson.entity';
 import { InjectDataSource } from '@nestjs/typeorm';
+import { CacheConfigService } from '../cache/cache-config.service';
 
 
 @Injectable()
 export class EnrollmentsService {
   private readonly logger = new Logger(EnrollmentsService.name);
-  private readonly cache_ttl_default: number;
-  private readonly cache_ttl_user: number;
-  private readonly cache_prefix_enrollment: string;
-  private readonly cache_enabled: boolean;
 
   constructor(
     @InjectRepository(UserEnrollment)
@@ -44,12 +41,8 @@ export class EnrollmentsService {
     private readonly lessonRepository: Repository<Lesson>,
     @InjectDataSource()
     private readonly dataSource: DataSource,
-  ) {
-    this.cache_enabled = this.configService.get('CACHE_ENABLED') || true;
-    this.cache_ttl_default = this.configService.get('CACHE_DEFAULT_TTL') || 3600;
-    this.cache_ttl_user = this.configService.get('CACHE_USER_TTL') || 600;
-    this.cache_prefix_enrollment = this.configService.get('CACHE_ENROLLMENT_PREFIX') || 'enrollments';
-  }
+    private readonly cacheConfig: CacheConfigService,
+  ) {}
 
   /**
    * Enroll a user for a course
@@ -180,7 +173,7 @@ export class EnrollmentsService {
       // Find and return the complete enrollment with relations
       const completeEnrollment = await queryRunner.manager.findOne(UserEnrollment, {
         where: { enrollmentId: savedEnrollment.enrollmentId },
-        relations: ['course'],
+        // relations: ['course'],
       });
 
       if (!completeEnrollment) {
@@ -190,14 +183,12 @@ export class EnrollmentsService {
       // Commit the transaction
       await queryRunner.commitTransaction();
 
-      // Invalidate cache
-      if (this.cache_enabled) {
-        const cacheKeys = [
-          `${this.cache_prefix_enrollment}:${savedEnrollment.enrollmentId}:${tenantId}:${organisationId}`,
-          `${this.cache_prefix_enrollment}:list:${courseId}:${createEnrollmentDto.learnerId}:${tenantId}:${organisationId}`,          
-        ];
-        await Promise.all(cacheKeys.map(key => this.cacheService.del(key)));
-      }
+      // Cache the new enrollment and invalidate related caches
+      const enrollmentKey = this.cacheConfig.getEnrollmentKey(savedEnrollment.userId, savedEnrollment.courseId, tenantId, organisationId);
+      await Promise.all([
+        this.cacheService.invalidateEnrollment(savedEnrollment.userId, savedEnrollment.courseId, tenantId, organisationId),
+        this.cacheService.set(enrollmentKey, savedEnrollment, this.cacheConfig.ENROLLMENT_TTL),
+      ]);
       
       return completeEnrollment;
     } catch (error) {
@@ -223,24 +214,24 @@ export class EnrollmentsService {
    * Find all enrollments with pagination and filters
    */
   async findAll(
+    tenantId: string,
+    organisationId: string,
     paginationDto: PaginationDto,   
     learnerId?: string,
     courseId?: string,
     status?: string,
-    tenantId?: string,
-    organisationId?: string,
   ): Promise<{ count: number; enrollments: UserEnrollment[] }> {
     try {
       const { page = 1, limit = 10 } = paginationDto;
       const skip = (page - 1) * limit;
 
-      const cacheKey = `${this.cache_prefix_enrollment}:list:${courseId}:${learnerId}:${tenantId}:${organisationId}`;
+      // Generate cache key using standardized pattern
+      const cacheKey = this.cacheConfig.getEnrollmentListKey(tenantId, organisationId, learnerId || '', courseId || '',status || '',page,limit);
 
-      if (this.cache_enabled) {
-        const cachedResult = await this.cacheService.get<{ count: number; enrollments: UserEnrollment[] }>(cacheKey);
-        if (cachedResult) {
-          return cachedResult;
-        }
+      // Try to get from cache first
+      const cachedResult = await this.cacheService.get<{ count: number; enrollments: UserEnrollment[] }>(cacheKey);
+      if (cachedResult) {
+        return cachedResult;
       }
 
       const whereConditions: FindOptionsWhere<UserEnrollment> = { 
@@ -271,9 +262,8 @@ export class EnrollmentsService {
 
       const result = { count, enrollments };
 
-      if (this.cache_enabled) {
-        await this.cacheService.set(cacheKey, result, this.cache_ttl_default);
-      }
+      // Cache the result with standardized TTL
+      await this.cacheService.set(cacheKey, result, this.cacheConfig.ENROLLMENT_TTL);
 
       return result;
     } catch (error) {
@@ -287,37 +277,35 @@ export class EnrollmentsService {
    */
   async findOne(
     enrollmentId: string,
-    tenantId?: string,
-    organisationId?: string
+    tenantId: string,
+    organisationId: string
   ): Promise<UserEnrollment> {
     try {
-      const cacheKey = `${this.cache_prefix_enrollment}:${enrollmentId}:${tenantId}:${organisationId}`;
 
-      if (this.cache_enabled) {
-        const cachedEnrollment = await this.cacheService.get<UserEnrollment>(cacheKey);
-        if (cachedEnrollment) {
-          return cachedEnrollment;
-        }
-      }
-
-      const whereConditions: FindOptionsWhere<UserEnrollment> = {
+      // Check cache using the enrollment's userId and courseId
+      const cacheKey = this.cacheConfig.getUserEnrollmentKey(
         enrollmentId,
         tenantId,
-        organisationId,
-      };
+        organisationId
+      );
+      const cachedEnrollment = await this.cacheService.get<UserEnrollment>(cacheKey);
+      
+      if (cachedEnrollment) {
+        return cachedEnrollment;
+      }
 
+      // Get enrollment from database first to get userId and courseId for cache key
       const enrollment = await this.userEnrollmentRepository.findOne({
-        where: whereConditions,
-        relations: ['course'],
+        where: { enrollmentId, tenantId, organisationId },
+        // relations: ['course'],
       });
 
       if (!enrollment) {
         throw new NotFoundException(RESPONSE_MESSAGES.ENROLLMENT_NOT_FOUND);
       }
 
-      if (this.cache_enabled) {
-        await this.cacheService.set(cacheKey, enrollment, this.cache_ttl_default);
-      }
+      // Cache the enrollment with TTL
+      await this.cacheService.set(cacheKey, enrollment, this.cacheConfig.ENROLLMENT_TTL);
 
       return enrollment;
     } catch (error) {
@@ -335,8 +323,8 @@ export class EnrollmentsService {
   async update(
     enrollmentId: string,
     updateEnrollmentDto: UpdateEnrollmentDto,
-    tenantId?: string,
-    organisationId?: string
+    tenantId: string,
+    organisationId: string
   ): Promise<UserEnrollment> {
     try {
       const enrollment = await this.findOne(enrollmentId, tenantId, organisationId);
@@ -347,14 +335,13 @@ export class EnrollmentsService {
       // Save updated enrollment
       const updatedEnrollment = await this.userEnrollmentRepository.save(enrollment);
 
-      // Invalidate cache
-      if (this.cache_enabled) {
-        const cacheKeys = [
-         `${this.cache_prefix_enrollment}:${updatedEnrollment.enrollmentId}:${tenantId}:${organisationId}`,
-          `${this.cache_prefix_enrollment}:list:${updatedEnrollment.courseId}:${updatedEnrollment.userId}:${tenantId}:${organisationId}`,          
-       ];
-        await Promise.all(cacheKeys.map(key => this.cacheService.del(key)));
-      }
+      // Update cache and invalidate related caches
+      const enrollmentKey = this.cacheConfig.getEnrollmentKey(updatedEnrollment.userId, updatedEnrollment.courseId, tenantId, organisationId);
+      await Promise.all([
+        this.cacheService.invalidateEnrollment(updatedEnrollment.userId, updatedEnrollment.courseId, tenantId, organisationId),
+        this.cacheService.del(this.cacheConfig.getUserEnrollmentKey(enrollmentId, tenantId, organisationId)),
+        this.cacheService.set(enrollmentKey, updatedEnrollment, this.cacheConfig.ENROLLMENT_TTL),
+      ]);
 
       return updatedEnrollment;
     } catch (error) {
@@ -371,8 +358,8 @@ export class EnrollmentsService {
    */
   async cancel(
     enrollmentId: string,
-    tenantId?: string,
-    organisationId?: string
+    tenantId: string,
+    organisationId: string
   ): Promise<{ success: boolean; message: string }> {
     try {
       const enrollment = await this.findOne(enrollmentId, tenantId, organisationId);
@@ -385,14 +372,13 @@ export class EnrollmentsService {
       enrollment.status = EnrollmentStatus.UNPUBLISHED;
       await this.userEnrollmentRepository.save(enrollment);
 
-      // Invalidate cache
-      if (this.cache_enabled) {
-        const cacheKeys = [
-         `${this.cache_prefix_enrollment}:${enrollment.enrollmentId}:${tenantId}:${organisationId}`,
-          `${this.cache_prefix_enrollment}:list:${enrollment.courseId}:${enrollment.userId}:${tenantId}:${organisationId}`,          
-       ];
-        await Promise.all(cacheKeys.map(key => this.cacheService.del(key)));
-      }
+      // Invalidate all related caches
+      const enrollmentKey = this.cacheConfig.getEnrollmentKey(enrollment.userId, enrollment.courseId, tenantId, organisationId);
+      await Promise.all([
+        this.cacheService.del(this.cacheConfig.getUserEnrollmentKey(enrollmentId, tenantId, organisationId)),
+        this.cacheService.del(enrollmentKey),
+        this.cacheService.invalidateEnrollment(enrollment.userId, enrollment.courseId, tenantId, organisationId),
+      ]);
 
       return {
         success: true,

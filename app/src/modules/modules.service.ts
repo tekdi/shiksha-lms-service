@@ -6,7 +6,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, FindOptionsWhere, Not } from 'typeorm';
+import { Repository, FindOptionsWhere, Not, IsNull } from 'typeorm';
 import { Module, ModuleStatus } from './entities/module.entity';
 import { Course, CourseStatus } from '../courses/entities/course.entity';
 import { Lesson } from '../lessons/entities/lesson.entity';
@@ -17,15 +17,11 @@ import { CreateModuleDto } from './dto/create-module.dto';
 import { UpdateModuleDto } from './dto/update-module.dto';
 import { CacheService } from '../cache/cache.service';
 import { ConfigService } from '@nestjs/config';
+import { CacheConfigService } from '../cache/cache-config.service';
 
 @Injectable()
 export class ModulesService {
   private readonly logger = new Logger(ModulesService.name);
-  private readonly cache_ttl_default: number;
-  private readonly cache_prefix_module: string;
-  private readonly cache_prefix_course: string;
-  private readonly cache_prefix_lesson: string;
-  private readonly cache_enabled: boolean;
 
   constructor(
     @InjectRepository(Module)
@@ -40,12 +36,8 @@ export class ModulesService {
     private readonly lessonTrackRepository: Repository<LessonTrack>,
     private readonly cacheService: CacheService,
     private readonly configService: ConfigService,
+    private readonly cacheConfig: CacheConfigService,
   ) {
-    this.cache_enabled = this.configService.get('CACHE_ENABLED') === true;
-    this.cache_ttl_default = parseInt(this.configService.get('CACHE_TTL_DEFAULT') || '3600', 10);
-    this.cache_prefix_module = this.configService.get('CACHE_MODULE_PREFIX') || 'module';
-    this.cache_prefix_course = this.configService.get('CACHE_COURSE_PREFIX') || 'course';
-    this.cache_prefix_lesson = this.configService.get('CACHE_LESSON_PREFIX') || 'lesson';
   }
 
   /**
@@ -144,28 +136,14 @@ export class ModulesService {
     const module = this.moduleRepository.create(moduleData);
     const savedModule = await this.moduleRepository.save(module);
 
-    // Handle cache operations
-    if (this.cache_enabled) {
-      const courseModuleCacheKey = `${this.cache_prefix_module}:course:${createModuleDto.courseId}:${tenantId}:${organisationId}`;
-      const courseHierarchyCacheKey = `${this.cache_prefix_course}:hierarchy:${createModuleDto.courseId}:${tenantId}:${organisationId}`;
-      const entityCacheKey = `${this.cache_prefix_module}:${savedModule.moduleId}:${tenantId}:${organisationId}`;
-
-      // Invalidate existing caches
-      await Promise.all([
-        this.cacheService.del(courseModuleCacheKey),
-        this.cacheService.del(courseHierarchyCacheKey)
-      ]);
-
-      // Set new cache values
-      await Promise.all([
-        this.cacheService.set(entityCacheKey, savedModule, this.cache_ttl_default)
-      ]);
-
-      }
+    // Cache the new module and invalidate related caches
+    await Promise.all([
+      this.cacheService.setModule(savedModule),
+      this.cacheService.invalidateModule(savedModule.moduleId, savedModule.courseId, savedModule.tenantId, savedModule.organisationId),
+    ]);
 
     return savedModule;
   }
-
 
   /**
    * Find one module by ID
@@ -175,16 +153,14 @@ export class ModulesService {
    */
   async findOne(
     moduleId: string,
-    tenantId?: string,
-    organisationId?: string
+    tenantId: string,
+    organisationId: string
   ): Promise<Module> {
-    const cacheKey = `${this.cache_prefix_module}:${moduleId}:${tenantId}:${organisationId}`;
-    
-    if (this.cache_enabled) {
-      const cachedModule = await this.cacheService.get<Module>(cacheKey);
-      if (cachedModule) {
-        return cachedModule;
-      }
+    // Check cache first
+    const cacheKey = this.cacheConfig.getModuleKey(moduleId, tenantId || '', organisationId || '');
+    const cachedModule = await this.cacheService.get<Module>(cacheKey);
+    if (cachedModule) {
+      return cachedModule;
     }
 
     // Build where clause with optional filters
@@ -207,11 +183,8 @@ export class ModulesService {
       throw new NotFoundException(RESPONSE_MESSAGES.ERROR.MODULE_NOT_FOUND);
     }
 
-    // Cache the module if caching is enabled
-    if (this.cache_enabled) {
-      await this.cacheService.set(cacheKey, module, this.cache_ttl_default);
-    }
-
+    // Cache the module with TTL
+    await this.cacheService.set(cacheKey, module, this.cacheConfig.MODULE_TTL);
     return module;
   }
 
@@ -223,16 +196,14 @@ export class ModulesService {
    */
   async findByCourse(
     courseId: string,
-    tenantId?: string,
-    organisationId?: string
+    tenantId: string,
+    organisationId: string
   ): Promise<Module[]> {
-    const cacheKey = `${this.cache_prefix_module}:course:${courseId}:${tenantId}:${organisationId}`;
-    
-    if (this.cache_enabled) {
-      const cachedModules = await this.cacheService.get<Module[]>(cacheKey);
-      if (cachedModules) {
-        return cachedModules;
-      }
+    // Check cache first
+    const cacheKey = this.cacheConfig.getCourseModulesKey(courseId, tenantId, organisationId);
+    const cachedModules = await this.cacheService.get<Module[]>(cacheKey);
+    if (cachedModules) {
+      return cachedModules;
     }
 
     // Build where clause with required filters
@@ -257,9 +228,7 @@ export class ModulesService {
     });
 
     // Cache the modules
-    if (this.cache_enabled) {
-      await this.cacheService.set(cacheKey, modules, this.cache_ttl_default);
-    }
+    await this.cacheService.set(cacheKey, modules, this.cacheConfig.MODULE_TTL);
 
     return modules;
   }
@@ -272,32 +241,23 @@ export class ModulesService {
    */
   async findByParent(
     parentId: string,
-    tenantId?: string,
-    organisationId?: string
+    tenantId: string,
+    organisationId: string
   ): Promise<Module[]> {
-    const cacheKey = `${this.cache_prefix_module}:parent:${parentId}:${tenantId}:${organisationId}`;
-    
-    if (this.cache_enabled) {
-      const cachedModules = await this.cacheService.get<Module[]>(cacheKey);
-      if (cachedModules) {
-        return cachedModules;
-      }
+    // Check cache first
+    const cacheKey = this.cacheConfig.getModuleParentKey(parentId, tenantId, organisationId);
+    const cachedModules = await this.cacheService.get<Module[]>(cacheKey);
+    if (cachedModules) {
+      return cachedModules;
     }
 
     // Build where clause with required filters
     const whereClause: FindOptionsWhere<Module> = { 
       parentId,
+      tenantId,
+      organisationId,
       status: Not(ModuleStatus.ARCHIVED),
     };
-    
-    // Add tenant and org filters if provided
-    if (tenantId) {
-      whereClause.tenantId = tenantId;
-    }
-    
-    if (organisationId) {
-      whereClause.organisationId = organisationId;
-    }
     
     const modules = await this.moduleRepository.find({
       where: whereClause,
@@ -305,9 +265,7 @@ export class ModulesService {
     });
 
     // Cache the modules
-    if (this.cache_enabled) {
-      await this.cacheService.set(cacheKey, modules, this.cache_ttl_default);
-    }
+    await this.cacheService.set(cacheKey, modules, this.cacheConfig.MODULE_TTL);
 
     return modules;
   }
@@ -320,11 +278,9 @@ export class ModulesService {
     updateModuleDto: UpdateModuleDto,
     userId: string,
     tenantId: string,
-    organisationId?: string,
+    organisationId: string,
   ): Promise<Module> {
-    try {
-      // Find the module to update
-      const module = await this.findOne(moduleId, tenantId, organisationId);
+    const module = await this.findOne(moduleId, tenantId, organisationId);
 
       const enrichedDto = {
         ...updateModuleDto,
@@ -336,58 +292,16 @@ export class ModulesService {
       // Update the module
       const savedModule = await this.moduleRepository.save(updatedModule);
 
-      if (this.cache_enabled) {
-        const entityCacheKey = `${this.cache_prefix_module}:${moduleId}:${tenantId}:${organisationId}`;
-        const courseModuleCacheKey = `${this.cache_prefix_module}:course:${module.courseId}:${tenantId}:${organisationId}`;
-        const courseHierarchyCacheKey = `${this.cache_prefix_course}:hierarchy:${module.courseId}:${tenantId}:${organisationId}`;
-        const moduleLessonCacheKey = `${this.cache_prefix_lesson}:module:${moduleId}:${tenantId}:${organisationId}`;
+    // Update cache and invalidate related caches
+    const moduleKey = this.cacheConfig.getModuleKey(savedModule.moduleId, savedModule.tenantId, savedModule.organisationId);
+    await Promise.all([
+      this.cacheService.set(moduleKey, savedModule, this.cacheConfig.MODULE_TTL),
+      this.cacheService.invalidateModule(moduleId, module.courseId, tenantId, organisationId),
+    ]);
 
-        // Invalidate existing caches
-        await Promise.all([
-          this.cacheService.del(entityCacheKey),
-          this.cacheService.del(courseModuleCacheKey),
-          this.cacheService.del(courseHierarchyCacheKey),
-          this.cacheService.del(moduleLessonCacheKey)
-        ]);
-
-        // Set new cache values
-        await Promise.all([
-          this.cacheService.set(entityCacheKey, savedModule, this.cache_ttl_default)
-        ]);
-      }
-
-      return savedModule;
-    } catch (error) {
-      this.logger.error(`Error updating module: ${error.message}`);
-      if (error instanceof NotFoundException) {
-        throw error;
-      }
-      throw new BadRequestException(error.message);
-    }
+    return savedModule;
   }
 
-  /**
-   * Check if setting parentId for moduleId would create a circular reference
-   */
-  async wouldCreateCircularReference(moduleId: string, parentId: string): Promise<boolean> {
-    // Base case: if parent is the same as module, it's a circular reference
-    if (moduleId === parentId) {
-      return true;
-    }
-
-    // Get the parent module
-    const parentModule = await this.moduleRepository.findOne({
-      where: { moduleId: parentId },
-    });
-
-    // If parent doesn't exist or has no parent, no circular reference
-    if (!parentModule || !parentModule.parentId) {
-      return false;
-    }
-
-    // Recursively check if any ancestor is the module we're checking
-    return this.wouldCreateCircularReference(moduleId, parentModule.parentId);
-  }
 
   /**
    * Remove a module (archive it)
@@ -398,8 +312,8 @@ export class ModulesService {
   async remove(
     moduleId: string,
     userId: string,
-    tenantId?: string,
-    organisationId?: string
+    tenantId: string,
+    organisationId: string
   ): Promise<{ success: boolean; message: string }> {
     try {
       const module = await this.findOne(moduleId, tenantId, organisationId);
@@ -408,33 +322,20 @@ export class ModulesService {
       module.updatedAt = new Date();
       const savedModule = await this.moduleRepository.save(module);
 
-      if (this.cache_enabled) {
-        const entityCacheKey = `${this.cache_prefix_module}:${moduleId}:${tenantId}:${organisationId}`;
-        const courseModuleCacheKey = `${this.cache_prefix_module}:course:${module.courseId}:${tenantId}:${organisationId}`;
-        const courseHierarchyCacheKey = `${this.cache_prefix_course}:hierarchy:${module.courseId}:${tenantId}:${organisationId}`;
-        const moduleLessonCacheKey = `${this.cache_prefix_lesson}:module:${moduleId}:${tenantId}:${organisationId}`;
+    // Invalidate all related caches
+    const moduleKey = this.cacheConfig.getModuleKey(moduleId, tenantId, organisationId);
+    await Promise.all([
+      this.cacheService.del(moduleKey),
+      this.cacheService.invalidateModule(moduleId, module.courseId, tenantId, organisationId),
+    ]);
 
-        // Invalidate existing caches
-        await Promise.all([
-          this.cacheService.del(entityCacheKey),
-          this.cacheService.del(courseModuleCacheKey),
-          this.cacheService.del(courseHierarchyCacheKey),
-          this.cacheService.del(moduleLessonCacheKey)
-        ]);
-
-        // Set new cache values for archived module
-        await Promise.all([
-          this.cacheService.set(entityCacheKey, savedModule, this.cache_ttl_default)
-        ]);
-      }
-
-      return { 
-        success: true, 
-        message: RESPONSE_MESSAGES.MODULE_DELETED || 'Module deleted successfully',
-      };
-    } catch (error) {
-      this.logger.error(`Error removing module: ${error.message}`, error.stack);
-      throw error;
-    }
+    return {
+      success: true,
+      message: RESPONSE_MESSAGES.MODULE_DELETED || 'Module deleted successfully',
+    };
+  }catch (error) {
+    this.logger.error(`Error removing module: ${error.message}`, error.stack);
+    throw error;
   }
+}
 }

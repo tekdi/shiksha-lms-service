@@ -10,6 +10,11 @@ export class SearchCourseDto extends PaginationDto {
   @IsString()
   query?: string;
 
+  @ApiPropertyOptional({ description: 'Filter by cohort ID' })
+  @IsOptional()
+  @IsString()
+  cohortId?: string;
+
   @ApiPropertyOptional({ enum: CourseStatus, description: 'Filter by course status' })
   @IsOptional()
   @IsEnum(CourseStatus)

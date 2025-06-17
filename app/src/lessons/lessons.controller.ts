@@ -28,10 +28,11 @@ import { PaginationDto } from '../common/dto/pagination.dto';
 import { API_IDS } from '../common/constants/api-ids.constant';
 import { CommonQueryDto } from '../common/dto/common-query.dto';
 import { ApiId } from '../common/decorators/api-id.decorator';
-import { Lesson } from './entities/lesson.entity';
+import { Lesson, LessonFormat, LessonStatus } from './entities/lesson.entity';
 import { getUploadPath } from '../common/utils/upload.util';
 import { uploadConfigs } from '../config/file-validation.config';
 import { TenantOrg } from '../common/decorators/tenant-org.decorator';
+import { ParseEnumPipe } from '@nestjs/common';
 
 @ApiTags('Lessons')
 @Controller('lessons')
@@ -80,17 +81,17 @@ export class LessonsController {
   @ApiQuery({ name: 'page', required: false, type: Number })
   @ApiQuery({ name: 'limit', required: false, type: Number })
   async getAllLessons(
-    @Query() paginationDto: PaginationDto,
     @TenantOrg() tenantOrg: { tenantId: string; organisationId: string },
-    @Query('status') status?: string,
-    @Query('format') format?: string,
+    @Query() paginationDto: PaginationDto,
+    @Query('status', new ParseEnumPipe(LessonStatus, { optional: true })) status?: LessonStatus,
+    @Query('format', new ParseEnumPipe(LessonFormat, { optional: true })) format?: LessonFormat,
   ) {
     return this.lessonsService.findAll(
-      paginationDto, 
-      status, 
-      format, 
       tenantOrg.tenantId,
-      tenantOrg.organisationId
+      tenantOrg.organisationId,
+      paginationDto,
+      status as LessonStatus,
+      format as LessonFormat
     );
   }
   
