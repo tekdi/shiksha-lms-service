@@ -145,6 +145,9 @@ export class Lesson {
   @Column({ type: 'boolean', default: true })
   considerForPassing: boolean;
 
+  @Column({ type: 'integer', default: 0 })
+  ordering: number;
+
   @CreateDateColumn({ type: 'timestamptz' })
   createdAt: Date;
 

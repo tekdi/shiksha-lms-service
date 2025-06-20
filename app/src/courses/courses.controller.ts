@@ -12,6 +12,7 @@ import {
   HttpCode,
   UseInterceptors,
   UploadedFile,
+  Put,
 } from '@nestjs/common';
 import { 
   ApiTags, 
@@ -34,6 +35,7 @@ import { ApiId } from '../common/decorators/api-id.decorator';
 import { getUploadPath } from '../common/utils/upload.util';
 import { uploadConfigs } from '../config/file-validation.config';
 import { TenantOrg } from '../common/decorators/tenant-org.decorator';
+import { CourseStructureDto } from '../courses/dto/course-structure.dto';
 
 @ApiTags('Courses')
 @Controller('courses')
@@ -311,5 +313,51 @@ export class CoursesController {
       tenantOrg.organisationId,
     );
     return copiedCourse;
+  }
+
+  @Put(':courseId/structure')
+  @ApiId(API_IDS.UPDATE_COURSE_STRUCTURE)
+  @ApiOperation({ 
+    summary: 'Update course structure',
+    description: 'Update the entire course structure including module and lesson ordering, and moving lessons between modules'
+  })
+  @ApiParam({ name: 'courseId', type: 'string', format: 'uuid', description: 'Course ID' })
+  @ApiBody({ type: CourseStructureDto })
+  @ApiResponse({ 
+    status: 200, 
+    description: 'Course structure updated successfully',
+    schema: {
+      properties: {
+        success: { type: 'boolean' },
+        message: { type: 'string' }
+      }
+    }
+  })
+  @ApiResponse({ status: 400, description: 'Bad request - Invalid structure data or validation error' })
+  @ApiResponse({ status: 404, description: 'Course not found' })
+  @ApiResponse({ status: 500, description: 'Internal server error' })
+  async updateCourseStructure(
+    @Param('courseId', ParseUUIDPipe) courseId: string,
+    @Body() courseStructureDto: CourseStructureDto,
+    @Query() query: CommonQueryDto,
+    @TenantOrg() tenantOrg: { tenantId: string; organisationId: string }
+  ) {
+    try {
+      const result = await this.coursesService.updateCourseStructure(
+        courseId,
+        courseStructureDto,
+        query.userId,
+        tenantOrg.tenantId,
+        tenantOrg.organisationId
+      );
+      
+      return result;
+    } catch (error) {
+      // Log the error for debugging
+      console.error('Error in updateCourseStructure controller:', error);
+      
+      // Re-throw the error to let the global exception filter handle it
+      throw error;
+    }
   }
 }

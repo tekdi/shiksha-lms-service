@@ -8,6 +8,7 @@ export const API_IDS = {
   UPDATE_COURSE: 'api.course.update',
   DELETE_COURSE: 'api.course.delete',
   COPY_COURSE: 'api.course.clone',
+  UPDATE_COURSE_STRUCTURE: 'api.course.restructure',
 
 
   // Module APIs

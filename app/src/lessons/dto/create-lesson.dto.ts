@@ -12,6 +12,7 @@ import {
   IsNotEmpty,
   MaxLength,
   Validate,
+  IsNumber,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { VALIDATION_MESSAGES } from '../../common/constants/response-messages.constant';
@@ -255,6 +256,16 @@ export class CreateLessonDto {
   @IsBoolean({ message: VALIDATION_MESSAGES.COMMON.BOOLEAN('Free lesson') })
   @Type(() => Boolean)
   sampleLesson?: boolean = false;
+
+  @ApiProperty({
+    description: 'Lesson order within module',
+    example: 1,
+    required: false,
+  })
+  @IsOptional()
+  @IsNumber({}, { message: VALIDATION_MESSAGES.COMMON.NUMBER('Ordering') })
+  @Type(() => Number)
+  ordering?: number;
 
   @ApiProperty({
     description: 'Whether to consider this lesson for passing',
