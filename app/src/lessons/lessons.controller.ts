@@ -9,7 +9,10 @@ import {
   UseInterceptors,
   UploadedFile,
   ParseUUIDPipe,
+  HttpCode,
   Patch,
+  HttpStatus,
+  InternalServerErrorException,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import {
@@ -28,9 +31,9 @@ import { PaginationDto } from '../common/dto/pagination.dto';
 import { API_IDS } from '../common/constants/api-ids.constant';
 import { CommonQueryDto } from '../common/dto/common-query.dto';
 import { ApiId } from '../common/decorators/api-id.decorator';
+import { FileUploadService } from '../common/utils/local-storage.service';
+import { RESPONSE_MESSAGES } from '../common/constants/response-messages.constant';
 import { Lesson, LessonFormat, LessonStatus } from './entities/lesson.entity';
-import { getUploadPath } from '../common/utils/upload.util';
-import { uploadConfigs } from '../config/file-validation.config';
 import { TenantOrg } from '../common/decorators/tenant-org.decorator';
 import { ParseEnumPipe } from '@nestjs/common';
 
@@ -39,6 +42,7 @@ import { ParseEnumPipe } from '@nestjs/common';
 export class LessonsController {
   constructor(
     private readonly lessonsService: LessonsService,
+    private readonly fileUploadService: FileUploadService,
   ) {}
 
   @Post()
@@ -52,17 +56,23 @@ export class LessonsController {
   })
   @ApiResponse({ status: 400, description: 'Bad request' })
   @ApiConsumes('multipart/form-data')
-  @UseInterceptors(FileInterceptor('image', uploadConfigs.lessons))
+  @UseInterceptors(FileInterceptor('image'))
   async createLesson(
     @Body() createLessonDto: CreateLessonDto,
     @Query() query: CommonQueryDto,
     @TenantOrg() tenantOrg: { tenantId: string; organisationId: string },
     @UploadedFile() file?: Express.Multer.File,
   ) {
-    if (file) {
-      const imagePath = getUploadPath('lesson', file.filename);
-      createLessonDto.image = imagePath;
+
+    try {
+      if (file) {
+        // Upload file and get the path
+        createLessonDto.image = await this.fileUploadService.uploadFile(file, { type: 'lesson' });
+      }
+    } catch (error) {
+  throw new InternalServerErrorException(`${RESPONSE_MESSAGES.ERROR.FAILED_TO_UPLOAD_FILE}: ${error.message}`);
     }
+
     const lesson = await this.lessonsService.create(
       createLessonDto,
       query.userId,
@@ -141,18 +151,26 @@ export class LessonsController {
   @ApiResponse({ status: 400, description: 'Bad request' })
   @ApiResponse({ status: 404, description: 'Lesson not found' })
   @ApiConsumes('multipart/form-data')
-  @UseInterceptors(FileInterceptor('image', uploadConfigs.lessons))
+  @UseInterceptors(FileInterceptor('image'))
   async updateLesson(
-    @Param('lessonId') lessonId: string,
+    @Param('lessonId', ParseUUIDPipe) lessonId: string,
     @Body() updateLessonDto: UpdateLessonDto,
     @Query() query: CommonQueryDto,
-    @TenantOrg() tenantOrg: { tenantId: string; organisationId: string }, 
+    @TenantOrg() tenantOrg: { tenantId: string; organisationId: string },
     @UploadedFile() file?: Express.Multer.File,
   ) {
-    if (file) {
-      const imagePath = getUploadPath('lesson', file.filename);
-      updateLessonDto.image = imagePath;
+    
+    try {
+      if (file) {
+        // Upload file and get the path
+        updateLessonDto.image = await this.fileUploadService.uploadFile(file, { 
+        type: 'lesson',
+      });
     }
+    } catch (error) {
+  throw new InternalServerErrorException(`${RESPONSE_MESSAGES.ERROR.FAILED_TO_UPLOAD_FILE}: ${error.message}`);
+    }
+
     const lesson = await this.lessonsService.update(
       lessonId,
       updateLessonDto,
@@ -165,21 +183,32 @@ export class LessonsController {
 
   @Delete(':lessonId')
   @ApiId(API_IDS.DELETE_LESSON)
-  @ApiOperation({ summary: 'Delete a lesson' })
-  @ApiResponse({ status: 200, description: 'Lesson deleted successfully' })
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Delete (archive) a lesson' })
+  @ApiParam({ name: 'lessonId', type: 'string', format: 'uuid', description: 'Lesson ID' })
+  @ApiResponse({ 
+    status: 200, 
+    description: 'Lesson deleted successfully',
+    schema: {
+      properties: {
+        success: { type: 'boolean' },
+        message: { type: 'string' }
+      }
+    }
+  })
   @ApiResponse({ status: 404, description: 'Lesson not found' })
-  @ApiParam({ name: 'lessonId', type: String, format: 'uuid' })
   async deleteLesson(
     @Param('lessonId', ParseUUIDPipe) lessonId: string,
     @Query() query: CommonQueryDto,
     @TenantOrg() tenantOrg: { tenantId: string; organisationId: string },
   ) {
-    return this.lessonsService.remove(
+    const result = await this.lessonsService.remove(
       lessonId,
       query.userId,
       tenantOrg.tenantId,
       tenantOrg.organisationId
     );
+    return result;
   }
 
 }

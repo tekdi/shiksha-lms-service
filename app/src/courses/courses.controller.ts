@@ -12,6 +12,7 @@ import {
   HttpCode,
   UseInterceptors,
   UploadedFile,
+  InternalServerErrorException,
   Put,
 } from '@nestjs/common';
 import { 
@@ -32,9 +33,9 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { SearchCourseDto } from './dto/search-course.dto';
 import { CommonQueryDto } from '../common/dto/common-query.dto';
 import { ApiId } from '../common/decorators/api-id.decorator';
-import { getUploadPath } from '../common/utils/upload.util';
-import { uploadConfigs } from '../config/file-validation.config';
 import { TenantOrg } from '../common/decorators/tenant-org.decorator';
+import { FileUploadService } from '../common/utils/local-storage.service';
+import { RESPONSE_MESSAGES } from '../common/constants/response-messages.constant';
 import { CourseStructureDto } from '../courses/dto/course-structure.dto';
 
 
@@ -43,6 +44,7 @@ import { CourseStructureDto } from '../courses/dto/course-structure.dto';
 export class CoursesController {
   constructor(
     private readonly coursesService: CoursesService,
+    private readonly fileUploadService: FileUploadService,
   ) {}
 
   @Post()
@@ -56,16 +58,21 @@ export class CoursesController {
   })
   @ApiResponse({ status: 400, description: 'Bad request' })
   @ApiConsumes('multipart/form-data')
-  @UseInterceptors(FileInterceptor('image', uploadConfigs.courses))
+  @UseInterceptors(FileInterceptor('image'))
   async createCourse(
     @Body() createCourseDto: CreateCourseDto,
     @Query() query: CommonQueryDto,
     @TenantOrg() tenantOrg: { tenantId: string; organisationId: string },
     @UploadedFile() file?: Express.Multer.File,
   ) {
-    if (file) {
-      const imagePath = getUploadPath('course', file.filename);
-      createCourseDto.image = imagePath;
+
+    try {
+      if (file) {
+        // Upload file and get the path
+        createCourseDto.image = await this.fileUploadService.uploadFile(file, { type: 'course' });
+      }
+    } catch (error) {
+  throw new InternalServerErrorException(`${RESPONSE_MESSAGES.ERROR.FAILED_TO_UPLOAD_FILE}: ${error.message}`);
     }
     const course = await this.coursesService.create(
       createCourseDto,
@@ -237,18 +244,26 @@ export class CoursesController {
   @ApiResponse({ status: 400, description: 'Bad request' })
   @ApiResponse({ status: 404, description: 'Course not found' })
   @ApiConsumes('multipart/form-data')
-  @UseInterceptors(FileInterceptor('image', uploadConfigs.courses))
+  @UseInterceptors(FileInterceptor('image'))
   async updateCourse(
-    @Param('courseId') courseId: string,
+    @Param('courseId', ParseUUIDPipe) courseId: string,
     @Body() updateCourseDto: UpdateCourseDto,
     @Query() query: CommonQueryDto,
     @TenantOrg() tenantOrg: { tenantId: string; organisationId: string },
     @UploadedFile() file?: Express.Multer.File,
   ) {
-    if (file) {
-      const imagePath = getUploadPath('course', file.filename);
-      updateCourseDto.image = imagePath;
+
+    try {
+      if (file) {
+        // Upload file and get the path
+        updateCourseDto.image = await this.fileUploadService.uploadFile(file, { 
+          type: 'course',
+        });
+      }
+    } catch (error) {
+  throw new InternalServerErrorException(`${RESPONSE_MESSAGES.ERROR.FAILED_TO_UPLOAD_FILE}: ${error.message}`);
     }
+
     const course = await this.coursesService.update(
       courseId,
       updateCourseDto,
