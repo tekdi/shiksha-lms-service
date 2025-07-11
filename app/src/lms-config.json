@@ -112,31 +112,31 @@
             "type": "string",
             "title": "Courses Upload Path",
             "description": "Courses Upload Path",
-            "default": "courses"
+            "default": "/uploads/courses"
           },
           "modules_upload_path": {
             "type": "string",
             "title": "Modules Upload Path",
             "description": "Modules Upload Path",
-            "default": "modules"
+            "default": "/uploads/modules"
           },
           "lessons_upload_path": {
             "type": "string",
             "title": "Lessons Upload Path",
             "description": "Lessons Upload Path",
-            "default": "lessons"
+            "default": "/uploads/lessons"
           },
           "lessons_media_upload_path": {
             "type": "string",
             "title": "Lessons Media Upload Path",
             "description": "Filesystem path for lesson media uploads",
-            "default": ""
+            "default": "/uploads/lessons/media"
           },
           "lessons_associated_media_upload_path": {
             "type": "string",
             "title": "Lessons Associated Media Upload Path",
             "description": "Filesystem path for associated lesson media uploads",
-            "default": ""
+            "default": "/uploads/lessons/associated_media"
           }
         }
       },
