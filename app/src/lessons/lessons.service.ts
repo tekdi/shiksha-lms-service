@@ -105,22 +105,23 @@ export class LessonsService {
       if(createLessonDto.format === LessonFormat.DOCUMENT){
         storage = this.configService.get('cloud_storage_provider') || 'local';
       }
-        // Create new media for other formats
-        const mediaData: Partial<Media> = {
-          tenantId: tenantId,
-          organisationId: organisationId,
-          format: createLessonDto.format,
-          subFormat: createLessonDto.mediaContentSubFormat, 
-          source: createLessonDto.mediaContentSource || undefined,
-          path: createLessonDto.mediaContentPath || undefined,
-          storage: storage,
-          createdBy: userId,
-          updatedBy: userId,
-        };
+      
+      // Create new media for all formats
+      const mediaData: Partial<Media> = {
+        tenantId: tenantId,
+        organisationId: organisationId,
+        format: createLessonDto.format,
+        subFormat: createLessonDto.mediaContentSubFormat, 
+        source: createLessonDto.mediaContentSource || undefined,
+        path: createLessonDto.mediaContentPath || undefined,
+        storage: storage,
+        createdBy: userId,
+        updatedBy: userId,
+      };
 
-        const media = this.mediaRepository.create(mediaData);
-        const savedMedia = await this.mediaRepository.save(media);
-        mediaId = savedMedia.mediaId;
+      const media = this.mediaRepository.create(mediaData);
+      const savedMedia = await this.mediaRepository.save(media);
+      mediaId = savedMedia.mediaId;
       // Create lesson data
       const lessonData = {
         title: createLessonDto.title,

@@ -98,6 +98,11 @@ export class TrackingService {
       throw new NotFoundException(RESPONSE_MESSAGES.ERROR.COURSE_LESSON_NOT_FOUND);
     }
 
+    const canResume = lesson.resume ?? true;
+    if (!canResume) {
+      throw new BadRequestException(RESPONSE_MESSAGES.ERROR.RESUME_NOT_ALLOWED);
+    }
+
     //check if course is completed ,then throw error
     const courseTrack = await this.courseTrackRepository.findOne({
       where: {
@@ -125,7 +130,14 @@ export class TrackingService {
     // If there's an incomplete attempt, return it
     const incompleteAttempt = existingTracks.find(track => track.status !== TrackingStatus.COMPLETED);
     if (incompleteAttempt) {
-      return incompleteAttempt;
+      const lessonTrackWithRelations = await this.lessonTrackRepository.findOne({
+        where: { lessonTrackId: incompleteAttempt.lessonTrackId },
+        relations: ['lesson', 'lesson.media'],
+      });
+      if (!lessonTrackWithRelations) {
+        throw new NotFoundException(RESPONSE_MESSAGES.ERROR.ATTEMPT_NOT_FOUND);
+      }
+      return lessonTrackWithRelations;
     }
 
     // Check max attempts
@@ -151,7 +163,17 @@ export class TrackingService {
     });
     //update course tracking and module tracking as here new attempt is started
     await this.updateCourseAndModuleTracking(lessonTrack, tenantId, organisationId);
-    return this.lessonTrackRepository.save(lessonTrack);
+    const savedLessonTrack = await this.lessonTrackRepository.save(lessonTrack);
+    const lessonTrackWithRelations = await this.lessonTrackRepository.findOne({
+      where: { lessonTrackId: savedLessonTrack.lessonTrackId },
+      relations: ['lesson', 'lesson.media'],
+    });
+
+    if (!lessonTrackWithRelations) {
+      throw new NotFoundException(RESPONSE_MESSAGES.ERROR.ATTEMPT_NOT_FOUND);
+    }
+
+    return lessonTrackWithRelations;
   }
 
   /**
@@ -330,6 +352,7 @@ export class TrackingService {
         tenantId,
         organisationId
       } as FindOptionsWhere<LessonTrack>,
+      relations: ['lesson', 'lesson.media'],
     });
 
     if (!attempt) {
@@ -491,7 +514,10 @@ export class TrackingService {
         userId,
         tenantId,
         organisationId,
-        status: ModuleTrackStatus.INCOMPLETE
+        status: ModuleTrackStatus.INCOMPLETE,
+        completedLessons: 0,
+        totalLessons: 0,
+        progress: 0,
       });
     }
 
@@ -519,10 +545,14 @@ export class TrackingService {
     // Get unique completed lesson IDs
     const uniqueCompletedLessonIds = [...new Set(completedLessonTracks.map(track => track.lessonId))];
 
+    // Update module tracking data
+    moduleTrack.completedLessons = uniqueCompletedLessonIds.length;
+    moduleTrack.totalLessons = moduleLessons.length;
+    moduleTrack.progress = moduleLessons.length > 0 ? Math.round((uniqueCompletedLessonIds.length / moduleLessons.length) * 100) : 0;
+
     // Update module status based on completion
-    if (uniqueCompletedLessonIds.length === moduleLessons.length) {
+    if (uniqueCompletedLessonIds.length === moduleLessons.length && moduleLessons.length > 0) {
       moduleTrack.status = ModuleTrackStatus.COMPLETED;
-      
     } else {
       moduleTrack.status = ModuleTrackStatus.INCOMPLETE;
     }

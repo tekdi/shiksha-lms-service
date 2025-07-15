@@ -1,10 +1,25 @@
-import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsOptional, IsBoolean, IsString, IsEnum, IsUUID, IsDateString } from 'class-validator';
+import { ApiPropertyOptional, ApiProperty } from '@nestjs/swagger';
+import { IsOptional, IsBoolean, IsString, IsEnum, IsUUID, IsDateString, IsNumber, Min } from 'class-validator';
 import { Transform, Type } from 'class-transformer';
 import { CourseStatus } from '../entities/course.entity';
-import { PaginationDto } from '../../common/dto/pagination.dto';
+import { Course } from '../entities/course.entity';
 
-export class SearchCourseDto extends PaginationDto {
+export enum SortOrder {
+  ASC = 'ASC',
+  DESC = 'DESC'
+}
+
+export enum SortBy {
+  CREATED_AT = 'createdAt',
+  UPDATED_AT = 'updatedAt',
+  TITLE = 'title',
+  START_DATETIME = 'startDatetime',
+  END_DATETIME = 'endDatetime',
+  FEATURED = 'featured',
+  FREE = 'free'
+}
+
+export class SearchCourseDto {
   @ApiPropertyOptional({ description: 'Search keyword to match in title, description, or short description' })
   @IsOptional()
   @IsString()
@@ -68,4 +83,55 @@ export class SearchCourseDto extends PaginationDto {
   @IsOptional()
   @IsUUID()
   createdBy?: string;
+
+  @ApiPropertyOptional({ description: 'Number of items to skip (offset)', example: 0, minimum: 0 })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Type(() => Number)
+  offset?: number = 0;
+
+  @ApiPropertyOptional({ description: 'Number of items to return (limit)', example: 10, minimum: 1 })
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
+  @Type(() => Number)
+  limit?: number = 10;
+
+  @ApiPropertyOptional({ 
+    enum: SortBy, 
+    description: 'Field to sort by', 
+    example: SortBy.CREATED_AT,
+    default: SortBy.CREATED_AT
+  })
+  @IsOptional()
+  @IsEnum(SortBy)
+  sortBy?: SortBy = SortBy.CREATED_AT;
+
+  @ApiPropertyOptional({ 
+    enum: SortOrder, 
+    description: 'Sort order', 
+    example: SortOrder.DESC,
+    default: SortOrder.DESC
+  })
+  @IsOptional()
+  @IsEnum(SortOrder)
+  orderBy?: SortOrder = SortOrder.DESC;
+}
+
+export class SearchCourseResponseDto {
+  @ApiProperty({ description: 'List of courses matching the search criteria', type: [Course] })
+  courses: Course[];
+
+  @ApiProperty({ description: 'Total number of courses matching the criteria', example: 1 })
+  @IsNumber()
+  totalElements: number;
+
+  @ApiProperty({ description: 'Number of items skipped (offset)', example: 0 })
+  @IsNumber()
+  offset: number;
+
+  @ApiProperty({ description: 'Number of items returned (limit)', example: 10 })
+  @IsNumber()
+  limit: number;
 } 

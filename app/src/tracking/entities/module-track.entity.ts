@@ -37,6 +37,18 @@ export class ModuleTrack {
   })
   status: ModuleTrackStatus;
 
+  @ApiProperty({ description: 'Number of completed lessons in the module', example: 3 })
+  @Column({ type: 'integer', default: 0 })
+  completedLessons: number;
+
+  @ApiProperty({ description: 'Total number of lessons in the module', example: 5 })
+  @Column({ type: 'integer', default: 0 })
+  totalLessons: number;
+
+  @ApiProperty({ description: 'Progress percentage (0-100)', example: 60 })
+  @Column({ type: 'integer', default: 0 })
+  progress: number;
+
   @Column({ type: 'timestamptz', nullable: true })
   badgeGenDate: Date;
 }

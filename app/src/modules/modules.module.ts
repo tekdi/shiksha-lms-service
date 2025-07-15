@@ -8,8 +8,8 @@ import { Lesson } from '../lessons/entities/lesson.entity';
 import { ModuleTrack } from '../tracking/entities/module-track.entity';
 import { CommonModule } from '../common/common.module';
 import { CacheModule } from '../cache/cache.module';
-import { CourseTrack } from 'src/tracking/entities/course-track.entity';
-import { LessonTrack } from 'src/tracking/entities/lesson-track.entity';
+import { CourseTrack } from '../tracking/entities/course-track.entity';
+import { LessonTrack } from '../tracking/entities/lesson-track.entity';
 
 @Module({
   imports: [

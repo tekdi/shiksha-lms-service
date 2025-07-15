@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { ConfigurationModule } from 'src/configuration/configuration.module';
+import { ConfigurationModule } from '../configuration/configuration.module';  
 import { TenantModule } from './tenant/tenant.module';
 
 @Module({

@@ -1,5 +1,4 @@
 import path from 'path';
-import { validationConfig } from 'src/config/file-validation.config';
 import { v4 as uuidv4, validate as uuidValidate } from 'uuid';
 import { Not } from 'typeorm';
 

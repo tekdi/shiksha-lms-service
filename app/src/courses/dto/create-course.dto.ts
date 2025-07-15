@@ -1,7 +1,7 @@
-import { IsNotEmpty, IsString, IsOptional, IsBoolean, IsEnum, IsNumber, IsUUID, IsObject, IsDateString, MinLength, MaxLength, Matches, ValidateIf, Validate } from 'class-validator';
+import { IsNotEmpty, IsString, IsOptional, IsBoolean, IsEnum, IsNumber, IsUUID, IsObject, IsDateString, MinLength, MaxLength, Matches, ValidateIf, Validate, IsArray } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { CourseStatus } from '../entities/course.entity';
+import { CourseStatus, RewardType } from '../entities/course.entity';
 import { HelperUtil } from '../../common/utils/helper.util';
 import { VALIDATION_MESSAGES } from '../../common/constants/response-messages.constant';
 
@@ -28,8 +28,6 @@ export class CreateCourseDto {
     example: '2024-01-01T00:00:00Z',
     required: true
   })
-  @IsNotEmpty({ message: VALIDATION_MESSAGES.COMMON.REQUIRED('Start date') })
-  @IsDateString({}, { message: VALIDATION_MESSAGES.COMMON.DATE('Start date') })
   startDatetime: string;
 
   @ApiProperty({ 
@@ -37,8 +35,6 @@ export class CreateCourseDto {
     example: '2024-12-31T23:59:59Z',
     required: true
   })
-  @IsNotEmpty({ message: VALIDATION_MESSAGES.COMMON.REQUIRED('End date') })
-  @IsDateString({}, { message: VALIDATION_MESSAGES.COMMON.DATE('End date') })
   @ValidateIf((o) => o.startDatetime)
   @Validate(HelperUtil.validateDatetimeConstraints, {
     message: 'Invalid datetime constraints. Start date must be in the future, end date must follow start date, and duration must be between 1 day and 1 year.'
@@ -50,7 +46,6 @@ export class CreateCourseDto {
     example: 'A brief intro to web development',
     required: true
   })
-  @IsNotEmpty({ message: VALIDATION_MESSAGES.COMMON.REQUIRED('Short description') })
   @IsString({ message: VALIDATION_MESSAGES.COMMON.STRING('Short description') })
   shortDescription: string;
 
@@ -130,12 +125,31 @@ export class CreateCourseDto {
   certificateTerm?: Record<string, any>;
 
   @ApiPropertyOptional({ 
-    description: VALIDATION_MESSAGES.COURSE.CERTIFICATE_ID,
+    description: VALIDATION_MESSAGES.COURSE.REWARD_TYPE,
+    enum: RewardType,
+    example: RewardType.CERTIFICATE
+  })
+  @IsOptional()
+  @IsEnum(RewardType, { message: VALIDATION_MESSAGES.COMMON.ENUM('Reward type') })
+  rewardType?: RewardType;
+
+  @ApiPropertyOptional({ 
+    description: VALIDATION_MESSAGES.COURSE.TEMPLATE_ID,
     example: '123e4567-e89b-12d3-a456-426614174000'
   })
   @IsOptional()
-  @IsUUID('4', { message: VALIDATION_MESSAGES.COMMON.UUID('Certificate ID') })
-  certificateId?: string;
+  @IsUUID('4', { message: VALIDATION_MESSAGES.COMMON.UUID('Template ID') })
+  templateId?: string;
+
+  @ApiPropertyOptional({ 
+    description: 'Prerequisites for the course - array of prerequisite course IDs',
+    example: ['123e4567-e89b-12d3-a456-426614174000', '987fcdeb-51a2-43c1-b456-426614174000'],
+    type: [String]
+  })
+  @IsOptional() 
+  @IsArray({ message: VALIDATION_MESSAGES.COMMON.ARRAY('Prerequisites') })
+  @IsUUID('4', { each: true, message: VALIDATION_MESSAGES.COMMON.UUID('Prerequisite course ID') })
+  prerequisites?: string[];
 
   @ApiPropertyOptional({ 
     description: VALIDATION_MESSAGES.COURSE.PARAMS,

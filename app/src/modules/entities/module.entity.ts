@@ -11,6 +11,7 @@ import {
 } from 'typeorm';
 import { ApiProperty } from '@nestjs/swagger';
 import { Course } from '../../courses/entities/course.entity';
+import { Lesson } from '../../lessons/entities/lesson.entity';
 
 export enum ModuleStatus {
   ARCHIVED = 'archived',
@@ -116,4 +117,7 @@ export class Module {
 
   @OneToMany(() => Module, module => module.parent)
   submodules: Module[];
+
+  @OneToMany(() => Lesson, lesson => lesson.module)
+  lessons: Lesson[];
 }

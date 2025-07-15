@@ -13,6 +13,7 @@ import {
   MaxLength,
   MinLength,
   IsNotEmpty,
+  IsUrl,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { VALIDATION_MESSAGES } from '../../common/constants/response-messages.constant';
@@ -35,13 +36,15 @@ export class UpdateLessonDto extends PartialType(
   format?: LessonFormat;
   
   @ApiProperty({
-    description: 'Media content source',
+    description: 'Media content source (URL for video/external content, path for documents)',
     example: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
     required: false
   })
   @ValidateIf((o) => o.format && o.format !== LessonFormat.DOCUMENT)
   @IsNotEmpty({ message: VALIDATION_MESSAGES.COMMON.REQUIRED('Media content source') })
   @IsString({ message: VALIDATION_MESSAGES.COMMON.STRING('Source') })
+  @ValidateIf((o) => o.format === LessonFormat.TEXT_AND_MEDIA)
+  @IsUrl({}, { message: VALIDATION_MESSAGES.COMMON.URL('External URL') })
   mediaContentSource?: string;
 
   @ApiProperty({
