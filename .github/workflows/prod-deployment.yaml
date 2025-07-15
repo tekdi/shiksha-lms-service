@@ -60,7 +60,8 @@ jobs:
         ECR_REGISTRY: ${{ secrets.ECR_REPOSITORY_AL }}
         IMAGE_TAG: ${{ env.TAG }}
       run: |
-        docker build -t ${{ secrets.ECR_REPOSITORY_AL }}:${{ env.TAG }} -f app/Dockerfile .
+        cd app
+        docker build -t ${{ secrets.ECR_REPOSITORY_AL }}:${{ env.TAG }} .
         docker push ${{ secrets.ECR_REPOSITORY_AL }}:${{ env.TAG }}
 
     - name: Update kube config
