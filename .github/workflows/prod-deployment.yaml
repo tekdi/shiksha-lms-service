@@ -3,7 +3,7 @@ name: PROD-LMS-TAG-BASE-DEPLOYMENT
 on:
   push:
     tags:
-      - 'main' 
+      - 'al-v*'
 
 env:
   ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY_AL }}
