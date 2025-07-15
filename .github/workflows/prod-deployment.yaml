@@ -3,7 +3,7 @@ name: PROD-LMS-TAG-BASE-DEPLOYMENT
 on:
   push:
     tags:
-      - 'al-v*' 
+      - 'main' 
 
 env:
   ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY_AL }}
@@ -74,10 +74,10 @@ jobs:
       run: |
         export ECR_REPOSITORY=${{ secrets.ECR_REPOSITORY_AL }}
         export IMAGE_TAG=${{ env.TAG }}
-        MANIFEST_DIR=shiksha-lms-service/app/manifest
-        envsubst < $MANIFEST_DIR/shiksha-lms-service.yaml > $MANIFEST_DIR/shiksha-lms-service-updated.yaml
-        cat $MANIFEST_DIR/shiksha-lms-service-updated.yaml
-        rm -rf $MANIFEST_DIR/shiksha-lms-service.yaml
-        kubectl apply -f $MANIFEST_DIR/shiksha-lms-service-updated.yaml -n prod
+        cd app/manifest
+        envsubst < manifest/shiksha-lms-service.yaml > manifest/shiksha-lms-service-updated.yaml
+        cat manifest/shiksha-lms-service-updated.yaml
+        rm -rf manifest/shiksha-lms-service.yaml
+        kubectl apply -f manifest/shiksha-lms-service-updated.yaml -n prod
         sleep 10
         kubectl get pods -n prod
