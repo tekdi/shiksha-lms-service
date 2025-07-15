@@ -60,6 +60,7 @@ jobs:
         ECR_REGISTRY: ${{ secrets.ECR_REPOSITORY_AL }}
         IMAGE_TAG: ${{ env.TAG }}
       run: |
+        cd app
         docker build -t ${{ secrets.ECR_REPOSITORY_AL }}:${{ env.TAG }} .
         docker push ${{ secrets.ECR_REPOSITORY_AL }}:${{ env.TAG }}
 
