@@ -8,8 +8,9 @@ import {
   Query,
   UploadedFile,
   UseInterceptors,
-  BadRequestException,
-  ParseUUIDPipe
+  ParseUUIDPipe,
+  InternalServerErrorException,
+  BadRequestException
 } from '@nestjs/common';
 import { 
   ApiTags, 
@@ -26,15 +27,17 @@ import { API_IDS } from '../common/constants/api-ids.constant';
 import { CreateMediaDto } from './dto/create-media.dto';
 import { CommonQueryDto } from '../common/dto/common-query.dto';
 import { ApiId } from '../common/decorators/api-id.decorator';
-import { getUploadPath } from '../common/utils/upload.util';
-import { uploadConfigs } from '../config/file-validation.config';
 import { TenantOrg } from '../common/decorators/tenant-org.decorator';
 import { LessonFormat } from '../lessons/entities/lesson.entity';
+import { FileUploadService } from '../common/utils/local-storage.service';
 import { RESPONSE_MESSAGES } from '../common/constants/response-messages.constant';
 @ApiTags('Media')
 @Controller('media')
 export class MediaController {
-  constructor(private readonly mediaService: MediaService) {}
+  constructor(
+    private readonly mediaService: MediaService,
+    private readonly fileUploadService: FileUploadService,
+  ) {}
 
   @Post('upload')
   @ApiId(API_IDS.UPLOAD_MEDIA)
@@ -42,7 +45,7 @@ export class MediaController {
   @ApiConsumes('multipart/form-data')
   @ApiResponse({ status: 201, description: 'Media uploaded successfully' })
   @ApiResponse({ status: 400, description: 'Bad request' })
-  @UseInterceptors(FileInterceptor('file', uploadConfigs.media))
+  @UseInterceptors(FileInterceptor('file'))
   async uploadMedia(
     @Body() createMediaDto: CreateMediaDto,
     @UploadedFile() file: Express.Multer.File,
@@ -53,9 +56,15 @@ export class MediaController {
     if (createMediaDto.format === LessonFormat.DOCUMENT && !file) {
       throw new BadRequestException(RESPONSE_MESSAGES.ERROR.FILE_REQUIRED_DOCUMENT);
     }
-    if (file) {
-      const filePath = getUploadPath('lessonMedia', file.filename);
-      createMediaDto.path = filePath;
+
+    try {
+      if (file) {
+        // Upload file and get the path
+        const filePath = await this.fileUploadService.uploadFile(file, { type: 'lessonMedia' });
+        createMediaDto.path = filePath;
+      }
+    } catch (error) {
+  throw new InternalServerErrorException(`${RESPONSE_MESSAGES.ERROR.FAILED_TO_UPLOAD_FILE}: ${error.message}`);
     }
 
     return this.mediaService.uploadMedia(
