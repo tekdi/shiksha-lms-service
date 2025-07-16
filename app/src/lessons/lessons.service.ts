@@ -8,7 +8,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Not, FindOneOptions, FindOptionsWhere } from 'typeorm';
 import { Lesson, LessonStatus, AttemptsGradeMethod, LessonFormat } from './entities/lesson.entity';
-import { Course } from '../courses/entities/course.entity';
+import { Course, CourseStatus } from '../courses/entities/course.entity';
 import { Module, ModuleStatus } from '../modules/entities/module.entity';
 import { Media, MediaStatus } from '../media/entities/media.entity';
 import { LessonTrack } from '../tracking/entities/lesson-track.entity';
@@ -57,6 +57,39 @@ export class LessonsService {
     organisationId: string
   ): Promise<Lesson> {
     try {
+      // Validate course and module existence if provided
+      if (createLessonDto.courseId) {
+        // Check if course exists
+        const course = await this.courseRepository.findOne({
+          where: { 
+            courseId: createLessonDto.courseId,
+            status: Not(CourseStatus.ARCHIVED),
+            tenantId,
+            organisationId,
+          },
+        });
+
+        if (!course) {
+          throw new NotFoundException(RESPONSE_MESSAGES.ERROR.COURSE_NOT_FOUND);
+        }
+
+        // If moduleId is provided, validate it belongs to the course
+        if (createLessonDto.moduleId) {
+          const module = await this.moduleRepository.findOne({
+            where: { 
+              moduleId: createLessonDto.moduleId,
+              courseId: createLessonDto.courseId,
+              status: Not(ModuleStatus.ARCHIVED),
+              tenantId,
+              organisationId,
+            },
+          });
+
+          if (!module) {
+            throw new NotFoundException(RESPONSE_MESSAGES.ERROR.MODULE_NOT_FOUND_IN_COURSE(createLessonDto.moduleId));
+          }
+        }
+      }
 
       if (!createLessonDto.alias) {
         createLessonDto.alias = await HelperUtil.generateUniqueAliasWithRepo(
@@ -353,6 +386,41 @@ export class LessonsService {
       if (!lesson) {
         throw new NotFoundException(RESPONSE_MESSAGES.ERROR.LESSON_NOT_FOUND);
       }
+
+      // Validate course and module existence if provided in update
+      if (updateLessonDto.courseId) {
+        // Check if course exists
+        const course = await this.courseRepository.findOne({
+          where: { 
+            courseId: updateLessonDto.courseId,
+            status: Not(CourseStatus.ARCHIVED),
+            tenantId,
+            organisationId,
+          },
+        });
+
+        if (!course) {
+          throw new NotFoundException(RESPONSE_MESSAGES.ERROR.COURSE_NOT_FOUND);
+        }
+
+        // If moduleId is provided, validate it belongs to the course
+        if (updateLessonDto.moduleId) {
+          const module = await this.moduleRepository.findOne({
+            where: { 
+              moduleId: updateLessonDto.moduleId,
+              courseId: updateLessonDto.courseId,
+              status: Not(ModuleStatus.ARCHIVED),
+              tenantId,
+              organisationId,
+            },
+          });
+
+          if (!module) {
+            throw new NotFoundException(RESPONSE_MESSAGES.ERROR.MODULE_NOT_FOUND_IN_COURSE(updateLessonDto.moduleId));
+          }
+        }
+      }
+
       // Check if lesson has a checked out status (if that property exists)
       if (updateLessonDto.checkedOut !== undefined) {
         throw new BadRequestException(RESPONSE_MESSAGES.ERROR.LESSON_CHECKED_OUT);
@@ -508,6 +576,15 @@ export class LessonsService {
       
       if (updateLessonDto.params !== undefined) {
         updateData.params = updateLessonDto.params;
+      }
+      
+      // Handle course and module association fields
+      if (updateLessonDto.courseId !== undefined) {
+        updateData.courseId = updateLessonDto.courseId;
+      }
+      
+      if (updateLessonDto.moduleId !== undefined) {
+        updateData.moduleId = updateLessonDto.moduleId;
       }
             
       // Update the lesson

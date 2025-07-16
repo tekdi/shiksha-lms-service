@@ -488,12 +488,29 @@ export class CoursesService {
     } else {
       eligibility = await this.checkCourseEligibility(course, userId, tenantId, organisationId);
     }
-    if (!eligibility.isEligible) {
+
+    // If neither modules nor lessons are requested, return only course-level info
+    if (!includeModules && !includeLessons) {
+      const courseTracking = await this.courseTrackRepository.findOne({
+        where: { courseId, userId, tenantId, organisationId }
+      });
+      // Determine tracking status based on eligibility
+      let trackingStatus = 'NOT_STARTED';
+      if (!eligibility.isEligible) {
+        trackingStatus = 'NOT_ELIGIBLE';
+      } else if (courseTracking) {
+        trackingStatus = courseTracking.status;
+      }
+      
       return {
         ...course,
         modules: [],
-        tracking: {
-          status: 'NOT_ELIGIBLE',
+        tracking: courseTracking ? {
+          ...courseTracking,
+          status: trackingStatus,
+          totalLessons: courseTracking.noOfLessons,
+        } : {
+          status: trackingStatus,
           progress: 0,
           completedLessons: 0,
           totalLessons: 0,
@@ -502,23 +519,6 @@ export class CoursesService {
           startDatetime: null,
           endDatetime: null,
         },
-        lastAccessedLesson: null,
-        eligibility: {
-          requiredCourses: eligibility.requiredCourses,
-          isEligible: eligibility.isEligible
-        }
-      };
-    }
-
-    // If neither modules nor lessons are requested, return only course-level info
-    if (!includeModules && !includeLessons) {
-      const courseTracking = await this.courseTrackRepository.findOne({
-        where: { courseId, userId, tenantId, organisationId }
-      });
-      return {
-        ...course,
-        modules: [],
-        tracking: courseTracking || null,
         lastAccessedLesson: null,
         eligibility: {
           requiredCourses: eligibility.requiredCourses,
@@ -687,19 +687,33 @@ export class CoursesService {
         ...targetModule,
         courseId: course.courseId,
         tenantId: course.tenantId,
-        organisationId: course.organisationId
+        organisationId: course.organisationId,
+        eligibility: {
+          requiredCourses: eligibility.requiredCourses,
+          isEligible: eligibility.isEligible
+        }
       };
     }
 
     // Otherwise, return the full structure as requested
-    const courseProgress = courseTracking?.completedLessons && courseTracking?.noOfLessons > 0
-      ? Math.round((courseTracking?.completedLessons / courseTracking?.noOfLessons) * 100)
+    
+    const courseProgress = courseTracking?.completedLessons && courseTracking.noOfLessons > 0
+      ? Math.round((courseTracking?.completedLessons / courseTracking.noOfLessons) * 100)
       : 0;
+    
+    // Determine tracking status based on eligibility
+    let trackingStatus = 'NOT_STARTED';
+    if (!eligibility.isEligible) {
+      trackingStatus = 'NOT_ELIGIBLE';
+    } else if (courseTracking) {
+      trackingStatus = courseTracking.status;
+    }
+    
     return {
       ...course,
       modules: modulesWithTracking,
       tracking: courseTracking ? {
-        status: courseTracking.status,
+        status: trackingStatus,
         progress: courseProgress,
         completedLessons: courseTracking.completedLessons,
         totalLessons: courseTracking.noOfLessons,
@@ -708,10 +722,10 @@ export class CoursesService {
         startDatetime: courseTracking.startDatetime,
         endDatetime: courseTracking.endDatetime,
       } : {
-        status: 'NOT_STARTED',
+        status: trackingStatus,
         progress: 0,
         completedLessons: 0,
-        totalLessons: lessons.length,
+        totalLessons: 0,
         lastAccessed: null,
         timeSpent: 0,
         startDatetime: null,
@@ -985,36 +999,6 @@ export class CoursesService {
       this.logger.error(`Error removing course: ${error.message}`, error.stack);
       throw error;
     }
-  }
-
-  /**
-   * Count total lessons in a course using direct lesson table relationship
-   * @param courseId The course ID to count lessons for
-   * @param tenantId Optional tenant ID for data isolation
-   * @param organisationId Optional organization ID for data isolation
-   */
-  private async countTotalLessons(
-    courseId: string,
-    tenantId?: string,
-    organisationId?: string
-  ): Promise<number> {
-    const whereClause: any = {
-      courseId,
-      status: Not(LessonStatus.ARCHIVED)
-    };
-
-    // Add tenant and organization filters if they exist
-    if (tenantId) {
-      whereClause.tenantId = tenantId;
-    }
-    
-    if (organisationId) {
-      whereClause.organisationId = organisationId;
-    }
-
-    return this.lessonRepository.count({
-      where: whereClause
-    });
   }
 
   /**

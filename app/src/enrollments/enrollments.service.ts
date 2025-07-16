@@ -20,6 +20,8 @@ import { RESPONSE_MESSAGES } from '../common/constants/response-messages.constan
 import { CacheService } from '../cache/cache.service';
 import { ConfigService } from '@nestjs/config';
 import { Lesson, LessonStatus } from '../lessons/entities/lesson.entity';
+import { Module as CourseModule, ModuleStatus } from '../modules/entities/module.entity';
+import { ModuleTrack, ModuleTrackStatus } from '../tracking/entities/module-track.entity';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { CacheConfigService } from '../cache/cache-config.service';
 
@@ -35,6 +37,10 @@ export class EnrollmentsService {
     private readonly courseRepository: Repository<Course>,
     @InjectRepository(CourseTrack)
     private readonly courseTrackRepository: Repository<CourseTrack>,
+    @InjectRepository(CourseModule)
+    private readonly moduleRepository: Repository<CourseModule>,
+    @InjectRepository(ModuleTrack)
+    private readonly moduleTrackRepository: Repository<ModuleTrack>,
     private readonly cacheService: CacheService,
     private readonly configService: ConfigService,
     @InjectRepository(Lesson)
@@ -143,17 +149,26 @@ export class EnrollmentsService {
       // Save the enrollment
       const savedEnrollment = await queryRunner.manager.save(enrollment);
 
-      // Build where clause for course validation
-      const courseLessonWhereClause: any = { 
-        courseId, 
-        tenantId,
-        organisationId,
-        status: LessonStatus.PUBLISHED
-      };
-      
-      const courseLessons = await queryRunner.manager.count(Lesson, {
-        where: courseLessonWhereClause
-      }); 
+      // Get all published modules for the course
+      const modules = await queryRunner.manager.find(CourseModule, {
+        where: {
+          courseId,
+          tenantId,
+          organisationId,
+          status: ModuleStatus.PUBLISHED
+        }
+      });
+
+      // Count total lessons for the course (only published lessons in published modules)
+      const courseLessons = await queryRunner.manager
+        .createQueryBuilder(Lesson, 'lesson')
+        .innerJoin('lesson.module', 'module')
+        .where('lesson.status = :lessonStatus', { lessonStatus: LessonStatus.PUBLISHED })
+        .andWhere('module.status = :moduleStatus', { moduleStatus: ModuleStatus.PUBLISHED })
+        .andWhere('module.courseId = :courseId', { courseId })
+        .andWhere('lesson.tenantId = :tenantId', { tenantId })
+        .andWhere('lesson.organisationId = :organisationId', { organisationId })
+        .getCount();
 
       // Create course tracking record
       const courseTrack = queryRunner.manager.create(CourseTrack, {
@@ -169,6 +184,48 @@ export class EnrollmentsService {
       });
       
       await queryRunner.manager.save(courseTrack);
+
+      // Create module tracking records for each published module (bulk approach)
+      if (modules.length > 0) {
+        // Step 1: Preload lesson counts for all modules in a single query
+        const moduleIds = modules.map(m => m.moduleId);
+
+        const lessonCounts = await queryRunner.manager
+          .createQueryBuilder(Lesson, 'lesson')
+          .select('lesson.moduleId', 'moduleId')
+          .addSelect('COUNT(*)', 'count')
+          .where('lesson.moduleId IN (:...moduleIds)', { moduleIds })
+          .andWhere('lesson.status = :lessonStatus', { lessonStatus: LessonStatus.PUBLISHED })
+          .andWhere('lesson.tenantId = :tenantId', { tenantId })
+          .andWhere('lesson.organisationId = :organisationId', { organisationId })
+          .groupBy('lesson.moduleId')
+          .getRawMany();
+
+        // Step 2: Build a map of moduleId to lesson count
+        const lessonCountMap = new Map<string, number>();
+        lessonCounts.forEach(row => {
+          lessonCountMap.set(row.moduleId, parseInt(row.count, 10));
+        });
+
+        // Step 3: Create ModuleTrack records
+        const moduleTracks = modules.map(module => {
+          const totalLessons = lessonCountMap.get(module.moduleId) || 0;
+
+          return queryRunner.manager.create(ModuleTrack, {
+            moduleId: module.moduleId,
+            tenantId,
+            organisationId,
+            userId: createEnrollmentDto.learnerId,
+            status: ModuleTrackStatus.INCOMPLETE,
+            completedLessons: 0,
+            totalLessons,
+            progress: 0,
+          });
+        });
+
+        // Step 4: Bulk save
+        await queryRunner.manager.save(ModuleTrack, moduleTracks);
+      }
 
       // Find and return the complete enrollment with relations
       const completeEnrollment = await queryRunner.manager.findOne(UserEnrollment, {
