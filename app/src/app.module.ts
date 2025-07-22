@@ -14,6 +14,7 @@ import { CacheModule } from './cache/cache.module';
 import { TrackingModule } from './tracking/tracking.module';
 import { CloudStorageModule } from '@vinayak-patil/cloud-storage';
 import { ConfigurationModule } from './configuration/configuration.module';
+
 @Module({
   imports: [
     // Configuration
@@ -21,15 +22,20 @@ import { ConfigurationModule } from './configuration/configuration.module';
       isGlobal: true,
       envFilePath: ['.env'],
     }),
-    CloudStorageModule.register({
-      provider: process.env.CLOUD_STORAGE_PROVIDER as 'aws' | 'azure' | 'gcp',
-      region: process.env.CLOUD_STORAGE_REGION,
-      credentials: {
-        accessKeyId: process.env.CLOUD_STORAGE_ACCESS_KEY_ID,
-        secretAccessKey: process.env.CLOUD_STORAGE_SECRET_ACCESS_KEY,
-      },
-      bucket: process.env.CLOUD_STORAGE_BUCKET_NAME,
-    }),
+    // Conditionally import CloudStorageModule if provider is configured
+    ...(process.env.CLOUD_STORAGE_PROVIDER
+      ? [
+          CloudStorageModule.register({
+            provider: process.env.CLOUD_STORAGE_PROVIDER as 'aws' | 'azure' | 'gcp',
+            region: process.env.CLOUD_STORAGE_REGION,
+            credentials: {
+              accessKeyId: process.env.CLOUD_STORAGE_ACCESS_KEY_ID,
+              secretAccessKey: process.env.CLOUD_STORAGE_SECRET_ACCESS_KEY,
+            },
+            bucket: process.env.CLOUD_STORAGE_BUCKET_NAME,
+          }),
+        ]
+      : []),
     CacheModule,
     DatabaseModule,
     CommonModule,
@@ -45,4 +51,4 @@ import { ConfigurationModule } from './configuration/configuration.module';
   controllers: [AppController],
   providers: [AppService],
 })
-export class AppModule{}
+export class AppModule {}
