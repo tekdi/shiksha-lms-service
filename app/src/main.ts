@@ -5,7 +5,7 @@ import { ValidationPipe } from '@nestjs/common';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { ResponseTransformerInterceptor } from './common/interceptors/response-transformer.interceptor';
 import { ConfigService } from '@nestjs/config';
-
+import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 
 async function bootstrap() {
   try {
@@ -40,6 +40,17 @@ async function bootstrap() {
     // Set global interceptors
     app.useGlobalInterceptors(new ResponseTransformerInterceptor(reflector));
     
+    // --- Swagger setup ---
+    const swaggerConfig = new DocumentBuilder()
+      .setTitle('Shiksha LMS API')
+      .setDescription('API documentation for Shiksha LMS Service')
+      .setVersion('1.0')
+      .addBearerAuth()
+      .build();
+    const document = SwaggerModule.createDocument(app, swaggerConfig);
+    SwaggerModule.setup('docs', app, document);
+    // --- End Swagger setup ---
+
     // Start the application
     await app.listen(port, '0.0.0.0');
     console.log(`Application is running on port:${port}`);
