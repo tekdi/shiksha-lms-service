@@ -152,13 +152,13 @@ export class UpdateLessonDto extends PartialType(
   storage?: string;
 
   @ApiProperty({
-    description: 'Number of attempts allowed',
+    description: 'Number of attempts allowed (0 for unlimited)',
     example: 3,
     required: false,
   })
   @IsOptional()
   @IsInt({ message: VALIDATION_MESSAGES.COMMON.NUMBER('Number of attempts') })
-  @Min(1, { message: VALIDATION_MESSAGES.COMMON.POSITIVE('Number of attempts') })
+  @Min(0, { message: VALIDATION_MESSAGES.COMMON.POSITIVE('Number of attempts') })
   @Type(() => Number)
   noOfAttempts?: number;
 

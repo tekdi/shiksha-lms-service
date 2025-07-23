@@ -118,27 +118,23 @@ export class TrackingService {
         courseId,
         tenantId,
         organisationId,
-        status: Not(TrackingStatus.COMPLETED)
       } as FindOptionsWhere<LessonTrack>,
       order: { attempt: 'DESC' },
     });
 
     // If there's an incomplete attempt, return it
-    if (existingTracks.length > 0) {
-      const lessonTrackWithRelations = await this.lessonTrackRepository.findOne({
-        where: { lessonTrackId: existingTracks[0].lessonTrackId },
-        relations: ['lesson', 'lesson.media'],
-      });
+    const incompleteAttempt = existingTracks.find(track => track.status !== TrackingStatus.COMPLETED);
+    if (incompleteAttempt) {
       //check can resume
       const canResume = lesson.resume ?? true;
-      if (canResume && lessonTrackWithRelations) {
-        return lessonTrackWithRelations;
+      if (canResume) {
+        return incompleteAttempt;
       }      
     }
 
     // Check max attempts
     const maxAttempts = lesson.noOfAttempts || 1;
-    if (existingTracks.length > 0 && existingTracks[0].attempt >= maxAttempts) {
+    if (maxAttempts > 0 && existingTracks.length > 0 && existingTracks[0].attempt >= maxAttempts) {
       throw new BadRequestException(RESPONSE_MESSAGES.ERROR.MAX_ATTEMPTS_REACHED);
     }
 
@@ -160,16 +156,8 @@ export class TrackingService {
     //update course tracking and module tracking as here new attempt is started
     await this.updateCourseAndModuleTracking(lessonTrack, tenantId, organisationId);
     const savedLessonTrack = await this.lessonTrackRepository.save(lessonTrack);
-    const lessonTrackWithRelations = await this.lessonTrackRepository.findOne({
-      where: { lessonTrackId: savedLessonTrack.lessonTrackId },
-      relations: ['lesson', 'lesson.media'],
-    });
 
-    if (!lessonTrackWithRelations) {
-      throw new NotFoundException(RESPONSE_MESSAGES.ERROR.ATTEMPT_NOT_FOUND);
-    }
-
-    return lessonTrackWithRelations;
+    return savedLessonTrack;
   }
 
   /**
@@ -239,7 +227,7 @@ export class TrackingService {
       // start over
       // Check max attempts
       const maxAttempts = lesson.noOfAttempts || 1;
-      if (latestTrack.attempt >= maxAttempts) {
+      if (maxAttempts > 0 && latestTrack.attempt >= maxAttempts) {
         throw new BadRequestException(RESPONSE_MESSAGES.ERROR.MAX_ATTEMPTS_REACHED);
       }
 
@@ -320,8 +308,8 @@ export class TrackingService {
         status.canResume = true;
       }
 
-      const maxAttempts = lesson.noOfAttempts || 1;
-      if (latestTrack.attempt < maxAttempts && latestTrack.status === TrackingStatus.COMPLETED) {
+      const maxAttempts = lesson.noOfAttempts || 0;
+      if ((maxAttempts === 0 || latestTrack.attempt < maxAttempts) && latestTrack.status === TrackingStatus.COMPLETED) {
         status.canReattempt = true;
       }
     } else {

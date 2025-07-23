@@ -637,6 +637,8 @@ export class CoursesService {
             ...lesson,
             tracking: lessonTrack ? {
               status: lessonTrack.status,
+              canResume: (lesson.resume ?? true) && (lessonTrack.status === TrackingStatus.STARTED || lessonTrack.status === TrackingStatus.INCOMPLETE),
+              canReattempt: (lesson.noOfAttempts === 0 || lessonTrack.attempt < lesson.noOfAttempts) && lessonTrack.status === TrackingStatus.COMPLETED,
               progress: lessonTrack.status === TrackingStatus.COMPLETED ? 100 :
                 (lessonTrack.status === TrackingStatus.STARTED ? 0 :
                   Math.min(Math.round(((lessonTrack.totalContent > 0 ? lessonTrack.currentPosition / lessonTrack.totalContent : 0)) * 100), 99)),
