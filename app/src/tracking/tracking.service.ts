@@ -98,11 +98,6 @@ export class TrackingService {
       throw new NotFoundException(RESPONSE_MESSAGES.ERROR.COURSE_LESSON_NOT_FOUND);
     }
 
-    const canResume = lesson.resume ?? true;
-    if (!canResume) {
-      throw new BadRequestException(RESPONSE_MESSAGES.ERROR.RESUME_NOT_ALLOWED);
-    }
-
     //check if course is completed ,then throw error
     const courseTrack = await this.courseTrackRepository.findOne({
       where: {
@@ -122,22 +117,23 @@ export class TrackingService {
         userId,
         courseId,
         tenantId,
-        organisationId
+        organisationId,
+        status: Not(TrackingStatus.COMPLETED)
       } as FindOptionsWhere<LessonTrack>,
       order: { attempt: 'DESC' },
     });
 
     // If there's an incomplete attempt, return it
-    const incompleteAttempt = existingTracks.find(track => track.status !== TrackingStatus.COMPLETED);
-    if (incompleteAttempt) {
+    if (existingTracks.length > 0) {
       const lessonTrackWithRelations = await this.lessonTrackRepository.findOne({
-        where: { lessonTrackId: incompleteAttempt.lessonTrackId },
+        where: { lessonTrackId: existingTracks[0].lessonTrackId },
         relations: ['lesson', 'lesson.media'],
       });
-      if (!lessonTrackWithRelations) {
-        throw new NotFoundException(RESPONSE_MESSAGES.ERROR.ATTEMPT_NOT_FOUND);
-      }
-      return lessonTrackWithRelations;
+      //check can resume
+      const canResume = lesson.resume ?? true;
+      if (canResume && lessonTrackWithRelations) {
+        return lessonTrackWithRelations;
+      }      
     }
 
     // Check max attempts
@@ -311,7 +307,7 @@ export class TrackingService {
     const status: LessonStatusDto = {
       canResume: false,
       canReattempt: false,
-      lastAttemptStatus: 'NOT_STARTED',
+      lastAttemptStatus: TrackingStatus.NOT_STARTED,
       lastAttemptId: null
     };
 

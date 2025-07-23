@@ -495,9 +495,9 @@ export class CoursesService {
         where: { courseId, userId, tenantId, organisationId }
       });
       // Determine tracking status based on eligibility
-      let trackingStatus = 'NOT_STARTED';
+      let trackingStatus = TrackingStatus.NOT_STARTED;
       if (!eligibility.isEligible) {
-        trackingStatus = 'NOT_ELIGIBLE';
+        trackingStatus = TrackingStatus.NOT_ELIGIBLE;
       } else if (courseTracking) {
         trackingStatus = courseTracking.status;
       }
@@ -652,7 +652,7 @@ export class CoursesService {
                 currentPosition: lessonTrack.currentPosition || 0
               }
             } : {
-              status: 'NOT_STARTED',
+              status: TrackingStatus.NOT_STARTED,
               progress: 0,
               lastAccessed: null,
               timeSpent: 0,
@@ -672,7 +672,7 @@ export class CoursesService {
           completedLessons: moduleTrack.completedLessons,
           totalLessons: moduleTrack.totalLessons,
         } : {
-          status: 'NOT_STARTED',
+          status: TrackingStatus.NOT_STARTED,
           progress: 0,
           completedLessons: 0,
           totalLessons: (lessonsByModule.get(module.moduleId) || []).length,
@@ -702,9 +702,9 @@ export class CoursesService {
       : 0;
     
     // Determine tracking status based on eligibility
-    let trackingStatus = 'NOT_STARTED';
+    let trackingStatus = TrackingStatus.NOT_STARTED;
     if (!eligibility.isEligible) {
-      trackingStatus = 'NOT_ELIGIBLE';
+      trackingStatus = TrackingStatus.NOT_ELIGIBLE;
     } else if (courseTracking) {
       trackingStatus = courseTracking.status;
     }

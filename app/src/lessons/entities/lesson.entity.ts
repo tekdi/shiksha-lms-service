@@ -18,14 +18,17 @@ import { Module } from '../../modules/entities/module.entity';
 export enum LessonFormat {
   VIDEO = 'video',
   DOCUMENT = 'document',
-  QUIZ = 'test',
+  ASSESSMENT = 'test',
   EVENT = 'event',
   TEXT_AND_MEDIA = 'text_and_media',
 }
 export enum LessonSubFormat {
   YOUTUBE = 'youtube.url',
+  VIMEO = 'video.url',
   PDF = 'pdf',
   QUIZ = 'quiz',
+  ASSESSMENT = 'assessment',
+  FEEDBACK = 'feedback',
   EVENT = 'event',
   VIDEO = 'video.url',
   EXTERNAL_URL = 'external.url',
