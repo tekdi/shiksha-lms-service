@@ -149,6 +149,7 @@ export class TrackingService {
       status: TrackingStatus.STARTED,
       startDatetime: new Date(),
       totalContent: 0,
+      completionPercentage: 0,
       score: 0,
       currentPosition: 0,
       timeSpent: 0
@@ -241,6 +242,7 @@ export class TrackingService {
         attempt: latestTrack.attempt,
         status: TrackingStatus.STARTED,
         startDatetime: new Date(),
+        completionPercentage: 0,
         score: 0,
         totalContent: 0,
         currentPosition: 0,
@@ -375,13 +377,30 @@ export class TrackingService {
     attempt.timeSpent = updateProgressDto.timeSpent || 0;
     attempt.totalContent = updateProgressDto.totalContent || 0;
 
+    // Update completion percentage if provided
+    if (updateProgressDto.completionPercentage !== undefined) {
+      attempt.completionPercentage = updateProgressDto.completionPercentage;
+    } else if (updateProgressDto.currentPosition && updateProgressDto.totalContent) {
+      // Calculate completion percentage if not provided but position and total content are available
+      attempt.completionPercentage = Math.round((updateProgressDto.currentPosition / updateProgressDto.totalContent) * 100);
+    }
+
+    // Update params if provided
+    if (updateProgressDto.params) {
+      attempt.params = updateProgressDto.params;
+    }
+
     // Update status if completed
-    if (updateProgressDto.currentPosition === updateProgressDto.totalContent) {
+    if (updateProgressDto.currentPosition === updateProgressDto.totalContent || 
+        (updateProgressDto.completionPercentage !== undefined && updateProgressDto.completionPercentage >= 100) ||
+      (updateProgressDto.status === TrackingStatus.COMPLETED)) {
       attempt.status = TrackingStatus.COMPLETED;
       attempt.endDatetime = new Date();
+      attempt.completionPercentage = 100; // Ensure completion percentage is 100 when completed
     } else if (attempt.status === TrackingStatus.STARTED) {
       attempt.status = TrackingStatus.INCOMPLETE;
     }
+    
     attempt.updatedAt = new Date();
     attempt.updatedBy = userId;
 

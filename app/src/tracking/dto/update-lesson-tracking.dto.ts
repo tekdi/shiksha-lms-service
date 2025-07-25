@@ -40,6 +40,28 @@ export class UpdateLessonTrackingDto {
   @IsOptional()
   score?: number;
 
+  @ApiProperty({ 
+    description: 'Completion percentage (0-100)',
+    example: 75,
+    minimum: 0,
+    maximum: 100,
+    required: false
+  })
+  @IsOptional()
+  @IsNumber({}, { message: VALIDATION_MESSAGES.COMMON.NUMBER('Completion percentage') })
+  @Min(0, { message: VALIDATION_MESSAGES.COMMON.MIN_VALUE('Completion percentage', 0) })
+  @Max(100, { message: VALIDATION_MESSAGES.COMMON.MAX_VALUE('Completion percentage', 100) })
+  @Type(() => Number)
+  completionPercentage?: number;
+
+  @ApiProperty({ 
+    description: 'Additional parameters as JSON object',
+    example: { 'quizScore': 85, 'timeSpent': 1200, 'interactions': 15 },
+    required: false
+  })
+  @IsOptional()
+  @IsObject({ message: VALIDATION_MESSAGES.COMMON.OBJECT('Parameters') })
+  params?: Record<string, any>;
 
   @ApiProperty({ 
     description: 'Status',
@@ -55,9 +77,9 @@ export class UpdateLessonTrackingDto {
     example: 300,
     required: false
   })
+  @IsOptional()
   @IsNumber({}, { message: VALIDATION_MESSAGES.COMMON.NUMBER('Time spent') })
   @Min(0, { message: VALIDATION_MESSAGES.COMMON.POSITIVE('Time spent') })
-  @IsOptional()
   @Type(() => Number)
   timeSpent?: number;
 

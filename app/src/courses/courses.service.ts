@@ -606,9 +606,7 @@ export class CoursesService {
             startDatetime: lastTrack.startDatetime,
             endDatetime: lastTrack.endDatetime,
             score: lastTrack.score,
-            progress: lastTrack.status === TrackingStatus.COMPLETED ? 100 :
-              (lastTrack.status === TrackingStatus.STARTED ? 0 :
-                Math.min(Math.round((lastTrack.currentPosition || 0) * 100), 99)),
+            completionPercentage: lastTrack.completionPercentage || 0,
             timeSpent: lastTrack.timeSpent || 0,
             lastAccessed: lastTrack.updatedAt,
             totalContent: lastTrack.totalContent || 0,
@@ -639,9 +637,7 @@ export class CoursesService {
               status: lessonTrack.status,
               canResume: (lesson.resume ?? true) && (lessonTrack.status === TrackingStatus.STARTED || lessonTrack.status === TrackingStatus.INCOMPLETE),
               canReattempt: (lesson.noOfAttempts === 0 || lessonTrack.attempt < lesson.noOfAttempts) && lessonTrack.status === TrackingStatus.COMPLETED,
-              progress: lessonTrack.status === TrackingStatus.COMPLETED ? 100 :
-                (lessonTrack.status === TrackingStatus.STARTED ? 0 :
-                  Math.min(Math.round(((lessonTrack.totalContent > 0 ? lessonTrack.currentPosition / lessonTrack.totalContent : 0)) * 100), 99)),
+              completionPercentage: lessonTrack.completionPercentage || 0,
               lastAccessed: lessonTrack.updatedAt,
               timeSpent: lessonTrack.timeSpent || 0,
               score: lessonTrack.score,
