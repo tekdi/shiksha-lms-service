@@ -581,13 +581,13 @@ export class TrackingService {
       courseTrack.completedLessons = uniqueCompletedLessonIds.length;
       
       // Check if course is completed
-      if (courseTrack.completedLessons >= courseTrack.noOfLessons) {
-        courseTrack.status = TrackingStatus.COMPLETED;
-        courseTrack.endDatetime = new Date();
+      // if (courseTrack.completedLessons >= courseTrack.noOfLessons) {
+      //   courseTrack.status = TrackingStatus.COMPLETED;
+      //   courseTrack.endDatetime = new Date();
         
-      } else {
+      // } else {
         courseTrack.status = TrackingStatus.INCOMPLETE;
-      }
+      // }
     }
     await this.courseTrackRepository.save(courseTrack);
 
