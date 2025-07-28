@@ -441,19 +441,20 @@ export class TrackingService {
 
     // If the lesson is completed, update completed lessons count
     if (lessonTrack.status === TrackingStatus.COMPLETED || courseTrack.status === TrackingStatus.STARTED) {
-      // Get all completed lessons for this course
-      const completedLessonTracks = await this.lessonTrackRepository.find({
-        where: { 
-          courseId: lessonTrack.courseId, 
-          userId: lessonTrack.userId, 
-          status: TrackingStatus.COMPLETED,
-          tenantId,
-          organisationId
-        } as FindOptionsWhere<LessonTrack>,
-      });
+      // Get all completed lessons for this course that have considerForPassing = true
+      const completedLessonTracksWithConsiderFlag = await this.lessonTrackRepository
+        .createQueryBuilder('lessonTrack')
+        .innerJoin('lessonTrack.lesson', 'lesson')
+        .where('lessonTrack.courseId = :courseId', { courseId: lessonTrack.courseId })
+        .andWhere('lessonTrack.userId = :userId', { userId: lessonTrack.userId })
+        .andWhere('lessonTrack.status = :status', { status: TrackingStatus.COMPLETED })
+        .andWhere('lessonTrack.tenantId = :tenantId', { tenantId })
+        .andWhere('lessonTrack.organisationId = :organisationId', { organisationId })
+        .andWhere('lesson.considerForPassing = :considerForPassing', { considerForPassing: true })
+        .getMany();
 
       // Get unique lesson IDs
-      const uniqueCompletedLessonIds = [...new Set(completedLessonTracks.map(track => track.lessonId))];
+      const uniqueCompletedLessonIds = [...new Set(completedLessonTracksWithConsiderFlag.map(track => track.lessonId))];
       
       // Update course track
       courseTrack.completedLessons = uniqueCompletedLessonIds.length;
@@ -524,26 +525,28 @@ export class TrackingService {
       });
     }
 
-    // Get all lessons in this module
+    // Get all lessons in this module with considerForPassing = true
     const moduleLessons = await this.lessonRepository.find({
       where: { 
         moduleId,
         tenantId,
         organisationId,
-        status: Not(LessonStatus.ARCHIVED)
+        status: Not(LessonStatus.ARCHIVED),
+        considerForPassing: true
       } as FindOptionsWhere<Lesson>,
     });
 
-    // Get completed lessons for this module
-    const completedLessonTracks = await this.lessonTrackRepository.find({
-      where: { 
-        lessonId: In(moduleLessons.map(l => l.lessonId)),
-        userId,
-        status: TrackingStatus.COMPLETED,
-        tenantId,
-        organisationId
-      } as FindOptionsWhere<LessonTrack>,
-    });
+    // Get completed lessons for this module that have considerForPassing = true
+    const completedLessonTracks = await this.lessonTrackRepository
+      .createQueryBuilder('lessonTrack')
+      .innerJoin('lessonTrack.lesson', 'lesson')
+      .where('lessonTrack.lessonId IN (:...lessonIds)', { lessonIds: moduleLessons.map(l => l.lessonId) })
+      .andWhere('lessonTrack.userId = :userId', { userId })
+      .andWhere('lessonTrack.status = :status', { status: TrackingStatus.COMPLETED })
+      .andWhere('lessonTrack.tenantId = :tenantId', { tenantId })
+      .andWhere('lessonTrack.organisationId = :organisationId', { organisationId })
+      .andWhere('lesson.considerForPassing = :considerForPassing', { considerForPassing: true })
+      .getMany();
 
     // Get unique completed lesson IDs
     const uniqueCompletedLessonIds = [...new Set(completedLessonTracks.map(track => track.lessonId))];
