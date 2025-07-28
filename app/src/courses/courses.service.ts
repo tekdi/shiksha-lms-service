@@ -1323,7 +1323,7 @@ export class CoursesService {
         storage: originalLesson.storage,
         noOfAttempts: originalLesson.noOfAttempts,
         attemptsGrade: originalLesson.attemptsGrade,
-        eligibilityCriteria: originalLesson.eligibilityCriteria,
+        prerequisites: originalLesson.prerequisites,
         idealTime: originalLesson.idealTime,
         resume: originalLesson.resume,
         totalMarks: originalLesson.totalMarks,

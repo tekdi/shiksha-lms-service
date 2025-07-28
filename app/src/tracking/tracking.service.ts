@@ -37,7 +37,6 @@ export class TrackingService {
     private readonly configService: ConfigService,
   ) {}
 
-
   /**
    * Get course tracking
    * @param courseId The course ID
@@ -96,6 +95,24 @@ export class TrackingService {
     
     if (!courseId) {
       throw new NotFoundException(RESPONSE_MESSAGES.ERROR.COURSE_LESSON_NOT_FOUND);
+    }
+
+    // Check prerequisites if any exist
+    const prerequisiteCheck = await this.checkLessonsPrerequisites(
+      lesson,
+      userId,
+      courseId,
+      tenantId,
+      organisationId
+    );
+
+    if (!prerequisiteCheck.isEligible && prerequisiteCheck.requiredLessons) {
+      // Get the titles of missing prerequisite lessons for better error message
+      const missingPrerequisiteLessons = prerequisiteCheck.requiredLessons.filter(l => !l.completed);
+      const missingLessonTitles = missingPrerequisiteLessons.map(l => l.title).join(', ');
+      throw new BadRequestException(
+        `Cannot start lesson. Prerequisites not completed: ${missingLessonTitles}. Please complete the required lessons first.`
+      );
     }
 
     //check if course is completed ,then throw error
@@ -160,6 +177,89 @@ export class TrackingService {
 
     return savedLessonTrack;
   }
+
+
+  /**
+   * Check if all prerequisites for a lesson are completed
+   * @param lesson The lesson to check prerequisites for
+   * @param userId The user ID
+   * @param courseId The course ID
+   * @param tenantId The tenant ID
+   * @param organisationId The organization ID
+   * @returns Promise with prerequisite status information
+   */
+  private async checkLessonsPrerequisites(
+    lesson: Lesson,
+    userId: string,
+    courseId: string,
+    tenantId: string,
+    organisationId: string
+  ): Promise<{isEligible: boolean, requiredLessons: any[]}> {
+    if (!lesson.prerequisites || lesson.prerequisites.length === 0) {
+      return {
+        isEligible: true,
+        requiredLessons: []
+      };
+    }
+
+    const requiredLessons: any[] = [];
+    let allCompleted = true;
+
+    // Check each required lesson ID from the array
+    for (const requiredLessonId of lesson.prerequisites) {
+      // Fetch the required lesson details
+      const requiredLesson = await this.lessonRepository.findOne({
+        where: {
+          lessonId: requiredLessonId,
+          tenantId,
+          organisationId,
+          status: LessonStatus.PUBLISHED
+        },
+        select: ['lessonId', 'title']
+      });
+
+      if (!requiredLesson) {
+        // If required lesson doesn't exist, consider it as not completed
+        requiredLessons.push({
+          lessonId: requiredLessonId,
+          title: 'Unknown Lesson',
+          completed: false
+        });
+        allCompleted = false;
+        continue;
+      }
+
+      // Check if the user has completed this lesson
+      const completedTrack = await this.lessonTrackRepository.findOne({
+        where: {
+          lessonId: requiredLessonId,
+          userId,
+          courseId,
+          tenantId,
+          organisationId,
+          status: TrackingStatus.COMPLETED
+        } as FindOptionsWhere<LessonTrack>,
+      });
+
+      const isCompleted = !!completedTrack;
+
+      requiredLessons.push({
+        lessonId: requiredLessonId,
+        title: requiredLesson.title,
+        completed: isCompleted
+      });
+
+      if (!isCompleted) {
+        allCompleted = false;
+      }
+    }
+
+    return {
+      isEligible: allCompleted,
+      requiredLessons
+    };
+  }
+
 
   /**
    * Manage lesson attempt - start over or resume
@@ -294,12 +394,33 @@ export class TrackingService {
       order: { attempt: 'DESC' },
     });
 
+    //check lesson prerequisites
+    const prerequisiteCheck = await this.checkLessonsPrerequisites(
+      lesson,
+      userId,
+      lesson.courseId,
+      tenantId,
+      organisationId
+    );
+
     const status: LessonStatusDto = {
       canResume: false,
       canReattempt: false,
       lastAttemptStatus: TrackingStatus.NOT_STARTED,
-      lastAttemptId: null
+      lastAttemptId: null,
+      isEligible: prerequisiteCheck.isEligible,
+      requiredLessons: prerequisiteCheck.requiredLessons
     };
+
+    if (!prerequisiteCheck.isEligible) {
+      status.canResume = false;
+      status.canReattempt = false;
+      status.lastAttemptStatus = TrackingStatus.NOT_ELIGIBLE;
+      status.lastAttemptId = null;
+      status.isEligible = false;
+      status.requiredLessons = prerequisiteCheck.requiredLessons;
+      return status;
+    }
 
     if (latestTrack) {
       status.lastAttemptId = latestTrack.lessonTrackId;
@@ -531,7 +652,7 @@ export class TrackingService {
         moduleId,
         tenantId,
         organisationId,
-        status: Not(LessonStatus.ARCHIVED),
+        status: LessonStatus.PUBLISHED,
         considerForPassing: true
       } as FindOptionsWhere<Lesson>,
     });

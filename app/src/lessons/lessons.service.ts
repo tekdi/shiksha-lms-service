@@ -169,7 +169,7 @@ export class LessonsService {
         storage: storage,
         noOfAttempts: createLessonDto.noOfAttempts || 0,
         attemptsGrade: createLessonDto.attemptsGrade || AttemptsGradeMethod.HIGHEST,
-        eligibilityCriteria: createLessonDto.eligibilityCriteria,
+        prerequisites: createLessonDto.prerequisites,
         idealTime: createLessonDto.idealTime,
         resume: createLessonDto.resume || false,
         totalMarks: createLessonDto.totalMarks,
@@ -549,8 +549,8 @@ export class LessonsService {
         updateData.attemptsGrade = updateLessonDto.attemptsGrade;
       }
       
-      if (updateLessonDto.eligibilityCriteria !== undefined) {
-        updateData.eligibilityCriteria = updateLessonDto.eligibilityCriteria;
+      if (updateLessonDto.prerequisites !== undefined) {
+        updateData.prerequisites = updateLessonDto.prerequisites;
       }
       
       if (updateLessonDto.idealTime !== undefined) {

@@ -14,6 +14,7 @@ import {
   Validate,
   IsNumber,
   IsUrl,
+  IsArray,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { VALIDATION_MESSAGES } from '../../common/constants/response-messages.constant';
@@ -170,13 +171,16 @@ export class CreateLessonDto {
   attemptsGrade?: AttemptsGradeMethod = AttemptsGradeMethod.HIGHEST;
 
   @ApiProperty({
-    description: 'Eligibility criteria',
-    example: 'COMPLETE_PREVIOUS',
-    required: false
+    description: 'Prerequisites for the lesson - array of prerequisite lesson IDs',
+    example: ['123e4567-e89b-12d3-a456-426614174000', '987fcdeb-51a2-43c1-b456-426614174000'],
+    required: false,
+    type: [String],
+    isArray: true
   })
   @IsOptional()
-  @IsString({ message: VALIDATION_MESSAGES.COMMON.STRING('Eligibility criteria') })
-  eligibilityCriteria?: string;
+  @IsArray({ message: VALIDATION_MESSAGES.COMMON.ARRAY('Prerequisites') })
+  @IsUUID('4', { each: true, message: VALIDATION_MESSAGES.COMMON.UUID('Prerequisite lesson ID') })
+  prerequisites?: string[];
 
   @ApiProperty({
     description: VALIDATION_MESSAGES.LESSON.DURATION,
