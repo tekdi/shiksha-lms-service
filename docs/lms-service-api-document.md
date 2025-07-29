@@ -194,6 +194,19 @@ Content-Type: application/json
 }
 ```
 
+**Validations and Conditions**:
+
+**Input Validation Rules**:
+- No input parameters required
+- No request body validation needed
+
+**Business Logic Conditions**:
+- System must be running and accessible
+- Database connection must be established
+- All required services must be healthy
+- Uptime calculation must be accurate
+- Timestamp must be in ISO format
+
 **Status Codes**:
 - `200 OK`: System is healthy
 - `500 Internal Server Error`: System health check failed
@@ -247,6 +260,25 @@ organisationid: <organisation-id>
 }
 ```
 
+**Validations and Conditions**:
+
+**Input Validation Rules**:
+- `tenantid` header must be present and valid UUID format
+- `organisationid` header must be present and valid UUID format
+- Headers must not be empty or null
+
+**Business Logic Conditions**:
+- Tenant must exist in the system
+- Organization must be associated with the tenant
+- Configuration must be available for the tenant
+- If tenant configuration is not found, return default configuration
+- Configuration must be cached for performance
+- Feature flags must be properly evaluated
+
+**Authorization Conditions**:
+- User must have access to the specified tenant
+- User must have read permissions for configuration
+
 #### Sync Configuration
 
 **Endpoint**: `POST /config/sync`
@@ -280,6 +312,27 @@ organisationid: <organisation-id>
   }
 }
 ```
+
+**Validations and Conditions**:
+
+**Input Validation Rules**:
+- `tenantid` header must be present and valid UUID format
+- `organisationid` header must be present and valid UUID format
+- Headers must not be empty or null
+
+**Business Logic Conditions**:
+- Tenant must exist in the system
+- External configuration service must be accessible
+- Sync operation must be idempotent
+- Configuration changes must be atomic
+- If sync fails, previous configuration must be preserved
+- Sync must be logged for audit purposes
+- Rate limiting applies to prevent excessive sync requests
+
+**Authorization Conditions**:
+- User must have admin permissions for the tenant
+- User must have write permissions for configuration
+- Sync operation requires elevated privileges
 
 ---
 
@@ -365,6 +418,44 @@ organisationid: <organisation-id>
 }
 ```
 
+**Validations and Conditions**:
+
+**Input Validation Rules**:
+- `title` must be present, non-empty, and max 255 characters
+- `startDatetime` must be present and valid date format
+- `endDatetime` must be valid date format and after startDatetime (if provided)
+- `shortDescription` must be present and string type
+- `description` must be present, non-empty, and string type
+- `alias` must be unique within the tenant (if provided, auto-generated if not)
+- `image` file must be valid image format and within tenant-configured size limits (if provided)
+- `featured` must be boolean value (default: false)
+- `free` must be boolean value (default: false)
+- `status` must be one of: 'published', 'unpublished', 'archived' (default: 'unpublished')
+- `adminApproval` must be boolean value (default: false)
+- `autoEnroll` must be boolean value (default: false)
+- `rewardType` must be one of: 'certificate', 'badge' (if provided)
+- `templateId` must be valid UUID format (if provided)
+- `prerequisites` must be array of valid UUIDs (if provided)
+- `params` must be valid JSON object (if provided)
+- `userId` query parameter must be present and valid UUID
+
+**Business Logic Conditions**:
+- Course alias must be unique within the tenant (auto-generated if not provided)
+- If course is published, all required fields must be completed
+- If adminApproval is true, course status must be 'unpublished'
+- If autoEnroll is true, course must be free or have proper enrollment rules
+- If prerequisites are specified, all prerequisite courses must exist
+- If templateId is provided, template must exist and be accessible
+- Image upload must be processed and stored securely according to tenant configuration
+- Course creation must be atomic (all-or-nothing)
+- Audit trail must be maintained for course creation
+
+**Authorization Conditions**:
+- User must have create permissions for courses in the tenant
+- User must have access to the specified organization
+- If creating featured course, user must have admin privileges
+- If setting adminApproval, user must have admin permissions
+
 #### Search Courses
 
 **Endpoint**: `GET /courses/search`
@@ -445,6 +536,43 @@ organisationid: <organisation-id>
 }
 ```
 
+**Validations and Conditions**:
+
+**Input Validation Rules**:
+- `tenantid` header must be present and valid UUID format
+- `organisationid` header must be present and valid UUID format
+- `query` must be string and max 100 characters (if provided)
+- `cohortId` must be valid UUID format (if provided)
+- `status` must be one of: 'published', 'unpublished', 'archived' (if provided)
+- `featured` must be boolean value (if provided)
+- `free` must be boolean value (if provided)
+- `startDateFrom` must be valid ISO date format (if provided)
+- `startDateTo` must be valid ISO date format and after startDateFrom (if provided)
+- `endDateFrom` must be valid ISO date format (if provided)
+- `endDateTo` must be valid ISO date format and after endDateFrom (if provided)
+- `createdBy` must be valid UUID format (if provided)
+- `offset` must be non-negative integer (default: 0)
+- `limit` must be positive integer between 1-100 (default: 10)
+- `sortBy` must be one of: 'createdAt', 'updatedAt', 'title', 'startDatetime', 'endDatetime', 'featured', 'free' (default: 'createdAt')
+- `orderBy` must be one of: 'ASC', 'DESC' (default: 'DESC')
+
+**Business Logic Conditions**:
+- Search results must be filtered by tenant and organization
+- If query is provided, search must be performed on title, description, and shortDescription
+- Date range filters must be applied correctly
+- Pagination must work correctly with offset and limit
+- Sorting must be applied before pagination
+- Only published courses should be returned for non-admin users
+- Featured courses should appear first when featured=true
+- Search must be case-insensitive
+- Results must be ordered by relevance when query is provided
+
+**Authorization Conditions**:
+- User must have read permissions for courses in the tenant
+- User must have access to the specified organization
+- Admin users can see all courses regardless of status
+- Non-admin users can only see published courses
+
 #### Get Course by ID
 
 **Endpoint**: `GET /courses/{courseId}`
@@ -505,6 +633,29 @@ organisationid: <organisation-id>
   }
 }
 ```
+
+**Validations and Conditions**:
+
+**Input Validation Rules**:
+- `tenantid` header must be present and valid UUID format
+- `organisationid` header must be present and valid UUID format
+- `courseId` path parameter must be present and valid UUID format
+
+**Business Logic Conditions**:
+- Course must exist in the system
+- Course must belong to the specified tenant and organization
+- If course is archived, only admin users can access it
+- If course is unpublished, only course creator or admin can access it
+- Course data must be cached for performance
+- Related modules must be loaded if requested
+- Course must be accessible based on user permissions
+
+**Authorization Conditions**:
+- User must have read permissions for courses in the tenant
+- User must have access to the specified organization
+- Admin users can access any course regardless of status
+- Non-admin users can only access published courses
+- Course creator can access their own courses regardless of status
 
 #### Get Course Hierarchy
 
@@ -604,6 +755,31 @@ organisationid: <organisation-id>
   }
 }
 ```
+
+**Validations and Conditions**:
+
+**Input Validation Rules**:
+- `tenantid` header must be present and valid UUID format
+- `organisationid` header must be present and valid UUID format
+- `courseId` path parameter must be present and valid UUID format
+
+**Business Logic Conditions**:
+- Course must exist and be accessible
+- Course must belong to the specified tenant and organization
+- Only published modules should be included in hierarchy
+- Only published lessons should be included in hierarchy
+- Modules must be ordered by their ordering field
+- Lessons must be ordered by their ordering field within each module
+- Hierarchy must be cached for performance
+- If course is archived, only admin users can access hierarchy
+- If course is unpublished, only course creator or admin can access hierarchy
+
+**Authorization Conditions**:
+- User must have read permissions for courses in the tenant
+- User must have access to the specified organization
+- Admin users can access hierarchy of any course regardless of status
+- Non-admin users can only access hierarchy of published courses
+- Course creator can access hierarchy of their own courses regardless of status
 
 #### Get Course Hierarchy with Tracking
 
@@ -1098,6 +1274,41 @@ organisationid: <organisation-id>
 }
 ```
 
+**Validations and Conditions**:
+
+**Input Validation Rules**:
+- `courseId` path parameter must be present and valid UUID format
+- `tenantid` header must be present and valid UUID format
+- `organisationid` header must be present and valid UUID format
+- `userId` query parameter must be present and valid UUID
+- All update fields follow same validation rules as Create Course
+- `title` must be max 255 characters (if provided)
+- `alias` must be unique within the tenant, alphanumeric with hyphens only (if provided)
+- `startDatetime` must be valid ISO date format (if provided)
+- `endDatetime` must be valid ISO date format and after startDatetime (if provided)
+- `image` file must be valid image format (JPG, PNG, GIF) and max 5MB (if provided)
+
+**Business Logic Conditions**:
+- Course must exist and be accessible for update
+- Course must belong to the specified tenant and organization
+- If updating alias, new alias must be unique within tenant
+- If updating status to 'published', all required fields must be completed
+- If updating adminApproval to true, course status must be 'unpublished'
+- If updating autoEnroll to true, course must be free or have proper enrollment rules
+- If updating prerequisites, all prerequisite courses must exist
+- If updating templateId, template must exist and be accessible
+- Update must be atomic (all-or-nothing)
+- Audit trail must be maintained for course updates
+- Image upload must be processed and stored securely (if provided)
+
+**Authorization Conditions**:
+- User must have update permissions for courses in the tenant
+- User must have access to the specified organization
+- Course creator can update their own courses
+- Admin users can update any course
+- If updating featured status, user must have admin privileges
+- If updating adminApproval, user must have admin permissions
+
 #### Delete Course
 
 **Endpoint**: `DELETE /courses/{courseId}`
@@ -1138,6 +1349,33 @@ organisationid: <organisation-id>
   }
 }
 ```
+
+**Validations and Conditions**:
+
+**Input Validation Rules**:
+- `courseId` path parameter must be present and valid UUID format
+- `tenantid` header must be present and valid UUID format
+- `organisationid` header must be present and valid UUID format
+- `userId` query parameter must be present and valid UUID
+
+**Business Logic Conditions**:
+- Course must exist and be accessible for deletion
+- Course must belong to the specified tenant and organization
+- If course has active enrollments, deletion should be prevented or handled appropriately
+- If course has associated modules/lessons, they should be archived or deleted
+- If course has associated media, media should be cleaned up
+- Deletion must be atomic (all-or-nothing)
+- Audit trail must be maintained for course deletion
+- Soft delete should be implemented (mark as archived rather than hard delete)
+- If course is published and has enrollments, special handling may be required
+
+**Authorization Conditions**:
+- User must have delete permissions for courses in the tenant
+- User must have access to the specified organization
+- Course creator can delete their own courses
+- Admin users can delete any course
+- If course has active enrollments, only admin users can delete
+- If course is published, special permissions may be required for deletion
 
 #### Clone Course
 
@@ -1336,6 +1574,43 @@ organisationid: <organisation-id>
   }
 }
 ```
+
+**Validations and Conditions**:
+
+**Input Validation Rules**:
+- `title` must be present, non-empty, and max 255 characters
+- `courseId` must be present and valid UUID format
+- `alias` must be string (if provided)
+- `parentId` must be valid UUID format (if provided)
+- `ordering` must be number (if provided)
+- `description` must be string (if provided)
+- `status` must be one of: 'published', 'unpublished', 'archived' (default: 'unpublished')
+- `image` file must be valid image format and within tenant-configured size limits (if provided)
+- `startDatetime` must be valid date format (if provided)
+- `endDatetime` must be valid date format and after startDatetime (if provided)
+- `prerequisites` must be array of valid UUIDs (if provided)
+- `badgeId` must be valid UUID format (if provided)
+- `badgeTerm` must be valid JSON object (if provided)
+- `params` must be valid JSON object (if provided)
+- `userId` query parameter must be present and valid UUID
+
+**Business Logic Conditions**:
+- Course must exist and be accessible
+- Course must belong to the specified tenant and organization
+- If parentId is provided, parent module must exist and be accessible
+- If prerequisites are specified, all prerequisite modules must exist
+- If badgeId is provided, badge must exist and be accessible
+- Module creation must be atomic (all-or-nothing)
+- Audit trail must be maintained for module creation
+- Image upload must be processed and stored securely according to tenant configuration
+- If module is published, all required fields must be completed
+- If parentId is provided, parent module must belong to the same course
+
+**Authorization Conditions**:
+- User must have create permissions for modules in the tenant
+- User must have access to the specified organization
+- User must have access to the parent course
+- If creating nested module, user must have access to parent module
 
 #### Get Module by ID
 
@@ -1708,6 +1983,57 @@ organisationid: <organisation-id>
   }
 }
 ```
+
+**Validations and Conditions**:
+
+**Input Validation Rules**:
+- `title` must be present, non-empty, and max 255 characters
+- `format` must be one of: 'video', 'document', 'test', 'event', 'text_and_media'
+- `mediaContentSource` must be present and valid URL (for non-document formats)
+- `mediaContentPath` must be present for document format
+- `mediaContentSubFormat` must be one of: 'youtube.url', 'video.url', 'pdf', 'quiz', 'assessment', 'feedback', 'event', 'external.url'
+- `alias` must be string (if provided)
+- `description` must be string type (if provided)
+- `image` file must be valid image format and within tenant-configured size limits (if provided)
+- `checkedOut` must be valid UUID format (if provided)
+- `status` must be one of: 'published', 'unpublished', 'archived' (default: 'published')
+- `startDatetime` must be valid date format (if provided)
+- `endDatetime` must be valid date format and after startDatetime (if provided)
+- `storage` must be string (default: 'local')
+- `noOfAttempts` must be non-negative integer (0 for unlimited, default: 1)
+- `attemptsGrade` must be one of: 'first_attempt', 'last_attempt', 'average', 'highest' (default: 'highest')
+- `prerequisites` must be array of valid UUIDs (if provided)
+- `idealTime` must be positive integer in minutes (if provided)
+- `resume` must be boolean value (default: false)
+- `totalMarks` must be non-negative integer (if provided)
+- `passingMarks` must be non-negative integer (if provided)
+- `sampleLesson` must be boolean value (default: false)
+- `ordering` must be number (if provided)
+- `considerForPassing` must be boolean value (default: true)
+- `params` must be valid JSON object (if provided)
+- `courseId` must be present and valid UUID format
+- `moduleId` must be present and valid UUID format
+- `userId` query parameter must be present and valid UUID
+
+**Business Logic Conditions**:
+- Module must exist and be accessible
+- Module must belong to the specified tenant and organization
+- If courseId is provided, course must exist and module must belong to it
+- If prerequisites are specified, all prerequisite lessons must exist
+- If mediaId is provided, media must exist and be accessible
+- Lesson creation must be atomic (all-or-nothing)
+- Audit trail must be maintained for lesson creation
+- Image upload must be processed and stored securely according to tenant configuration
+- If lesson is published, all required fields must be completed
+- If format is 'document', mediaContentPath must be provided
+- If format is 'video', mediaContentSource must be provided
+
+**Authorization Conditions**:
+- User must have create permissions for lessons in the tenant
+- User must have access to the specified organization
+- User must have access to the parent module
+- If setting checkedOut, user must have checkout permissions
+- If creating sample lesson, user must have admin privileges
 
 #### Get All Lessons
 
@@ -2152,6 +2478,32 @@ organisationid: <organisation-id>
 }
 ```
 
+**Validations and Conditions**:
+
+**Input Validation Rules**:
+- `file` must be present and valid file upload
+- File must be in multipart/form-data format
+- File size must be within tenant-configured limits for media uploads
+- File type must be within tenant-configured allowed formats
+- `lessonId` must be present and valid UUID format
+- `userId` query parameter must be present and valid UUID
+
+**Business Logic Conditions**:
+- Lesson must exist and be accessible
+- Lesson must belong to the specified tenant and organization
+- Media file must be processed and stored securely
+- Media association must be created with the lesson
+- File upload must be atomic (all-or-nothing)
+- Audit trail must be maintained for media upload
+- If lesson already has media, it may be replaced or additional media added
+- Media file must be accessible and readable
+
+**Authorization Conditions**:
+- User must have upload permissions for media in the tenant
+- User must have access to the specified organization
+- User must have access to the lesson for media association
+- If replacing existing media, user must have delete permissions
+
 #### Get Media List
 
 **Endpoint**: `GET /media`
@@ -2465,6 +2817,46 @@ organisationid: <organisation-id>
   }
 }
 ```
+
+**Validations and Conditions**:
+
+**Input Validation Rules**:
+- `tenantid` header must be present and valid UUID format
+- `organisationid` header must be present and valid UUID format
+- `learnerId` must be present and valid UUID format
+- `courseId` must be present and valid UUID format
+- `status` must be one of: 'published', 'unpublished', 'archived' (default: 'published')
+- `endTime` must be valid ISO date format and in the future (if provided)
+- `unlimitedPlan` must be boolean value (default: false)
+- `beforeExpiryMail` must be boolean value (default: false)
+- `afterExpiryMail` must be boolean value (default: false)
+- `params` must be valid JSON object (if provided)
+- `enrolledBy` must be valid UUID format (if provided)
+- `userId` query parameter must be present and valid UUID
+
+**Business Logic Conditions**:
+- Course must exist and be accessible
+- Course must belong to the specified tenant and organization
+- Learner must exist and be accessible
+- Learner must belong to the specified tenant and organization
+- If course requires admin approval, enrollment status must be 'unpublished'
+- If course has prerequisites, learner must have completed all prerequisites
+- If course has enrollment limits, limit must not be exceeded
+- If course is not free, payment must be verified
+- If unlimitedPlan is true, endTime should not be set
+- If endTime is set, it must be after current time
+- Duplicate enrollment should be prevented
+- Enrollment creation must be atomic (all-or-nothing)
+- Audit trail must be maintained for enrollment
+
+**Authorization Conditions**:
+- User must have enrollment permissions for the tenant
+- User must have access to the specified organization
+- User must have access to the course
+- User must have access to the learner
+- If enrolling others, user must have admin privileges
+- If course requires admin approval, only admin users can approve
+- If course is paid, user must have payment permissions
 
 #### Get User Enrollments
 
@@ -2801,6 +3193,35 @@ organisationid: <organisation-id>
 }
 ```
 
+**Validations and Conditions**:
+
+**Input Validation Rules**:
+- `lessonId` must be present and valid UUID format
+- `userId` query parameter must be present and valid UUID
+- `tenantid` header must be present and valid UUID format
+- `organisationid` header must be present and valid UUID format
+
+**Business Logic Conditions**:
+- Lesson must exist and be accessible
+- Lesson must belong to the specified tenant and organization
+- User must be enrolled in the course containing the lesson
+- If lesson has prerequisites, user must have completed all prerequisite lessons
+- If lesson has noOfAttempts limit, user must not have exceeded the limit
+- If lesson is already in progress, return existing attempt
+- If lesson is completed, return completed attempt
+- If lesson is not eligible (prerequisites not met), return not_eligible status
+- Course tracking must be updated when lesson attempt starts
+- Module tracking must be updated when lesson attempt starts
+- Lesson attempt must be atomic (all-or-nothing)
+- Audit trail must be maintained for lesson attempts
+
+**Authorization Conditions**:
+- User must have access to the lesson
+- User must be enrolled in the course
+- User must have attempt permissions for the lesson
+- If lesson requires payment, user must have paid access
+- If lesson is restricted, user must meet access criteria
+
 #### Manage Lesson Attempt
 
 **Endpoint**: `GET /tracking/lesson/attempt/{lessonId}/{userId}`
@@ -3042,6 +3463,37 @@ organisationid: <organisation-id>
     "updatedAt": "2024-01-01T01:15:00Z"
   }
 }
+
+**Validations and Conditions**:
+
+**Input Validation Rules**:
+- `attemptId` must be present and valid UUID format
+- `lessonId` must be present and valid UUID format
+- `totalContent` must be number (if provided)
+- `currentPosition` must be number (if provided)
+- `score` must be number (if provided)
+- `completionPercentage` must be number between 0-100 (if provided)
+- `status` must be one of: 'not_started', 'started', 'incomplete', 'completed', 'not_eligible' (if provided)
+- `timeSpent` must be non-negative number in seconds (if provided)
+- `params` must be valid JSON object (if provided)
+- `userId` query parameter must be present and valid UUID
+
+**Business Logic Conditions**:
+- Attempt must exist and be accessible
+- Attempt must belong to the specified user
+- Attempt must belong to the specified tenant and organization
+- If completionPercentage is 100, status should be updated to 'completed'
+- If status is 'completed', course and module tracking must be updated
+- Progress update must be atomic (all-or-nothing)
+- Audit trail must be maintained for progress updates
+- If lesson is completed, prerequisites for next lessons should be checked
+- Time tracking must be accurate and consistent
+
+**Authorization Conditions**:
+- User must own the attempt being updated
+- User must have access to the lesson
+- User must be enrolled in the course
+- If updating to completed status, user must have completion permissions
 ```
 
 ---
@@ -3073,9 +3525,34 @@ The API implements rate limiting to prevent abuse. Limits are applied per endpoi
 
 ## File Upload Limits
 
-- **Image files**: 5MB max, formats: JPG, PNG, GIF
-- **Document files**: 50MB max, formats: PDF, DOC, DOCX, PPT, PPTX
-- **Video files**: 500MB max, formats: MP4, AVI, MOV
+File upload limits are **dynamic and configurable per tenant** based on tenant-specific configurations. The system supports the following configurable parameters:
+
+### **Configurable Upload Settings**:
+- **Image files**: Size and format limits configurable per tenant
+- **Document files**: Size and format limits configurable per tenant  
+- **Video files**: Size and format limits configurable per tenant
+- **Media files**: Size and format limits configurable per tenant
+
+### **Default Configuration** (from `lms-config.json`):
+- **Image files**: 50MB max, formats: JPG, JPG, PNG
+- **Document files**: 500MB max, formats: PDF, DOC, DOCX
+- **Video files**: 500MB max, formats: MP4, WebM
+
+### **Tenant-Specific Configuration Keys**:
+- `image_filesize`: Maximum image file size in MB
+- `image_mime_type`: Allowed image MIME types
+- `document_filesize`: Maximum document file size in MB
+- `document_mime_type`: Allowed document MIME types
+- `video_filesize`: Maximum video file size in MB
+- `video_mime_type`: Allowed video MIME types
+- `courses_upload_path`: Course upload directory path
+- `modules_upload_path`: Module upload directory path
+- `lessons_upload_path`: Lesson upload directory path
+- `lessons_media_upload_path`: Lesson media upload directory path
+- `lessons_associated_media_upload_path`: Associated media upload directory path
+
+### **How to Check Current Limits**:
+Use the **Get LMS Configuration** endpoint (`GET /config`) to retrieve current tenant-specific file upload limits and allowed formats.
 
 ## Multi-tenancy
 
