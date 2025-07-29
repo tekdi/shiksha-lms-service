@@ -48,6 +48,7 @@ export const API_IDS = {
   START_LESSON_ATTEMPT: 'api.lesson.attempt.start',
   MANAGE_LESSON_ATTEMPT: 'api.lesson.attempt.startover',
   GET_LESSON_STATUS: 'api.lesson.attempt.status',
+  GET_LESSON_PREREQUISITES: 'api.lesson.prerequisites.read',
   GET_ATTEMPT: 'api.lesson.attempt.read',
   UPDATE_ATTEMPT_PROGRESS: 'api.lesson.attempt.update',
 };

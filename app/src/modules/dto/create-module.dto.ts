@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsString, IsOptional, IsEnum, IsNumber, IsUUID, IsObject, MaxLength, MinLength, Validate, ValidateIf, IsDateString } from 'class-validator';
+import { IsNotEmpty, IsString, IsOptional, IsEnum, IsNumber, IsUUID, IsObject, MaxLength, MinLength, Validate, ValidateIf, IsDateString, IsArray } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { ModuleStatus } from '../entities/module.entity';
@@ -94,12 +94,15 @@ export class CreateModuleDto {
   endDatetime?: string;
 
   @ApiPropertyOptional({ 
-    description: 'Eligibility criteria for the module',
-    example: 'Must have completed Introduction module'
+    description: 'Prerequisites for the module - array of prerequisite module IDs',
+    example: ['123e4567-e89b-12d3-a456-426614174000', '987fcdeb-51a2-43c1-b456-426614174000'],
+    type: [String],
+    isArray: true
   })
   @IsOptional()
-  @IsString({ message: VALIDATION_MESSAGES.COMMON.STRING('Eligibility criteria') })
-  eligibilityCriteria?: string;
+  @IsArray({ message: VALIDATION_MESSAGES.COMMON.ARRAY('Prerequisites') })
+  @IsUUID('4', { each: true, message: VALIDATION_MESSAGES.COMMON.UUID('Prerequisite module ID') })
+  prerequisites?: string[];
 
   @ApiPropertyOptional({ 
     description: 'Badge ID associated with the module',

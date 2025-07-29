@@ -26,4 +26,16 @@ export class LessonStatusDto {
     nullable: true
   })
   lastAttemptId: string | null;
+
+  @ApiProperty({
+    description: 'Whether the lesson is eligible to be started',
+    example: true
+  })
+  isEligible: boolean;
+
+  @ApiProperty({
+    description: 'Required lessons for the lesson',
+    example: ['lesson_123', 'lesson_456']
+  })
+  requiredLessons: any[];
 } 
