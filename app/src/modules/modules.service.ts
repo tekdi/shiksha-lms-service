@@ -18,6 +18,7 @@ import { UpdateModuleDto } from './dto/update-module.dto';
 import { CacheService } from '../cache/cache.service';
 import { ConfigService } from '@nestjs/config';
 import { CacheConfigService } from '../cache/cache-config.service';
+import { OrderingService } from '../common/services/ordering.service';
 
 @Injectable()
 export class ModulesService {
@@ -37,6 +38,7 @@ export class ModulesService {
     private readonly cacheService: CacheService,
     private readonly configService: ConfigService,
     private readonly cacheConfig: CacheConfigService,
+    private readonly orderingService: OrderingService,
   ) {
   }
 
@@ -114,6 +116,17 @@ export class ModulesService {
     }
 
     
+    // Get next ordering if not provided
+    let ordering = createModuleDto.ordering;
+    if (ordering === undefined || ordering === null) {
+      ordering = await this.orderingService.getNextModuleOrder(
+        createModuleDto.courseId,
+        createModuleDto.parentId,
+        tenantId,
+        organisationId
+      );
+    }
+
     // Create moduleData with only fields that exist in the entity
     const moduleData = {
       title: createModuleDto.title,
@@ -121,7 +134,7 @@ export class ModulesService {
       courseId: createModuleDto.courseId,
       parentId: createModuleDto.parentId || undefined,
       image: createModuleDto.image, 
-      ordering: createModuleDto.ordering || 0, 
+      ordering, 
       status: createModuleDto.status || ModuleStatus.UNPUBLISHED,
       badgeTerm: createModuleDto.badgeTerm ? { term: createModuleDto.badgeTerm } : undefined,
       params: createModuleDto.params || {}, // Map meta to params

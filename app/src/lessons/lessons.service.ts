@@ -20,6 +20,7 @@ import { RESPONSE_MESSAGES } from '../common/constants/response-messages.constan
 import { CacheService } from '../cache/cache.service';
 import { ConfigService } from '@nestjs/config';
 import { CacheConfigService } from '../cache/cache-config.service';
+import { OrderingService } from '../common/services/ordering.service';
 
 @Injectable()
 export class LessonsService {
@@ -37,7 +38,8 @@ export class LessonsService {
     private readonly lessonTrackRepository: Repository<LessonTrack>,
     private readonly cacheService: CacheService,
     private readonly configService: ConfigService,
-    private readonly cacheConfig: CacheConfigService
+    private readonly cacheConfig: CacheConfigService,
+    private readonly orderingService: OrderingService
   ) {}
   
 
@@ -155,6 +157,19 @@ export class LessonsService {
       const media = this.mediaRepository.create(mediaData);
       const savedMedia = await this.mediaRepository.save(media);
       mediaId = savedMedia.mediaId;
+      // Get next ordering if not provided
+      let ordering = createLessonDto.ordering;
+      if ((ordering === undefined || ordering === null) && createLessonDto.moduleId && createLessonDto.courseId) {
+        ordering = await this.orderingService.getNextLessonOrder(
+          createLessonDto.moduleId,
+          createLessonDto.courseId,
+          tenantId,
+          organisationId
+        );
+      } else if (ordering === undefined || ordering === null) {
+        ordering = 0; // Default ordering if no moduleId
+      }
+
       // Create lesson data
       const lessonData = {
         title: createLessonDto.title,
@@ -175,7 +190,7 @@ export class LessonsService {
         totalMarks: createLessonDto.totalMarks,
         passingMarks: createLessonDto.passingMarks,
         params: createLessonDto.params || {},
-        ordering: createLessonDto.ordering || 0,
+        ordering,
         createdBy: userId,
         updatedBy: userId,
         tenantId: tenantId,
