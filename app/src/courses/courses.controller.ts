@@ -12,7 +12,9 @@ import {
   HttpCode,
   UseInterceptors,
   UploadedFile,
+  InternalServerErrorException,
   Put,
+  Logger,
 } from '@nestjs/common';
 import { 
   ApiTags, 
@@ -32,9 +34,9 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { SearchCourseDto } from './dto/search-course.dto';
 import { CommonQueryDto } from '../common/dto/common-query.dto';
 import { ApiId } from '../common/decorators/api-id.decorator';
-import { getUploadPath } from '../common/utils/upload.util';
-import { uploadConfigs } from '../config/file-validation.config';
 import { TenantOrg } from '../common/decorators/tenant-org.decorator';
+import { FileUploadService } from '../common/utils/local-storage.service';
+import { RESPONSE_MESSAGES } from '../common/constants/response-messages.constant';
 import { CourseStructureDto } from '../courses/dto/course-structure.dto';
 import { SearchCourseResponseDto } from './dto/search-course.dto';
 import { CourseHierarchyFilterDto } from './dto/course-hierarchy-filter.dto';
@@ -43,8 +45,11 @@ import { CourseHierarchyFilterDto } from './dto/course-hierarchy-filter.dto';
 @ApiTags('Courses')
 @Controller('courses')
 export class CoursesController {
+  private readonly logger = new Logger(CoursesController.name);
+
   constructor(
     private readonly coursesService: CoursesService,
+    private readonly fileUploadService: FileUploadService,
   ) {}
 
   @Post()
@@ -58,16 +63,26 @@ export class CoursesController {
   })
   @ApiResponse({ status: 400, description: 'Bad request' })
   @ApiConsumes('multipart/form-data')
-  @UseInterceptors(FileInterceptor('image', uploadConfigs.courses))
+  @UseInterceptors(FileInterceptor('image'))
   async createCourse(
     @Body() createCourseDto: CreateCourseDto,
     @Query() query: CommonQueryDto,
     @TenantOrg() tenantOrg: { tenantId: string; organisationId: string },
     @UploadedFile() file?: Express.Multer.File,
   ) {
-    if (file) {
-      const imagePath = getUploadPath('course', file.filename);
-      createCourseDto.image = imagePath;
+
+    try {
+      if (file) {
+        // Upload file and get the path
+        createCourseDto.image = await this.fileUploadService.uploadFile(file, { type: 'course' });
+      }
+    } catch (error) {
+      // Log the detailed error internally for debugging
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+      const errorStack = error instanceof Error ? error.stack : undefined;
+      this.logger.error(`Error uploading file during course creation: ${errorMessage}`, errorStack);
+      // Throw a generic error to prevent sensitive information leakage
+      throw new InternalServerErrorException(RESPONSE_MESSAGES.ERROR.FAILED_TO_UPLOAD_FILE);
     }
     const course = await this.coursesService.create(
       createCourseDto,
@@ -221,18 +236,31 @@ export class CoursesController {
   @ApiResponse({ status: 400, description: 'Bad request' })
   @ApiResponse({ status: 404, description: 'Course not found' })
   @ApiConsumes('multipart/form-data')
-  @UseInterceptors(FileInterceptor('image', uploadConfigs.courses))
+  @UseInterceptors(FileInterceptor('image'))
   async updateCourse(
-    @Param('courseId') courseId: string,
+    @Param('courseId', ParseUUIDPipe) courseId: string,
     @Body() updateCourseDto: UpdateCourseDto,
     @Query() query: CommonQueryDto,
     @TenantOrg() tenantOrg: { tenantId: string; organisationId: string },
     @UploadedFile() file?: Express.Multer.File,
   ) {
-    if (file) {
-      const imagePath = getUploadPath('course', file.filename);
-      updateCourseDto.image = imagePath;
+
+    try {
+      if (file) {
+        // Upload file and get the path
+        updateCourseDto.image = await this.fileUploadService.uploadFile(file, { 
+          type: 'course',
+        });
+      }
+    } catch (error) {
+      // Log the detailed error internally for debugging
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+      const errorStack = error instanceof Error ? error.stack : undefined;
+      this.logger.error(`Error uploading file during course update: ${errorMessage}`, errorStack);
+      // Throw a generic error to prevent sensitive information leakage
+      throw new InternalServerErrorException(RESPONSE_MESSAGES.ERROR.FAILED_TO_UPLOAD_FILE);
     }
+
     const course = await this.coursesService.update(
       courseId,
       updateCourseDto,

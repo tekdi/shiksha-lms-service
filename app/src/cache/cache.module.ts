@@ -21,7 +21,7 @@ import { redisStore } from 'cache-manager-redis-yet';
 
         const redisOptions = {
           socket: {
-            host: configService.get('REDIS_HOST'),
+            host: configService.get('REDIS_HOST') || 'localhost',
             port: Number(configService.get('REDIS_PORT') || '6379'),
           },
           // password: configService.get('REDIS_PASSWORD'),

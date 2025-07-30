@@ -5,7 +5,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, FindOptionsWhere, Not, Equal, ILike, IsNull, In } from 'typeorm';
+import { Repository, FindOptionsWhere, Not, Equal, ILike, IsNull, Like, In } from 'typeorm';
 import { Course, CourseStatus } from './entities/course.entity';
 import { Module, ModuleStatus } from '../modules/entities/module.entity';
 import { Lesson, LessonStatus } from '../lessons/entities/lesson.entity';

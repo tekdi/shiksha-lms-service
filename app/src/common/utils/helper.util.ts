@@ -1,6 +1,5 @@
 import path from 'path';
 import { v4 as uuidv4, validate as uuidValidate } from 'uuid';
-import { Not } from 'typeorm';
 
 export class HelperUtil {
   /**

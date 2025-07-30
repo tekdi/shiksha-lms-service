@@ -3,7 +3,6 @@ import * as fs from 'fs';
 import * as path from 'path';
 import axios from 'axios';
 import { ConfigService } from '@nestjs/config';
-import { TenantContext } from '../common/tenant/tenant.context';
 import { RESPONSE_MESSAGES } from '../common/constants/response-messages.constant';
 import { TenantConfigValue } from './interfaces/tenant-config.interface';
 import { CacheService } from '../cache/cache.service';
@@ -41,13 +40,13 @@ export class ConfigurationService  {
     tenantId: string,
   ): Promise<Record<string, any>> {
     try {
-      // Try to get from cache first
+      // Try to get from cache first     
       const cachedConfig = await this.cacheService.getTenantConfig(tenantId);
       
       if (cachedConfig && cachedConfig.IsConfigsSync == 1) {      
         return cachedConfig;
-      }else{
-        throw new NotFoundException(RESPONSE_MESSAGES.ERROR.CONFIG_NOT_FOUND);
+      }else{       
+          throw new NotFoundException(RESPONSE_MESSAGES.ERROR.CONFIG_NOT_FOUND);
       }
     } catch (error) {     
       throw new NotFoundException(
@@ -164,18 +163,18 @@ export class ConfigurationService  {
     const entityConfigMap = {
       course: {
         path: 'courses_upload_path',
-        maxFileSize: 'courses_max_file_size',
-        allowedMimeTypes: 'courses_allowed_mime_types'
+        maxFileSize: 'image_filesize',
+        allowedMimeTypes: 'image_mime_type'
       },
       module: {
         path: 'modules_upload_path',
-        maxFileSize: 'modules_max_file_size',
-        allowedMimeTypes: 'modules_allowed_mime_types'
+        maxFileSize: 'image_filesize',
+        allowedMimeTypes: 'image_mime_type'
       },
       lesson: {
         path: 'lessons_upload_path',
-        maxFileSize: 'lessons_max_file_size',
-        allowedMimeTypes: 'lessons_allowed_mime_types'
+        maxFileSize: 'image_filesize',
+        allowedMimeTypes: 'image_mime_type'
       },
       lessonMedia: {
         path: 'lessons_media_upload_path',

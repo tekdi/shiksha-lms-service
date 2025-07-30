@@ -142,7 +142,9 @@ export const RESPONSE_MESSAGES = {
     MISSING_MODULES_IN_STRUCTURE: (count: number, ids: string) => `Request is missing ${count} module(s): ${ids}. All existing modules must be included in the structure update.`,
     MISSING_LESSONS_IN_STRUCTURE: (count: number, ids: string) => `Request is missing ${count} lesson(s): ${ids}. All existing lessons must be included in the structure update.`,
     SOME_MODULES_NOT_FOUND: 'Some modules not found or do not belong to the specified course',
-
+    MAX_FILE_SIZE_NOT_FOUND: 'Max file size not found in configuration',
+    ALLOWED_MIME_TYPES_NOT_FOUND: 'Allowed mime types not found in configuration',
+    INVALID_FILE_PATH: 'Invalid file path. File does not belong to the tenant directory.',
   },
 };
 
