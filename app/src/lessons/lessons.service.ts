@@ -159,7 +159,7 @@ export class LessonsService {
       mediaId = savedMedia.mediaId;
       // Get next ordering if not provided
       let ordering = createLessonDto.ordering;
-      if ((ordering === undefined || ordering === null) && createLessonDto.moduleId) {
+      if ((ordering === undefined || ordering === null) && createLessonDto.moduleId && createLessonDto.courseId) {
         ordering = await this.orderingService.getNextLessonOrder(
           createLessonDto.moduleId,
           createLessonDto.courseId,
