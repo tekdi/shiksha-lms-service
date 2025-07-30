@@ -13,12 +13,14 @@ import {
   MaxLength,
   Validate,
   IsNumber,
+  IsUrl,
+  IsArray,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { VALIDATION_MESSAGES } from '../../common/constants/response-messages.constant';
 import { LessonStatus, LessonSubFormat } from '../entities/lesson.entity';
 import { LessonFormat, AttemptsGradeMethod } from '../entities/lesson.entity';
-import { HelperUtil } from 'src/common/utils/helper.util';
+import { HelperUtil } from '../../common/utils/helper.util';
 
 
 export class CreateLessonDto {
@@ -51,12 +53,14 @@ export class CreateLessonDto {
   format: LessonFormat;
 
   @ApiProperty({
-    description: 'Media content source',
+    description: 'Media content source (URL for video/external content, path for documents)',
     example: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
     required: true
   })
   @ValidateIf((o) => o.format != LessonFormat.DOCUMENT)
   @IsNotEmpty({ message: VALIDATION_MESSAGES.COMMON.REQUIRED('Source') })
+  @ValidateIf((o) => o.format === LessonFormat.TEXT_AND_MEDIA)
+  @IsUrl({}, { message: VALIDATION_MESSAGES.COMMON.URL('External URL') })
   mediaContentSource: string;
 
   @ApiProperty({
@@ -144,14 +148,14 @@ export class CreateLessonDto {
   storage?: string;
 
   @ApiProperty({
-    description: 'Number of attempts allowed',
+    description: 'Number of attempts allowed (0 for unlimited)',
     example: 3,
     required: false,
     default: 1
   })
   @IsOptional()
   @IsInt({ message: VALIDATION_MESSAGES.COMMON.NUMBER('Number of attempts') })
-  @Min(1, { message: VALIDATION_MESSAGES.COMMON.POSITIVE('Number of attempts') })
+  @Min(0, { message: VALIDATION_MESSAGES.COMMON.POSITIVE('Number of attempts') })
   @Type(() => Number)
   noOfAttempts?: number = 1;
 
@@ -167,13 +171,16 @@ export class CreateLessonDto {
   attemptsGrade?: AttemptsGradeMethod = AttemptsGradeMethod.HIGHEST;
 
   @ApiProperty({
-    description: 'Eligibility criteria',
-    example: 'COMPLETE_PREVIOUS',
-    required: false
+    description: 'Prerequisites for the lesson - array of prerequisite lesson IDs',
+    example: ['123e4567-e89b-12d3-a456-426614174000', '987fcdeb-51a2-43c1-b456-426614174000'],
+    required: false,
+    type: [String],
+    isArray: true
   })
   @IsOptional()
-  @IsString({ message: VALIDATION_MESSAGES.COMMON.STRING('Eligibility criteria') })
-  eligibilityCriteria?: string;
+  @IsArray({ message: VALIDATION_MESSAGES.COMMON.ARRAY('Prerequisites') })
+  @IsUUID('4', { each: true, message: VALIDATION_MESSAGES.COMMON.UUID('Prerequisite lesson ID') })
+  prerequisites?: string[];
 
   @ApiProperty({
     description: VALIDATION_MESSAGES.LESSON.DURATION,

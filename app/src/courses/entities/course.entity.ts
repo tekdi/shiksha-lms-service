@@ -10,12 +10,17 @@ import {
 import { ApiProperty } from '@nestjs/swagger';
 import { Module } from '../../modules/entities/module.entity';
 import { UserEnrollment } from '../../enrollments/entities/user-enrollment.entity';
-import { LessonTrack } from 'src/tracking/entities/lesson-track.entity';
+import { LessonTrack } from '../../tracking/entities/lesson-track.entity';
 
 export enum CourseStatus {
   PUBLISHED = 'published',
   UNPUBLISHED = 'unpublished',
   ARCHIVED = 'archived',
+}
+
+export enum RewardType {
+  CERTIFICATE = 'certificate',
+  BADGE = 'badge',
 }
 
 @Entity('courses')
@@ -45,7 +50,7 @@ export class Course {
   alias: string;
 
   @ApiProperty({ description: 'Short description of the course', example: 'A brief intro to web development', required: false })
-  @Column({ type: 'text'})
+  @Column({ type: 'text', nullable: true })
   shortDescription: string;
 
   @ApiProperty({ description: 'Detailed description of the course', example: 'Learn the fundamentals of web development', required: false })
@@ -68,16 +73,30 @@ export class Course {
   @Column({ type: 'jsonb', nullable: true })
   certificateTerm: Record<string, any>;
 
-  @ApiProperty({ description: 'Certificate ID', example: '123e4567-e89b-12d3-a456-426614174000', required: false })
+  @ApiProperty({ description: 'Type of reward for course completion', enum: RewardType, example: RewardType.CERTIFICATE, required: false })
+  @Column({ type: 'varchar', length: 50, nullable: true })
+  rewardType: RewardType;
+
+  @ApiProperty({ description: 'Template ID for the reward', example: '123e4567-e89b-12d3-a456-426614174000', required: false })
   @Column({ type: 'uuid', nullable: true })
-  certificateId: string;
+  templateId: string;
+
+  @ApiProperty({ 
+    description: 'Prerequisites for the course - array of prerequisite course IDs', 
+    example: ['123e4567-e89b-12d3-a456-426614174000', '987fcdeb-51a2-43c1-b456-426614174000'],
+    required: false,
+    type: [String],
+    isArray: true
+  })
+  @Column({ type: 'uuid', array: true, nullable: true })
+  prerequisites: string[];
 
   @ApiProperty({ description: 'Course start date and time', example: '2023-01-01T00:00:00Z', required: false })
-  @Column({ type: 'timestamptz' })
+  @Column({ type: 'timestamptz', nullable: true })
   startDatetime: Date;
 
   @ApiProperty({ description: 'Course end date and time', example: '2023-12-31T23:59:59Z', required: false })
-  @Column({ type: 'timestamptz' })
+  @Column({ type: 'timestamptz', nullable: true })
   endDatetime: Date;
 
   @ApiProperty({ description: 'Whether admin approval is required', example: false, default: false })

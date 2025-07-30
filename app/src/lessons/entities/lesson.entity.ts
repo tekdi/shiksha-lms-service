@@ -11,22 +11,28 @@ import {
 } from 'typeorm';
 import { Media } from '../../media/entities/media.entity';
 import { LessonTrack } from '../../tracking/entities/lesson-track.entity';
-import { AssociatedFile } from 'src/media/entities/associated-file.entity';
+import { AssociatedFile } from '../../media/entities/associated-file.entity';
 import { Course } from '../../courses/entities/course.entity';
 import { Module } from '../../modules/entities/module.entity';
+import { ApiProperty } from '@nestjs/swagger';
 
 export enum LessonFormat {
   VIDEO = 'video',
   DOCUMENT = 'document',
-  QUIZ = 'test',
+  ASSESSMENT = 'test',
   EVENT = 'event',
+  TEXT_AND_MEDIA = 'text_and_media',
 }
 export enum LessonSubFormat {
   YOUTUBE = 'youtube.url',
+  VIMEO = 'video.url',
   PDF = 'pdf',
   QUIZ = 'quiz',
+  ASSESSMENT = 'assessment',
+  FEEDBACK = 'feedback',
   EVENT = 'event',
   VIDEO = 'video.url',
+  EXTERNAL_URL = 'external.url',
 }
 
 export enum LessonStatus {
@@ -112,8 +118,15 @@ export class Lesson {
   @Column({ type: 'uuid', nullable: true })
   mediaId: string;
 
-  @Column({ type: 'varchar', length: 255, nullable: true })
-  eligibilityCriteria: string;
+  @ApiProperty({ 
+    description: 'Prerequisites for the lesson - array of prerequisite lesson IDs', 
+    example: ['123e4567-e89b-12d3-a456-426614174000', '987fcdeb-51a2-43c1-b456-426614174000'],
+    required: false,
+    type: [String],
+    isArray: true
+  })
+  @Column({ type: 'uuid', array: true, nullable: true })
+  prerequisites: string[];
 
   @Column({ type: 'integer', nullable: true })
   idealTime: number;

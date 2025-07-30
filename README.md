@@ -45,10 +45,40 @@ A comprehensive Learning Management System (LMS) microservice built with NestJS.
 # Install dependencies
 npm install
 
-# Run database migrations
-npm run migration:run
+# Set up database and run migrations
+npm run db:setup
 
 # Start the development server
 npm run start:dev
+```
+
+### Database Setup
+
+The application uses PostgreSQL with TypeORM migrations. For detailed migration instructions, see [MIGRATIONS.md](app/MIGRATIONS.md).
+
+Quick setup:
+```bash
+# Set up environment variables
+cp app/env.example app/.env
+# Edit app/.env with your database credentials
+
+# Run database setup (creates database, enables extensions, runs migrations)
+npm run db:setup
+```
+
+Migration commands:
+```bash
+# Run pending migrations
+npm run migration:run
+
+# Generate new migration from entity changes
+npm run migration:generate -- src/migrations/MigrationName
+
+# Revert last migration
+npm run migration:revert
+
+# Show migration status
+npm run migration:show
+```
 
 .

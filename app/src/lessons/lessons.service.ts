@@ -8,7 +8,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Not, FindOneOptions, FindOptionsWhere } from 'typeorm';
 import { Lesson, LessonStatus, AttemptsGradeMethod, LessonFormat } from './entities/lesson.entity';
-import { Course } from '../courses/entities/course.entity';
+import { Course, CourseStatus } from '../courses/entities/course.entity';
 import { Module, ModuleStatus } from '../modules/entities/module.entity';
 import { Media, MediaStatus } from '../media/entities/media.entity';
 import { LessonTrack } from '../tracking/entities/lesson-track.entity';
@@ -20,6 +20,7 @@ import { RESPONSE_MESSAGES } from '../common/constants/response-messages.constan
 import { CacheService } from '../cache/cache.service';
 import { ConfigService } from '@nestjs/config';
 import { CacheConfigService } from '../cache/cache-config.service';
+import { OrderingService } from '../common/services/ordering.service';
 
 @Injectable()
 export class LessonsService {
@@ -37,7 +38,8 @@ export class LessonsService {
     private readonly lessonTrackRepository: Repository<LessonTrack>,
     private readonly cacheService: CacheService,
     private readonly configService: ConfigService,
-    private readonly cacheConfig: CacheConfigService
+    private readonly cacheConfig: CacheConfigService,
+    private readonly orderingService: OrderingService
   ) {}
   
 
@@ -57,6 +59,39 @@ export class LessonsService {
     organisationId: string
   ): Promise<Lesson> {
     try {
+      // Validate course and module existence if provided
+      if (createLessonDto.courseId) {
+        // Check if course exists
+        const course = await this.courseRepository.findOne({
+          where: { 
+            courseId: createLessonDto.courseId,
+            status: Not(CourseStatus.ARCHIVED),
+            tenantId,
+            organisationId,
+          },
+        });
+
+        if (!course) {
+          throw new NotFoundException(RESPONSE_MESSAGES.ERROR.COURSE_NOT_FOUND);
+        }
+
+        // If moduleId is provided, validate it belongs to the course
+        if (createLessonDto.moduleId) {
+          const module = await this.moduleRepository.findOne({
+            where: { 
+              moduleId: createLessonDto.moduleId,
+              courseId: createLessonDto.courseId,
+              status: Not(ModuleStatus.ARCHIVED),
+              tenantId,
+              organisationId,
+            },
+          });
+
+          if (!module) {
+            throw new NotFoundException(RESPONSE_MESSAGES.ERROR.MODULE_NOT_FOUND_IN_COURSE(createLessonDto.moduleId));
+          }
+        }
+      }
 
       if (!createLessonDto.alias) {
         createLessonDto.alias = await HelperUtil.generateUniqueAliasWithRepo(
@@ -105,22 +140,36 @@ export class LessonsService {
       if(createLessonDto.format === LessonFormat.DOCUMENT){
         storage = this.configService.get('cloud_storage_provider') || 'local';
       }
-        // Create new media for other formats
-        const mediaData: Partial<Media> = {
-          tenantId: tenantId,
-          organisationId: organisationId,
-          format: createLessonDto.format,
-          subFormat: createLessonDto.mediaContentSubFormat, 
-          source: createLessonDto.mediaContentSource || undefined,
-          path: createLessonDto.mediaContentPath || undefined,
-          storage: storage,
-          createdBy: userId,
-          updatedBy: userId,
-        };
+      
+      // Create new media for all formats
+      const mediaData: Partial<Media> = {
+        tenantId: tenantId,
+        organisationId: organisationId,
+        format: createLessonDto.format,
+        subFormat: createLessonDto.mediaContentSubFormat, 
+        source: createLessonDto.mediaContentSource || undefined,
+        path: createLessonDto.mediaContentPath || undefined,
+        storage: storage,
+        createdBy: userId,
+        updatedBy: userId,
+      };
 
-        const media = this.mediaRepository.create(mediaData);
-        const savedMedia = await this.mediaRepository.save(media);
-        mediaId = savedMedia.mediaId;
+      const media = this.mediaRepository.create(mediaData);
+      const savedMedia = await this.mediaRepository.save(media);
+      mediaId = savedMedia.mediaId;
+      // Get next ordering if not provided
+      let ordering = createLessonDto.ordering;
+      if ((ordering === undefined || ordering === null) && createLessonDto.moduleId && createLessonDto.courseId) {
+        ordering = await this.orderingService.getNextLessonOrder(
+          createLessonDto.moduleId,
+          createLessonDto.courseId,
+          tenantId,
+          organisationId
+        );
+      } else if (ordering === undefined || ordering === null) {
+        ordering = 0; // Default ordering if no moduleId
+      }
+
       // Create lesson data
       const lessonData = {
         title: createLessonDto.title,
@@ -135,13 +184,13 @@ export class LessonsService {
         storage: storage,
         noOfAttempts: createLessonDto.noOfAttempts || 0,
         attemptsGrade: createLessonDto.attemptsGrade || AttemptsGradeMethod.HIGHEST,
-        eligibilityCriteria: createLessonDto.eligibilityCriteria,
+        prerequisites: createLessonDto.prerequisites,
         idealTime: createLessonDto.idealTime,
         resume: createLessonDto.resume || false,
         totalMarks: createLessonDto.totalMarks,
         passingMarks: createLessonDto.passingMarks,
         params: createLessonDto.params || {},
-        ordering: createLessonDto.ordering || 0,
+        ordering,
         createdBy: userId,
         updatedBy: userId,
         tenantId: tenantId,
@@ -352,6 +401,41 @@ export class LessonsService {
       if (!lesson) {
         throw new NotFoundException(RESPONSE_MESSAGES.ERROR.LESSON_NOT_FOUND);
       }
+
+      // Validate course and module existence if provided in update
+      if (updateLessonDto.courseId) {
+        // Check if course exists
+        const course = await this.courseRepository.findOne({
+          where: { 
+            courseId: updateLessonDto.courseId,
+            status: Not(CourseStatus.ARCHIVED),
+            tenantId,
+            organisationId,
+          },
+        });
+
+        if (!course) {
+          throw new NotFoundException(RESPONSE_MESSAGES.ERROR.COURSE_NOT_FOUND);
+        }
+
+        // If moduleId is provided, validate it belongs to the course
+        if (updateLessonDto.moduleId) {
+          const module = await this.moduleRepository.findOne({
+            where: { 
+              moduleId: updateLessonDto.moduleId,
+              courseId: updateLessonDto.courseId,
+              status: Not(ModuleStatus.ARCHIVED),
+              tenantId,
+              organisationId,
+            },
+          });
+
+          if (!module) {
+            throw new NotFoundException(RESPONSE_MESSAGES.ERROR.MODULE_NOT_FOUND_IN_COURSE(updateLessonDto.moduleId));
+          }
+        }
+      }
+
       // Check if lesson has a checked out status (if that property exists)
       if (updateLessonDto.checkedOut !== undefined) {
         throw new BadRequestException(RESPONSE_MESSAGES.ERROR.LESSON_CHECKED_OUT);
@@ -480,8 +564,8 @@ export class LessonsService {
         updateData.attemptsGrade = updateLessonDto.attemptsGrade;
       }
       
-      if (updateLessonDto.eligibilityCriteria !== undefined) {
-        updateData.eligibilityCriteria = updateLessonDto.eligibilityCriteria;
+      if (updateLessonDto.prerequisites !== undefined) {
+        updateData.prerequisites = updateLessonDto.prerequisites;
       }
       
       if (updateLessonDto.idealTime !== undefined) {
@@ -507,6 +591,15 @@ export class LessonsService {
       
       if (updateLessonDto.params !== undefined) {
         updateData.params = updateLessonDto.params;
+      }
+      
+      // Handle course and module association fields
+      if (updateLessonDto.courseId !== undefined) {
+        updateData.courseId = updateLessonDto.courseId;
+      }
+      
+      if (updateLessonDto.moduleId !== undefined) {
+        updateData.moduleId = updateLessonDto.moduleId;
       }
             
       // Update the lesson

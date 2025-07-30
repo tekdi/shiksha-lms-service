@@ -55,7 +55,7 @@ export class LessonTrack {
     type: 'varchar',
     length: 255,
     enum: TrackingStatus,
-    default: TrackingStatus.STARTED
+    default: TrackingStatus.STARTED,
   })
   status: TrackingStatus;
 
@@ -65,8 +65,11 @@ export class LessonTrack {
   @Column({ type: 'float', default: 0 })
   currentPosition: number;
 
-  @Column({ type: 'int', nullable: true })
+  @Column({ type: 'int', nullable: true, default: 0 })
   timeSpent: number;
+
+  @Column({ type: 'float', nullable: true, default: 0 })
+  completionPercentage: number;
 
   @Column({ type: 'jsonb', nullable: true })
   params: Record<string, any>;
@@ -87,5 +90,4 @@ export class LessonTrack {
   @ManyToOne(() => Course)
   @JoinColumn({ name: 'courseId', referencedColumnName: 'courseId' })
   course: Course;
-  
 }

@@ -37,7 +37,6 @@ export class TrackingService {
     private readonly configService: ConfigService,
   ) {}
 
-
   /**
    * Get course tracking
    * @param courseId The course ID
@@ -98,6 +97,24 @@ export class TrackingService {
       throw new NotFoundException(RESPONSE_MESSAGES.ERROR.COURSE_LESSON_NOT_FOUND);
     }
 
+    // Check prerequisites if any exist
+    const prerequisiteCheck = await this.checkLessonsPrerequisites(
+      lesson,
+      userId,
+      courseId,
+      tenantId,
+      organisationId
+    );
+
+    if (!prerequisiteCheck.isEligible && prerequisiteCheck.requiredLessons) {
+      // Get the titles of missing prerequisite lessons for better error message
+      const missingPrerequisiteLessons = prerequisiteCheck.requiredLessons.filter(l => !l.completed);
+      const missingLessonTitles = missingPrerequisiteLessons.map(l => l.title).join(', ');
+      throw new BadRequestException(
+        `Cannot start lesson. Prerequisites not completed: ${missingLessonTitles}. Please complete the required lessons first.`
+      );
+    }
+
     //check if course is completed ,then throw error
     const courseTrack = await this.courseTrackRepository.findOne({
       where: {
@@ -117,7 +134,7 @@ export class TrackingService {
         userId,
         courseId,
         tenantId,
-        organisationId
+        organisationId,
       } as FindOptionsWhere<LessonTrack>,
       order: { attempt: 'DESC' },
     });
@@ -125,12 +142,16 @@ export class TrackingService {
     // If there's an incomplete attempt, return it
     const incompleteAttempt = existingTracks.find(track => track.status !== TrackingStatus.COMPLETED);
     if (incompleteAttempt) {
-      return incompleteAttempt;
+      //check can resume
+      const canResume = lesson.resume ?? true;
+      if (canResume) {
+        return incompleteAttempt;
+      }      
     }
 
     // Check max attempts
     const maxAttempts = lesson.noOfAttempts || 1;
-    if (existingTracks.length > 0 && existingTracks[0].attempt >= maxAttempts) {
+    if (maxAttempts > 0 && existingTracks.length > 0 && existingTracks[0].attempt >= maxAttempts) {
       throw new BadRequestException(RESPONSE_MESSAGES.ERROR.MAX_ATTEMPTS_REACHED);
     }
 
@@ -145,14 +166,100 @@ export class TrackingService {
       status: TrackingStatus.STARTED,
       startDatetime: new Date(),
       totalContent: 0,
+      completionPercentage: 0,
       score: 0,
       currentPosition: 0,
       timeSpent: 0
     });
     //update course tracking and module tracking as here new attempt is started
     await this.updateCourseAndModuleTracking(lessonTrack, tenantId, organisationId);
-    return this.lessonTrackRepository.save(lessonTrack);
+    const savedLessonTrack = await this.lessonTrackRepository.save(lessonTrack);
+
+    return savedLessonTrack;
   }
+
+
+  /**
+   * Check if all prerequisites for a lesson are completed
+   * @param lesson The lesson to check prerequisites for
+   * @param userId The user ID
+   * @param courseId The course ID
+   * @param tenantId The tenant ID
+   * @param organisationId The organization ID
+   * @returns Promise with prerequisite status information
+   */
+  private async checkLessonsPrerequisites(
+    lesson: Lesson,
+    userId: string,
+    courseId: string,
+    tenantId: string,
+    organisationId: string
+  ): Promise<{isEligible: boolean, requiredLessons: any[]}> {
+    if (!lesson.prerequisites || lesson.prerequisites.length === 0) {
+      return {
+        isEligible: true,
+        requiredLessons: []
+      };
+    }
+
+    const requiredLessons: any[] = [];
+    let allCompleted = true;
+
+    // Check each required lesson ID from the array
+    for (const requiredLessonId of lesson.prerequisites) {
+      // Fetch the required lesson details
+      const requiredLesson = await this.lessonRepository.findOne({
+        where: {
+          lessonId: requiredLessonId,
+          tenantId,
+          organisationId,
+          status: LessonStatus.PUBLISHED
+        },
+        select: ['lessonId', 'title']
+      });
+
+      if (!requiredLesson) {
+        // If required lesson doesn't exist, consider it as not completed
+        requiredLessons.push({
+          lessonId: requiredLessonId,
+          title: 'Unknown Lesson',
+          completed: false
+        });
+        allCompleted = false;
+        continue;
+      }
+
+      // Check if the user has completed this lesson
+      const completedTrack = await this.lessonTrackRepository.findOne({
+        where: {
+          lessonId: requiredLessonId,
+          userId,
+          courseId,
+          tenantId,
+          organisationId,
+          status: TrackingStatus.COMPLETED
+        } as FindOptionsWhere<LessonTrack>,
+      });
+
+      const isCompleted = !!completedTrack;
+
+      requiredLessons.push({
+        lessonId: requiredLessonId,
+        title: requiredLesson.title,
+        completed: isCompleted
+      });
+
+      if (!isCompleted) {
+        allCompleted = false;
+      }
+    }
+
+    return {
+      isEligible: allCompleted,
+      requiredLessons
+    };
+  }
+
 
   /**
    * Manage lesson attempt - start over or resume
@@ -221,7 +328,7 @@ export class TrackingService {
       // start over
       // Check max attempts
       const maxAttempts = lesson.noOfAttempts || 1;
-      if (latestTrack.attempt >= maxAttempts) {
+      if (maxAttempts > 0 && latestTrack.attempt >= maxAttempts) {
         throw new BadRequestException(RESPONSE_MESSAGES.ERROR.MAX_ATTEMPTS_REACHED);
       }
 
@@ -235,6 +342,7 @@ export class TrackingService {
         attempt: latestTrack.attempt,
         status: TrackingStatus.STARTED,
         startDatetime: new Date(),
+        completionPercentage: 0,
         score: 0,
         totalContent: 0,
         currentPosition: 0,
@@ -286,12 +394,33 @@ export class TrackingService {
       order: { attempt: 'DESC' },
     });
 
+    //check lesson prerequisites
+    const prerequisiteCheck = await this.checkLessonsPrerequisites(
+      lesson,
+      userId,
+      lesson.courseId,
+      tenantId,
+      organisationId
+    );
+
     const status: LessonStatusDto = {
       canResume: false,
       canReattempt: false,
-      lastAttemptStatus: 'NOT_STARTED',
-      lastAttemptId: null
+      lastAttemptStatus: TrackingStatus.NOT_STARTED,
+      lastAttemptId: null,
+      isEligible: prerequisiteCheck.isEligible,
+      requiredLessons: prerequisiteCheck.requiredLessons
     };
+
+    if (!prerequisiteCheck.isEligible) {
+      status.canResume = false;
+      status.canReattempt = false;
+      status.lastAttemptStatus = TrackingStatus.NOT_ELIGIBLE;
+      status.lastAttemptId = null;
+      status.isEligible = false;
+      status.requiredLessons = prerequisiteCheck.requiredLessons;
+      return status;
+    }
 
     if (latestTrack) {
       status.lastAttemptId = latestTrack.lessonTrackId;
@@ -302,8 +431,8 @@ export class TrackingService {
         status.canResume = true;
       }
 
-      const maxAttempts = lesson.noOfAttempts || 1;
-      if (latestTrack.attempt < maxAttempts && latestTrack.status === TrackingStatus.COMPLETED) {
+      const maxAttempts = lesson.noOfAttempts || 0;
+      if ((maxAttempts === 0 || latestTrack.attempt < maxAttempts) && latestTrack.status === TrackingStatus.COMPLETED) {
         status.canReattempt = true;
       }
     } else {
@@ -330,6 +459,7 @@ export class TrackingService {
         tenantId,
         organisationId
       } as FindOptionsWhere<LessonTrack>,
+      relations: ['lesson', 'lesson.media'],
     });
 
     if (!attempt) {
@@ -368,13 +498,30 @@ export class TrackingService {
     attempt.timeSpent = updateProgressDto.timeSpent || 0;
     attempt.totalContent = updateProgressDto.totalContent || 0;
 
+    // Update completion percentage if provided
+    if (updateProgressDto.completionPercentage !== undefined) {
+      attempt.completionPercentage = updateProgressDto.completionPercentage;
+    } else if (updateProgressDto.currentPosition && updateProgressDto.totalContent) {
+      // Calculate completion percentage if not provided but position and total content are available
+      attempt.completionPercentage = Math.round((updateProgressDto.currentPosition / updateProgressDto.totalContent) * 100);
+    }
+
+    // Update params if provided
+    if (updateProgressDto.params) {
+      attempt.params = updateProgressDto.params;
+    }
+
     // Update status if completed
-    if (updateProgressDto.currentPosition === updateProgressDto.totalContent) {
+    if (updateProgressDto.currentPosition === updateProgressDto.totalContent || 
+        (updateProgressDto.completionPercentage !== undefined && updateProgressDto.completionPercentage >= 100) ||
+      (updateProgressDto.status === TrackingStatus.COMPLETED)) {
       attempt.status = TrackingStatus.COMPLETED;
       attempt.endDatetime = new Date();
+      attempt.completionPercentage = 100; // Ensure completion percentage is 100 when completed
     } else if (attempt.status === TrackingStatus.STARTED) {
       attempt.status = TrackingStatus.INCOMPLETE;
     }
+    
     attempt.updatedAt = new Date();
     attempt.updatedBy = userId;
 
@@ -415,31 +562,32 @@ export class TrackingService {
 
     // If the lesson is completed, update completed lessons count
     if (lessonTrack.status === TrackingStatus.COMPLETED || courseTrack.status === TrackingStatus.STARTED) {
-      // Get all completed lessons for this course
-      const completedLessonTracks = await this.lessonTrackRepository.find({
-        where: { 
-          courseId: lessonTrack.courseId, 
-          userId: lessonTrack.userId, 
-          status: TrackingStatus.COMPLETED,
-          tenantId,
-          organisationId
-        } as FindOptionsWhere<LessonTrack>,
-      });
+      // Get all completed lessons for this course that have considerForPassing = true
+      const completedLessonTracksWithConsiderFlag = await this.lessonTrackRepository
+        .createQueryBuilder('lessonTrack')
+        .innerJoin('lessonTrack.lesson', 'lesson')
+        .where('lessonTrack.courseId = :courseId', { courseId: lessonTrack.courseId })
+        .andWhere('lessonTrack.userId = :userId', { userId: lessonTrack.userId })
+        .andWhere('lessonTrack.status = :status', { status: TrackingStatus.COMPLETED })
+        .andWhere('lessonTrack.tenantId = :tenantId', { tenantId })
+        .andWhere('lessonTrack.organisationId = :organisationId', { organisationId })
+        .andWhere('lesson.considerForPassing = :considerForPassing', { considerForPassing: true })
+        .getMany();
 
       // Get unique lesson IDs
-      const uniqueCompletedLessonIds = [...new Set(completedLessonTracks.map(track => track.lessonId))];
+      const uniqueCompletedLessonIds = [...new Set(completedLessonTracksWithConsiderFlag.map(track => track.lessonId))];
       
       // Update course track
       courseTrack.completedLessons = uniqueCompletedLessonIds.length;
       
       // Check if course is completed
-      if (courseTrack.completedLessons >= courseTrack.noOfLessons) {
-        courseTrack.status = TrackingStatus.COMPLETED;
-        courseTrack.endDatetime = new Date();
+      // if (courseTrack.completedLessons >= courseTrack.noOfLessons) {
+      //   courseTrack.status = TrackingStatus.COMPLETED;
+      //   courseTrack.endDatetime = new Date();
         
-      } else {
+      // } else {
         courseTrack.status = TrackingStatus.INCOMPLETE;
-      }
+      // }
     }
     await this.courseTrackRepository.save(courseTrack);
 
@@ -491,38 +639,47 @@ export class TrackingService {
         userId,
         tenantId,
         organisationId,
-        status: ModuleTrackStatus.INCOMPLETE
+        status: ModuleTrackStatus.INCOMPLETE,
+        completedLessons: 0,
+        totalLessons: 0,
+        progress: 0,
       });
     }
 
-    // Get all lessons in this module
+    // Get all lessons in this module with considerForPassing = true
     const moduleLessons = await this.lessonRepository.find({
       where: { 
         moduleId,
         tenantId,
         organisationId,
-        status: Not(LessonStatus.ARCHIVED)
+        status: LessonStatus.PUBLISHED,
+        considerForPassing: true
       } as FindOptionsWhere<Lesson>,
     });
 
-    // Get completed lessons for this module
-    const completedLessonTracks = await this.lessonTrackRepository.find({
-      where: { 
-        lessonId: In(moduleLessons.map(l => l.lessonId)),
-        userId,
-        status: TrackingStatus.COMPLETED,
-        tenantId,
-        organisationId
-      } as FindOptionsWhere<LessonTrack>,
-    });
+    // Get completed lessons for this module that have considerForPassing = true
+    const completedLessonTracks = await this.lessonTrackRepository
+      .createQueryBuilder('lessonTrack')
+      .innerJoin('lessonTrack.lesson', 'lesson')
+      .where('lessonTrack.lessonId IN (:...lessonIds)', { lessonIds: moduleLessons.map(l => l.lessonId) })
+      .andWhere('lessonTrack.userId = :userId', { userId })
+      .andWhere('lessonTrack.status = :status', { status: TrackingStatus.COMPLETED })
+      .andWhere('lessonTrack.tenantId = :tenantId', { tenantId })
+      .andWhere('lessonTrack.organisationId = :organisationId', { organisationId })
+      .andWhere('lesson.considerForPassing = :considerForPassing', { considerForPassing: true })
+      .getMany();
 
     // Get unique completed lesson IDs
     const uniqueCompletedLessonIds = [...new Set(completedLessonTracks.map(track => track.lessonId))];
 
+    // Update module tracking data
+    moduleTrack.completedLessons = uniqueCompletedLessonIds.length;
+    moduleTrack.totalLessons = moduleLessons.length;
+    moduleTrack.progress = moduleLessons.length > 0 ? Math.round((uniqueCompletedLessonIds.length / moduleLessons.length) * 100) : 0;
+
     // Update module status based on completion
-    if (uniqueCompletedLessonIds.length === moduleLessons.length) {
+    if (uniqueCompletedLessonIds.length === moduleLessons.length && moduleLessons.length > 0) {
       moduleTrack.status = ModuleTrackStatus.COMPLETED;
-      
     } else {
       moduleTrack.status = ModuleTrackStatus.INCOMPLETE;
     }

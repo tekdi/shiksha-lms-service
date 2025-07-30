@@ -12,9 +12,11 @@ import { LessonTrack } from './lesson-track.entity';
 import { ApiProperty } from '@nestjs/swagger';
 
 export enum TrackingStatus {
+  NOT_STARTED = 'not_started',
   STARTED = 'started',
   INCOMPLETE = 'incomplete',
   COMPLETED = 'completed',
+  NOT_ELIGIBLE = 'not_eligible',
 }
 
 @Entity('course_track')

@@ -36,6 +36,8 @@ import { getUploadPath } from '../common/utils/upload.util';
 import { uploadConfigs } from '../config/file-validation.config';
 import { TenantOrg } from '../common/decorators/tenant-org.decorator';
 import { CourseStructureDto } from '../courses/dto/course-structure.dto';
+import { SearchCourseResponseDto } from './dto/search-course.dto';
+import { CourseHierarchyFilterDto } from './dto/course-hierarchy-filter.dto';
 
 
 @ApiTags('Courses')
@@ -85,28 +87,14 @@ export class CoursesController {
   @ApiResponse({ 
     status: 200, 
     description: 'Search results retrieved successfully',
-    schema: {
-      properties: {
-        items: {
-          type: 'array',
-          items: { $ref: '#/components/schemas/Course' }
-        },
-        total: { type: 'number' }
-      }
-    }
+    type: SearchCourseResponseDto
   })
   async searchCourses(
     @Query() searchDto: SearchCourseDto,
     @TenantOrg() tenantOrg: { tenantId: string; organisationId: string },
   ) {
-    const { page, limit, ...filters } = searchDto;
-    const paginationDto = new PaginationDto();
-    paginationDto.page = page;
-    paginationDto.limit = limit;
-    
     return this.coursesService.search(
-      filters,
-      paginationDto,
+      searchDto,
       tenantOrg.tenantId,
       tenantOrg.organisationId
     );
@@ -173,55 +161,51 @@ export class CoursesController {
 
   @Get(':courseId/hierarchy/tracking/:userId')
   @ApiId(API_IDS.GET_COURSE_HIERARCHY_WITH_TRACKING)
-  @ApiOperation({ summary: 'Get course hierarchy with user tracking information' })
+  @ApiOperation({ 
+    summary: 'Get course user tracking information',
+    description: 'Get course tracking and eligibility information. User must be enrolled in the course. Use query parameters to filter: includeModules, includeLessons, moduleId.'
+  })
   @ApiParam({ name: 'courseId', type: 'string', format: 'uuid', description: 'Course ID' })
   @ApiResponse({ 
     status: 200, 
-    description: 'Course hierarchy with tracking retrieved successfully',
+    description: 'Course tracking and eligibility retrieved successfully',
     schema: {
       properties: {
         courseId: { type: 'string', format: 'uuid' },
         title: { type: 'string' },
-        progress: { type: 'number' },
         modules: { 
           type: 'array',
           items: {
             properties: {
               moduleId: { type: 'string', format: 'uuid' },
               title: { type: 'string' },
-              lessons: { 
-                type: 'array', 
-                items: { 
-                  properties: {
-                    lessonId: { type: 'string', format: 'uuid' },
-                    title: { type: 'string' },
-                    tracking: {
-                      properties: {
-                        status: { type: 'string', enum: ['started', 'in_progress', 'completed', 'failed'] },
-                        progress: { type: 'number' }
-                      }
-                    }
-                  }
-                } 
-              }
+              lessons: { type: 'array', items: { $ref: '#/components/schemas/Lesson' } },
+              tracking: { $ref: '#/components/schemas/ModuleTracking' }
             }
           }
-        }
+        },
+        tracking: { $ref: '#/components/schemas/CourseTracking' },
+        eligibility: { $ref: '#/components/schemas/CoursePrerequisitesDto' }
       }
     }
   })
+  @ApiResponse({ status: 400, description: 'User is not enrolled in this course' })
   @ApiResponse({ status: 404, description: 'Course not found' })
   async getCourseHierarchyWithTracking(
     @Param('courseId', ParseUUIDPipe) courseId: string,
     @Param('userId', ParseUUIDPipe) userId: string,
+    @Query() filterDto: CourseHierarchyFilterDto,
     @TenantOrg() tenantOrg: { tenantId: string; organisationId: string },
   ) {
     const courseHierarchyWithTracking = await this.coursesService.findCourseHierarchyWithTracking(
       courseId, 
       userId,
       tenantOrg.tenantId,
-      tenantOrg.organisationId
-      );
+      tenantOrg.organisationId,
+      filterDto.includeModules,
+      filterDto.includeLessons,
+      filterDto.moduleId
+    );
     return courseHierarchyWithTracking;
   }
 

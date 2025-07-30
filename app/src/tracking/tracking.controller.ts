@@ -18,10 +18,10 @@ import {
 } from '@nestjs/swagger';
 import { TrackingService } from './tracking.service';
 import { API_IDS } from '../common/constants/api-ids.constant';
-import { ApiId } from 'src/common/decorators/api-id.decorator';
-import { CommonQueryDto } from 'src/common/dto/common-query.dto';
+import { ApiId } from '../common/decorators/api-id.decorator';
+import { CommonQueryDto } from '../common/dto/common-query.dto';
 import { UpdateLessonTrackingDto } from './dto/update-lesson-tracking.dto';
-import { TenantOrg } from 'src/common/decorators/tenant-org.decorator';
+import { TenantOrg } from '../common/decorators/tenant-org.decorator';
 import { LessonStatusDto } from './dto/lesson-status.dto';
 import { LessonTrack } from './entities/lesson-track.entity';
 

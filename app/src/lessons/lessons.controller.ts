@@ -77,7 +77,7 @@ export class LessonsController {
   @ApiOperation({ summary: 'Get all lessons' })
   @ApiResponse({ status: 200, description: 'Lessons retrieved successfully' })
   @ApiQuery({ name: 'status', required: false, enum: ['published', 'unpublished', 'archived'] })
-  @ApiQuery({ name: 'format', required: false, enum: ['video', 'document', 'quiz', 'event'] })
+  @ApiQuery({ name: 'format', required: false, enum: ['video', 'document', 'quiz', 'event', 'text_and_media'] })
   @ApiQuery({ name: 'page', required: false, type: Number })
   @ApiQuery({ name: 'limit', required: false, type: Number })
   async getAllLessons(

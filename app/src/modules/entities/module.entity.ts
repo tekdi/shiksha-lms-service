@@ -11,6 +11,7 @@ import {
 } from 'typeorm';
 import { ApiProperty } from '@nestjs/swagger';
 import { Course } from '../../courses/entities/course.entity';
+import { Lesson } from '../../lessons/entities/lesson.entity';
 
 export enum ModuleStatus {
   ARCHIVED = 'archived',
@@ -65,9 +66,15 @@ export class Module {
   @Column({ type: 'timestamptz', nullable: true })
   endDatetime: Date;
 
-  @ApiProperty({ description: 'Eligibility criteria', required: false })
-  @Column({ type: 'varchar', length: 255, nullable: true })
-  eligibilityCriteria: string;
+  @ApiProperty({ 
+    description: 'Prerequisites for the module - array of prerequisite module IDs', 
+    example: ['123e4567-e89b-12d3-a456-426614174000', '987fcdeb-51a2-43c1-b456-426614174000'],
+    required: false,
+    type: [String],
+    isArray: true
+  })
+  @Column({ type: 'uuid', array: true, nullable: true })
+  prerequisites: string[];
 
   @ApiProperty({ description: 'Badge term', required: false })
   @Column({ type: 'jsonb', nullable: true })
@@ -116,4 +123,7 @@ export class Module {
 
   @OneToMany(() => Module, module => module.parent)
   submodules: Module[];
+
+  @OneToMany(() => Lesson, lesson => lesson.module)
+  lessons: Lesson[];
 }

@@ -706,6 +706,72 @@ components:
         result:
           type: object
 
+    ModuleTracking:
+      type: object
+      properties:
+        moduleTrackId:
+          type: string
+          format: uuid
+        moduleId:
+          type: string
+          format: uuid
+        userId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [incomplete, completed]
+        completedLessons:
+          type: integer
+          description: Number of completed lessons in the module
+        totalLessons:
+          type: integer
+          description: Total number of lessons in the module
+        progress:
+          type: integer
+          description: Progress percentage (0-100)
+        badgeGenDate:
+          type: string
+          format: date-time
+          nullable: true
+      required:
+        - moduleId
+        - userId
+        - status
+
+    RequiredCourse:
+      type: object
+      properties:
+        courseId:
+          type: string
+          format: uuid
+          description: Course ID of the required prerequisite course
+        title:
+          type: string
+          description: Title of the required prerequisite course
+        completed:
+          type: boolean
+          description: Whether the user has completed this prerequisite course
+      required:
+        - courseId
+        - title
+        - completed
+
+    CoursePrerequisitesDto:
+      type: object
+      properties:
+        requiredCourses:
+          type: array
+          items:
+            $ref: '#/components/schemas/RequiredCourse'
+          description: List of required prerequisite courses
+        isEligible:
+          type: boolean
+          description: Whether the user is eligible to access this course based on prerequisite completion
+      required:
+        - requiredCourses
+        - isEligible
+
 security:
   - bearerAuth: []
 
