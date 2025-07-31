@@ -38,6 +38,7 @@ export const RESPONSE_MESSAGES = {
   ENROLLMENT_CREATED: 'User enrolled successfully',
   ENROLLMENT_UPDATED: 'Enrollment updated successfully',
   ENROLLMENT_CANCELLED: 'Enrollment cancelled successfully',
+  ENROLLMENT_DELETED: 'Enrollment and all related tracking records deleted successfully',
   ENROLLMENT_NOT_FOUND: 'Enrollment not found',
   ALREADY_ENROLLED: 'User is already enrolled in this course',
   ADMIN_APPROVAL_REQUIRED: 'Admin approval required for this course',
@@ -45,6 +46,7 @@ export const RESPONSE_MESSAGES = {
   FETCH_ERROR: 'Error retrieving enrollments',
   UPDATE_ERROR: 'Error updating enrollment',
   CANCELLATION_ERROR: 'Error cancelling enrollment',
+  DELETE_ERROR: 'Error deleting enrollment and related records',
 
   // Tracking Specific Messages
   TRACKING_STARTED: 'Tracking started successfully',

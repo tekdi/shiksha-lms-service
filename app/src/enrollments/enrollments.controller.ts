@@ -21,6 +21,7 @@ import {
 import { EnrollmentsService } from './enrollments.service';
 import { CreateEnrollmentDto } from './dto/create-enrollment.dto';
 import { UpdateEnrollmentDto } from './dto/update-enrollment.dto';
+import { DeleteEnrollmentDto } from './dto/delete-enrollment.dto';
 import { PaginationDto } from '../common/dto/pagination.dto';
 import { API_IDS } from '../common/constants/api-ids.constant';
 import { UserEnrollment, EnrollmentStatus } from './entities/user-enrollment.entity';
@@ -157,12 +158,13 @@ export class EnrollmentsController {
     );
   }
 
-  @Delete(':enrollmentId')
-  @ApiId(API_IDS.CANCEL_ENROLLMENT)
-  @ApiOperation({ summary: 'Cancel enrollment' })
+
+  @Delete()
+  @ApiId(API_IDS.DELETE_ENROLLMENT)
+  @ApiOperation({ summary: 'Hard delete enrollment and all related tracking records' })
   @ApiResponse({ 
     status: 200, 
-    description: 'Enrollment cancelled successfully',
+    description: 'Enrollment and all related records deleted successfully',
     schema: {
       properties: {
         success: { type: 'boolean' },
@@ -171,18 +173,14 @@ export class EnrollmentsController {
     }
   })
   @ApiResponse({ status: 404, description: 'Enrollment not found' })
-  @ApiParam({ 
-    name: 'enrollmentId', 
-    type: String, 
-    format: 'uuid',
-    description: 'Enrollment ID'
-  })
-  async cancelEnrollment(
-    @Param('enrollmentId', ParseUUIDPipe) enrollmentId: string,
+  @ApiBody({ type: DeleteEnrollmentDto })
+  async deleteEnrollment(
+    @Body() deleteEnrollmentDto: DeleteEnrollmentDto,
     @TenantOrg() tenantOrg: { tenantId: string; organisationId: string },
   ) {
-    return this.enrollmentsService.cancel(
-      enrollmentId,
+    return this.enrollmentsService.hardDelete(
+      deleteEnrollmentDto.courseId,
+      deleteEnrollmentDto.userId,
       tenantOrg.tenantId,
       tenantOrg.organisationId
     );
