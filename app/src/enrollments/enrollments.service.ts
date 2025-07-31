@@ -7,7 +7,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Not, IsNull, LessThan, MoreThan, FindOptionsWhere, DataSource } from 'typeorm';
+import { Repository, Not, IsNull, LessThan, MoreThan, FindOptionsWhere, DataSource, In } from 'typeorm';
 import { UserEnrollment, EnrollmentStatus } from './entities/user-enrollment.entity';
 import { Course } from '../courses/entities/course.entity';
 import { CourseStatus } from '../courses/entities/course.entity';
@@ -22,6 +22,7 @@ import { ConfigService } from '@nestjs/config';
 import { Lesson, LessonStatus } from '../lessons/entities/lesson.entity';
 import { Module as CourseModule, ModuleStatus } from '../modules/entities/module.entity';
 import { ModuleTrack, ModuleTrackStatus } from '../tracking/entities/module-track.entity';
+import { LessonTrack } from '../tracking/entities/lesson-track.entity';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { CacheConfigService } from '../cache/cache-config.service';
 
@@ -41,6 +42,8 @@ export class EnrollmentsService {
     private readonly moduleRepository: Repository<CourseModule>,
     @InjectRepository(ModuleTrack)
     private readonly moduleTrackRepository: Repository<ModuleTrack>,
+    @InjectRepository(LessonTrack)
+    private readonly lessonTrackRepository: Repository<LessonTrack>,
     private readonly cacheService: CacheService,
     private readonly configService: ConfigService,
     @InjectRepository(Lesson)
@@ -413,42 +416,106 @@ export class EnrollmentsService {
   }
 
   /**
-   * Cancel an enrollment
+   * Hard delete enrollment and all related tracking records
    */
-  async cancel(
-    enrollmentId: string,
+  async hardDelete(
+    courseId: string,
+    userId: string,
     tenantId: string,
     organisationId: string
   ): Promise<{ success: boolean; message: string }> {
-    try {
-      const enrollment = await this.findOne(enrollmentId, tenantId, organisationId);
+    const queryRunner = this.dataSource.createQueryRunner();
 
-      if (enrollment.status === EnrollmentStatus.UNPUBLISHED) {
-        throw new BadRequestException(RESPONSE_MESSAGES.ERROR.ENROLLMENT_ALREADY_CANCELLED);
+    try {
+      await queryRunner.connect();
+      await queryRunner.startTransaction();
+
+      // Find the enrollment
+      const enrollment = await queryRunner.manager.findOne(UserEnrollment, {
+        where: {
+          courseId,
+          userId,
+          tenantId,
+          organisationId,
+        },
+      });
+
+      if (!enrollment) {
+        throw new NotFoundException(RESPONSE_MESSAGES.ENROLLMENT_NOT_FOUND);
       }
 
-      // Update enrollment status
-      enrollment.status = EnrollmentStatus.UNPUBLISHED;
-      await this.userEnrollmentRepository.save(enrollment);
+      // Delete all lesson tracking records for this user and course
+      await queryRunner.manager.delete(LessonTrack, {
+        courseId,
+        userId,
+        tenantId,
+        organisationId,
+      });
+
+      // Get all modules for this course to delete module tracking records
+      const modules = await queryRunner.manager.find(CourseModule, {
+        where: {
+          courseId,
+          tenantId,
+          organisationId,
+        },
+        select: ['moduleId'],
+      });
+
+      if (modules.length > 0) {
+        const moduleIds = modules.map(m => m.moduleId);
+        
+        // Delete module tracking records
+        await queryRunner.manager.delete(ModuleTrack, {
+          userId,
+          tenantId,
+          organisationId,
+          moduleId: In(moduleIds),
+        });
+      }
+
+      // Delete course tracking record
+      await queryRunner.manager.delete(CourseTrack, {
+        courseId,
+        userId,
+        tenantId,
+        organisationId,
+      });
+
+      // Delete the enrollment
+      await queryRunner.manager.delete(UserEnrollment, {
+        courseId,
+        userId,
+        tenantId,
+        organisationId,
+      });
+
+      // Commit the transaction
+      await queryRunner.commitTransaction();
 
       // Invalidate all related caches
-      const enrollmentKey = this.cacheConfig.getEnrollmentKey(enrollment.userId, enrollment.courseId, tenantId, organisationId);
       await Promise.all([
-        this.cacheService.del(this.cacheConfig.getUserEnrollmentKey(enrollmentId, tenantId, organisationId)),
-        this.cacheService.del(enrollmentKey),
-        this.cacheService.invalidateEnrollment(enrollment.userId, enrollment.courseId, tenantId, organisationId),
+        this.cacheService.del(this.cacheConfig.getUserEnrollmentKey(enrollment.enrollmentId, tenantId, organisationId)),
+        this.cacheService.del(this.cacheConfig.getEnrollmentKey(userId, courseId, tenantId, organisationId)),
+        this.cacheService.invalidateEnrollment(userId, courseId, tenantId, organisationId),
       ]);
 
       return {
         success: true,
-        message: RESPONSE_MESSAGES.ENROLLMENT_CANCELLED,
+        message: RESPONSE_MESSAGES.ENROLLMENT_DELETED,
       };
     } catch (error) {
-      this.logger.error(`Error cancelling enrollment: ${error.message}`);
-      if (error instanceof NotFoundException || error instanceof BadRequestException) {
+      // Rollback the transaction on error
+      await queryRunner.rollbackTransaction();
+      
+      this.logger.error(`Error hard deleting enrollment: ${error.message}`);
+      if (error instanceof NotFoundException) {
         throw error;
       }
-      throw new InternalServerErrorException(RESPONSE_MESSAGES.CANCELLATION_ERROR);
+      throw new InternalServerErrorException(RESPONSE_MESSAGES.DELETE_ERROR);
+    } finally {
+      // Release the query runner
+      await queryRunner.release();
     }
   }
 }
