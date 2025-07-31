@@ -8,6 +8,7 @@ import { Course } from '../courses/entities/course.entity';
 import { CourseTrack } from '../tracking/entities/course-track.entity';
 import { Module as CourseModule } from '../modules/entities/module.entity';
 import { ModuleTrack } from '../tracking/entities/module-track.entity';
+import { LessonTrack } from '../tracking/entities/lesson-track.entity';
 import { CacheModule } from '../cache/cache.module';
 import { Lesson } from '../lessons/entities/lesson.entity';
 
@@ -19,6 +20,7 @@ import { Lesson } from '../lessons/entities/lesson.entity';
       CourseTrack,
       CourseModule,
       ModuleTrack,
+      LessonTrack,
       Lesson,
     ]),
     ConfigModule,
