@@ -420,8 +420,8 @@ export class LessonsService {
         .leftJoinAndSelect('lesson.module', 'module')
         .select([
           'lesson.lessonId',
-          'lesson.moduleId', 
-          'lesson.courseId',
+          'module.moduleId', 
+          'course.courseId',
           'lesson.title',
           'lesson.format',
           'lesson.status',
