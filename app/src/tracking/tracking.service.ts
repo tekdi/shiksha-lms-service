@@ -495,7 +495,7 @@ export class TrackingService {
     // Update progress
     attempt.currentPosition = updateProgressDto.currentPosition || 0;
     attempt.score = updateProgressDto.score || 0;
-    attempt.timeSpent = updateProgressDto.timeSpent || 0;
+    attempt.timeSpent = (attempt.timeSpent || 0) + (updateProgressDto.timeSpent || 0);
     attempt.totalContent = updateProgressDto.totalContent || 0;
 
     // Update completion percentage if provided
