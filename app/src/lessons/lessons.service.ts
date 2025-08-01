@@ -381,6 +381,77 @@ export class LessonsService {
   }
 
   /**
+   * Find lesson by test ID through media source
+   * @param testId The test ID to find the associated lesson
+   * @param tenantId The tenant ID for data isolation
+   * @param organisationId The organization ID for data isolation
+   */
+  async findByTestId(
+    testId: string,
+    tenantId: string,
+    organisationId: string
+  ): Promise<Lesson> {
+    try {
+      // Check cache first
+      const cacheKey = this.cacheConfig.getLessonByTestPattern(testId, tenantId, organisationId);
+      const cachedLesson = await this.cacheService.get<Lesson>(cacheKey);
+      if (cachedLesson) {
+        return cachedLesson;
+      }
+
+      // Find media with the testId as source
+      const media = await this.mediaRepository.findOne({
+        where: { 
+          source: testId,
+          status: Not(MediaStatus.ARCHIVED),
+          tenantId: tenantId,
+          organisationId: organisationId
+        },
+      });
+
+      if (!media) {
+        throw new NotFoundException(RESPONSE_MESSAGES.ERROR.MEDIA_NOT_FOUND);
+      }
+
+      // Find lesson associated with this media
+      const lesson = await this.lessonRepository
+        .createQueryBuilder('lesson')
+        .leftJoinAndSelect('lesson.course', 'course')
+        .leftJoinAndSelect('lesson.module', 'module')
+        .select([
+          'lesson.lessonId',
+          'lesson.moduleId', 
+          'lesson.courseId',
+          'lesson.title',
+          'lesson.format',
+          'lesson.status',
+          'course.title',
+          'module.title'
+        ])
+        .where('lesson.mediaId = :mediaId', { mediaId: media.mediaId })
+        .andWhere('lesson.status != :status', { status: LessonStatus.ARCHIVED })
+        .andWhere('lesson.tenantId = :tenantId', { tenantId })
+        .andWhere('lesson.organisationId = :organisationId', { organisationId })
+        .getOne();
+
+      if (!lesson) {
+        throw new NotFoundException(RESPONSE_MESSAGES.ERROR.LESSON_NOT_FOUND);
+      }
+
+      // Cache the lesson
+      await this.cacheService.set(cacheKey, lesson, this.cacheConfig.LESSON_TTL);
+
+      return lesson;
+    } catch (error) {
+      this.logger.error(`Error finding lesson by test ID: ${error.message}`, error.stack);
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      throw new InternalServerErrorException(RESPONSE_MESSAGES.ERROR.ERROR_RETRIEVING_LESSONS);
+    }
+  }
+
+  /**
    * Update a lesson
    * @param lessonId The lesson ID to update
    * @param updateLessonDto The lesson data to update
