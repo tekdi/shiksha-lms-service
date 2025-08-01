@@ -459,14 +459,6 @@ export class EnrollmentsService {
         throw new BadRequestException(RESPONSE_MESSAGES.ERROR.CANNOT_DELETE_ENROLLMENT_WITH_ATTEMPTS);
       }
 
-      // Delete all lesson tracking records for this user and course
-      await queryRunner.manager.delete(LessonTrack, {
-        courseId,
-        userId,
-        tenantId,
-        organisationId,
-      });
-
       // Get all modules for this course to delete module tracking records
       const modules = await queryRunner.manager.find(CourseModule, {
         where: {
