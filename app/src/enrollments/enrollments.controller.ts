@@ -172,6 +172,7 @@ export class EnrollmentsController {
       }
     }
   })
+  @ApiResponse({ status: 400, description: 'Cannot delete enrollment as user has started to attempt lessons.' })
   @ApiResponse({ status: 404, description: 'Enrollment not found' })
   @ApiBody({ type: DeleteEnrollmentDto })
   async deleteEnrollment(
