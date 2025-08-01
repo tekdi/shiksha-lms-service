@@ -129,6 +129,23 @@ export class LessonsController {
     );
   }
 
+  @Get('test/:testId')
+  @ApiId(API_IDS.GET_LESSON_BY_TEST_ID)
+  @ApiOperation({ summary: 'Get lesson details by test ID' })
+  @ApiResponse({ status: 200, description: 'Lesson retrieved successfully' })
+  @ApiResponse({ status: 404, description: 'Lesson not found' })
+  @ApiQuery({ name: 'testId', required: true, type: String })
+  async getLessonByTestId(
+    @Param('testId', ParseUUIDPipe) testId: string,
+    @TenantOrg() tenantOrg: { tenantId: string; organisationId: string },
+  ) {
+    return this.lessonsService.findByTestId(
+      testId,
+      tenantOrg.tenantId,
+      tenantOrg.organisationId
+    );
+  }
+
   @Patch(':lessonId')
   @ApiId(API_IDS.UPDATE_LESSON)
   @ApiOperation({ summary: 'Update a lesson' })

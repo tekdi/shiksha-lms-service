@@ -444,13 +444,20 @@ export class EnrollmentsService {
         throw new NotFoundException(RESPONSE_MESSAGES.ENROLLMENT_NOT_FOUND);
       }
 
-      // Delete all lesson tracking records for this user and course
-      await queryRunner.manager.delete(LessonTrack, {
-        courseId,
-        userId,
-        tenantId,
-        organisationId,
+      // Check if user has any lesson attempts for this course
+      const lessonAttempts = await queryRunner.manager.find(LessonTrack, {
+        where: {
+          courseId,
+          userId,
+          tenantId,
+          organisationId,
+        },
+        select: ['lessonTrackId'],
       });
+
+      if (lessonAttempts.length > 0) {
+        throw new BadRequestException(RESPONSE_MESSAGES.ERROR.CANNOT_DELETE_ENROLLMENT_WITH_ATTEMPTS);
+      }
 
       // Get all modules for this course to delete module tracking records
       const modules = await queryRunner.manager.find(CourseModule, {
@@ -509,7 +516,7 @@ export class EnrollmentsService {
       await queryRunner.rollbackTransaction();
       
       this.logger.error(`Error hard deleting enrollment: ${error.message}`);
-      if (error instanceof NotFoundException) {
+      if (error instanceof NotFoundException || error instanceof BadRequestException) {
         throw error;
       }
       throw new InternalServerErrorException(RESPONSE_MESSAGES.DELETE_ERROR);

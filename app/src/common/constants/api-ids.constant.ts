@@ -24,6 +24,7 @@ export const API_IDS = {
   GET_ALL_LESSONS: 'api.lesson.list',
   GET_LESSON_BY_ID: 'api.lesson.read',
   GET_LESSONS_BY_MODULE: 'api.lesson.list',
+  GET_LESSON_BY_TEST_ID: 'api.lesson.read',
   UPDATE_LESSON: 'api.lesson.update',
   DELETE_LESSON: 'api.lesson.delete',
   

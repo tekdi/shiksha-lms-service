@@ -103,6 +103,10 @@ export class CacheConfigService {
     return `${this.LESSON_PREFIX}module:${moduleId}:${tenantId}:${organisationId}:*`;
   }
 
+  getLessonByTestPattern(testId: string, tenantId: string, organisationId: string): string {
+    return `${this.LESSON_PREFIX}test:${testId}:${tenantId}:${organisationId}`;
+  }
+
   // Enrollment-related methods
   getEnrollmentKey(userId: string, courseId: string, tenantId: string, organisationId: string): string {
     return `${this.ENROLLMENT_PREFIX}${userId}:${courseId}:${tenantId}:${organisationId}`;

@@ -144,6 +144,7 @@ export const RESPONSE_MESSAGES = {
     MISSING_MODULES_IN_STRUCTURE: (count: number, ids: string) => `Request is missing ${count} module(s): ${ids}. All existing modules must be included in the structure update.`,
     MISSING_LESSONS_IN_STRUCTURE: (count: number, ids: string) => `Request is missing ${count} lesson(s): ${ids}. All existing lessons must be included in the structure update.`,
     SOME_MODULES_NOT_FOUND: 'Some modules not found or do not belong to the specified course',
+    CANNOT_DELETE_ENROLLMENT_WITH_ATTEMPTS: 'Cannot delete enrollment as user has started to attempt lessons.',
 
   },
 };
