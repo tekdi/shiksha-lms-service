@@ -14,6 +14,7 @@ import { CacheModule } from './cache/cache.module';
 import { TrackingModule } from './tracking/tracking.module';
 import { CloudStorageModule } from '@vinayak-patil/cloud-storage';
 import { ConfigurationModule } from './configuration/configuration.module';
+import { AspireLeaderModule } from './aspire-leader/aspire-leader.module';
 
 @Module({
   imports: [
@@ -47,6 +48,7 @@ import { ConfigurationModule } from './configuration/configuration.module';
     EnrollmentsModule,
     HealthModule,
     TrackingModule,
+    AspireLeaderModule,
   ],
   controllers: [AppController],
   providers: [AppService],
