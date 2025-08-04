@@ -17,7 +17,6 @@ import { CourseTrack } from '../tracking/entities/course-track.entity';
 import { LessonTrack } from '../tracking/entities/lesson-track.entity';
 import { UserEnrollment } from '../enrollments/entities/user-enrollment.entity';
 import { CourseReportDto } from './dto/course-report.dto';
-import { CourseLevelReportItemDto, LessonLevelReportItemDto, CourseReportResponseDto } from './dto/course-report-response.dto';
 import { RESPONSE_MESSAGES } from '../common/constants/response-messages.constant';
 
 @Injectable()
@@ -46,7 +45,7 @@ export class AspireLeaderService {
     tenantId: string,
     organisationId: string,
     authorization: string,
-  ): Promise<CourseReportResponseDto> {
+  ): Promise<any> {
     const startTime = Date.now();
     this.logger.log(`Generating course report for courseId: ${reportDto.courseId}, cohortId: ${reportDto.cohortId}`);
 
@@ -65,7 +64,7 @@ export class AspireLeaderService {
     }
 
     // Check if lesson-level report is requested
-    let result: CourseReportResponseDto;
+    let result: any;
     if (reportDto.lessonId) {
       result = await this.generateLessonLevelReport(reportDto, course, tenantId, organisationId, authorization);
     } else {
@@ -87,40 +86,44 @@ export class AspireLeaderService {
     tenantId: string,
     organisationId: string,
     authorization: string,
-  ): Promise<CourseReportResponseDto> {
-    // Single query with JOINs to get enrollments and course tracking data
-    const enrollmentData = await this.userEnrollmentRepository
-      .createQueryBuilder('enrollment')
-      .leftJoinAndSelect('enrollment.course', 'course')
+  ): Promise<any> {
+    // Query with INNER JOIN course and course track, LEFT JOIN with enrollment
+    const enrollmentData = await this.courseTrackRepository
+      .createQueryBuilder('courseTrack')
+      .innerJoinAndSelect('courseTrack.course', 'course')
       .leftJoin(
-        'course_track',
-        'courseTrack',
-        'courseTrack.courseId = enrollment.courseId AND courseTrack.userId = enrollment.userId AND courseTrack.tenantId = enrollment.tenantId'
+        'user_enrollments',
+        'enrollment',
+        'enrollment.courseId = courseTrack.courseId AND enrollment.userId = courseTrack.userId AND enrollment.tenantId = courseTrack.tenantId'
       )
       .addSelect([
-        'courseTrack.courseTrackId',
-        'courseTrack.lastAccessedDate',
-        'courseTrack.completedLessons',
-        'courseTrack.noOfLessons',
-        'courseTrack.status',
-        'courseTrack.completedLessons / NULLIF(courseTrack.noOfLessons, 0) as progress'
+        'enrollment.enrollmentId',
+        'enrollment.userId',
+        'enrollment.status',
+        'enrollment.enrolledAt',
+        'enrollment.endTime'
       ])
-      .where('enrollment.courseId = :courseId', { courseId: reportDto.courseId })
-      .andWhere('enrollment.tenantId = :tenantId', { tenantId })
-      .andWhere('enrollment.organisationId = :organisationId', { organisationId })
-      .andWhere('enrollment.status != :status', { status: EnrollmentStatus.ARCHIVED })
-      .orderBy(('courseTrack.' + reportDto.sortBy) as any || 'progress', (reportDto.orderBy as any) || 'desc')
+      .where('courseTrack.courseId = :courseId', { courseId: reportDto.courseId })
+      .andWhere('courseTrack.tenantId = :tenantId', { tenantId })
+      .andWhere('courseTrack.organisationId = :organisationId', { organisationId })
+      .andWhere('(enrollment.status IS NULL OR enrollment.status != :status)', { status: EnrollmentStatus.ARCHIVED })
+      .orderBy(this.getSortField(reportDto.sortBy || 'progress', true), (reportDto.orderBy?.toUpperCase() as 'ASC' | 'DESC') || 'DESC')
       .skip(reportDto.offset || 0)
       .take(reportDto.limit || 10)
       .getMany();
 
     // Get total count for pagination
-    const totalCount = await this.userEnrollmentRepository
-      .createQueryBuilder('enrollment')
-      .where('enrollment.courseId = :courseId', { courseId: reportDto.courseId })
-      .andWhere('enrollment.tenantId = :tenantId', { tenantId })
-      .andWhere('enrollment.organisationId = :organisationId', { organisationId })
-      .andWhere('enrollment.status != :status', { status: EnrollmentStatus.ARCHIVED })
+    const totalCount = await this.courseTrackRepository
+      .createQueryBuilder('courseTrack')
+      .leftJoin(
+        'user_enrollments',
+        'enrollment',
+        'enrollment.courseId = courseTrack.courseId AND enrollment.userId = courseTrack.userId AND enrollment.tenantId = courseTrack.tenantId'
+      )
+      .where('courseTrack.courseId = :courseId', { courseId: reportDto.courseId })
+      .andWhere('courseTrack.tenantId = :tenantId', { tenantId })
+      .andWhere('courseTrack.organisationId = :organisationId', { organisationId })
+      .andWhere('(enrollment.status IS NULL OR enrollment.status != :status)', { status: EnrollmentStatus.ARCHIVED })
       .getCount();
 
     if (enrollmentData.length === 0) {
@@ -138,18 +141,43 @@ export class AspireLeaderService {
     const userData = await this.fetchUserData(userIds, tenantId, organisationId, authorization);
 
     // Combine data and create report items
-    const reportItems: CourseLevelReportItemDto[] = [];
+    const reportItems: any[] = [];
 
-    for (const enrollment of enrollmentData) {
-      const user = userData.find(u => u.userId === enrollment.userId);
-      const courseTrack = enrollment['courseTrack']; // Get from JOIN result
-      const course = enrollment['course'];
+
+    for (const courseTrackData of enrollmentData) {
+      const user = userData.find(u => u.userId === courseTrackData.userId);
+      const course = courseTrackData['course'];
+      const enrollment = courseTrackData['enrollment'];
 
       if (user) {
+        // Calculate progress
+        const progress = courseTrackData.noOfLessons > 0 
+          ? Math.round((courseTrackData.completedLessons / courseTrackData.noOfLessons) * 100)
+          : 0;
+
         reportItems.push({
           ...user,
-          ...course,
-          ...courseTrack,
+          courseId: course.courseId,
+          courseTitle: course.title,
+          courseStatus: course.status,
+          courseFeatured: course.featured,
+          courseFree: course.free,
+          courseStartDate: course.startDatetime?.toISOString(),
+          courseEndDate: course.endDatetime?.toISOString(),
+          // Course Track fields
+          courseTrackId: courseTrackData.courseTrackId,
+          courseTrackStartDate: courseTrackData.startDatetime?.toISOString(),
+          courseTrackEndDate: courseTrackData.endDatetime?.toISOString(),
+          noOfLessons: courseTrackData.noOfLessons || 0,
+          completedLessons: courseTrackData.completedLessons || 0,
+          courseTrackStatus: courseTrackData.status,
+          lastAccessedDate: courseTrackData.lastAccessedDate?.toISOString(),
+          // Enrollment fields
+          enrollmentId: enrollment?.enrollmentId,
+          enrollmentStatus: enrollment?.status,
+          enrolledDate: enrollment?.enrolledAt?.toISOString(),
+          completedDate: enrollment?.endTime?.toISOString(),
+          progress: courseTrackData.completedLessons / courseTrackData.noOfLessons * 100 || 0,
         });
       }
     }
@@ -174,7 +202,7 @@ export class AspireLeaderService {
     tenantId: string,
     organisationId: string,
     authorization: string,
-  ): Promise<CourseReportResponseDto> {
+  ): Promise<any> {
     // Validate lesson exists
     const lesson = await this.lessonRepository.findOne({
       where: {
@@ -191,38 +219,28 @@ export class AspireLeaderService {
     }
 
 
-    // Single query with JOINs to get enrollments and latest lesson tracking data
-    const enrollmentData = await this.userEnrollmentRepository
-      .createQueryBuilder('enrollment')
-      .leftJoinAndSelect('enrollment.course', 'course')
+    // Query with INNER JOIN lesson track and course, LEFT JOIN with enrollment
+    const enrollmentData = await this.lessonTrackRepository
+      .createQueryBuilder('lessonTrack')
+      .innerJoinAndSelect('lessonTrack.course', 'course')
       .leftJoin(
-        'lesson_track',
-        'lessonTrack',
-        `lessonTrack.lessonId = :lessonId 
-         AND lessonTrack.userId = enrollment.userId 
-         AND lessonTrack.tenantId = enrollment.tenantId
-         AND lessonTrack.attempt = (
-           SELECT MAX(lt2.attempt) 
-           FROM lesson_track lt2 
-           WHERE lt2.lessonId = :lessonId 
-           AND lt2.userId = enrollment.userId 
-           AND lt2.tenantId = enrollment.tenantId
-         )`,
-        { lessonId: reportDto.lessonId }
+        'user_enrollments',
+        'enrollment',
+        'enrollment.courseId = lessonTrack.courseId AND enrollment.userId = lessonTrack.userId AND enrollment.tenantId = lessonTrack.tenantId'
       )
       .addSelect([
-        'lessonTrack.lessonTrackId',
-        'lessonTrack.attempt',
-        'lessonTrack.timeSpent',
-        'lessonTrack.completionPercentage',
-        'lessonTrack.status',
-        'lessonTrack.updatedAt'
+        'enrollment.enrollmentId',
+        'enrollment.userId',
+        'enrollment.status',
+        'enrollment.enrolledAt',
+        'enrollment.endTime'
       ])
-      .where('enrollment.courseId = :courseId', { courseId: reportDto.courseId })
-      .andWhere('enrollment.tenantId = :tenantId', { tenantId })
-      .andWhere('enrollment.organisationId = :organisationId', { organisationId })
-      .andWhere('enrollment.status != :status', { status: EnrollmentStatus.ARCHIVED })
-      .orderBy(('lessonTrack.' + reportDto.sortBy) as any || 'completionPercentage', (reportDto.orderBy as any) || 'desc')
+      .where('lessonTrack.lessonId = :lessonId', { lessonId: reportDto.lessonId })
+      .andWhere('lessonTrack.courseId = :courseId', { courseId: reportDto.courseId })
+      .andWhere('lessonTrack.tenantId = :tenantId', { tenantId })
+      .andWhere('lessonTrack.organisationId = :organisationId', { organisationId })
+      .andWhere('(enrollment.status IS NULL OR enrollment.status != :status)', { status: EnrollmentStatus.ARCHIVED })
+      .orderBy(this.getSortField(reportDto.sortBy || 'progress', false), (reportDto.orderBy?.toUpperCase() as 'ASC' | 'DESC') || 'DESC')
       .skip(reportDto.offset || 0)
       .take(reportDto.limit || 10)
       .getMany();
@@ -242,19 +260,33 @@ export class AspireLeaderService {
     const userData = await this.fetchUserData(userIds, tenantId, organisationId, authorization);
 
     // Combine data and create report items
-    const reportItems: LessonLevelReportItemDto[] = [];
+    const reportItems: any[] = [];
 
-    for (const enrollment of enrollmentData) {
-      const user = userData.find(u => u.userId === enrollment.userId);
-      const lessonTrack = enrollment['lessonTrack']; // Get from JOIN result (already latest attempt)
+    for (const lessonTrackData of enrollmentData) {
+      const user = userData.find(u => u.userId === lessonTrackData.userId);
+      const course = lessonTrackData['course'];
+      const enrollment = lessonTrackData['enrollment'];
 
       if (user) {
         reportItems.push({
-          ...course,
+          // User fields
           ...user,
-          ...lessonTrack,
+          // Course fields
+          courseId: course.courseId,
+          courseTitle: course.title,
+          courseStatus: course.status,
+          // Lesson fields
           lessonTitle: lesson.title,
           type: lesson.format,
+          // Lesson Track fields
+          lessonTrackId: lessonTrackData.lessonTrackId,
+          attempt: lessonTrackData.attempt || 0,
+          startedAt: lessonTrackData.startDatetime?.toISOString(),
+          completedAt: lessonTrackData.endDatetime?.toISOString(),
+          score: lessonTrackData.score || 0,
+          lessonStatus: lessonTrackData.status,
+          timeSpent: lessonTrackData.timeSpent || 0,
+          completionPercentage: lessonTrackData.completionPercentage || 0,
         });
       }
     }
@@ -286,6 +318,7 @@ export class AspireLeaderService {
       const response = await axios.post(`${middlewareUrl}/user/v1/list`, {
         filters: { userId: userIds },
         limit: userIds.length,
+        includeCustomFields: false,
         }, {
           headers: {
             'tenantid': tenantId,
@@ -297,14 +330,42 @@ export class AspireLeaderService {
 
       // Handle the actual response format from the user service
       const userDetails = response.data.result?.getUserDetails || [];
-      return userDetails.map((user: any) => ({
-        userId: user.userId,
-        name: `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.username,
-        email: user.email || user.username
-      }));
+      
+      // Filter out audit fields from user data
+      return userDetails.map((user: any) => {
+        const { createdBy, updatedBy, createdAt, updatedAt, ...userWithoutAudit } = user;
+        return userWithoutAudit;
+      });     
     } catch (error) {
       this.logger.error('Failed to fetch user data from external API', error);
       throw new BadRequestException(RESPONSE_MESSAGES.ERROR.FAILED_TO_FETCH_USER_DATA);
+    }
+  }
+
+  /**
+   * Get the correct field name for sorting
+   */
+  private getSortField(sortBy: string, isCourseLevel: boolean = true): string {
+    if (isCourseLevel) {
+      switch (sortBy) {
+        case 'progress':
+          return 'courseTrack.completedLessons'; 
+        case 'lastAccessedDate':
+          return 'courseTrack.lastAccessedDate';
+        default:
+          return 'courseTrack.completedLessons';
+      }
+    } else {
+      switch (sortBy) {
+        case 'progress':
+          return 'lessonTrack.completionPercentage';
+        case 'timeSpentMins':
+          return 'lessonTrack.timeSpent';
+        case 'lessonTitle':
+          return 'lessonTrack.lessonId';
+        default:
+          return 'lessonTrack.completionPercentage';
+      }
     }
   }
 

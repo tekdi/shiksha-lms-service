@@ -13,7 +13,6 @@ import {
 } from '@nestjs/swagger';
 import { AspireLeaderService } from './aspire-leader.service';
 import { CourseReportDto, CourseReportHeadersDto } from './dto/course-report.dto';
-import { CourseReportResponseDto } from './dto/course-report-response.dto';
 import { API_IDS } from '../common/constants/api-ids.constant';
 import { ApiId } from '../common/decorators/api-id.decorator';
 import { TenantOrg } from '../common/decorators/tenant-org.decorator';
@@ -41,7 +40,6 @@ export class AspireLeaderController {
   @ApiResponse({ 
     status: 200, 
     description: 'Course report generated successfully',
-    type: CourseReportResponseDto
   })
   @ApiResponse({ status: 400, description: 'Bad request - Invalid parameters or missing Authorization header' })
   @ApiResponse({ status: 404, description: 'Course or lesson not found' })
@@ -49,7 +47,7 @@ export class AspireLeaderController {
     @Query() reportDto: CourseReportDto,
     @TenantOrg() tenantOrg: { tenantId: string; organisationId: string },
     @Headers() headers: CourseReportHeadersDto,
-  ): Promise<CourseReportResponseDto> {
+  ): Promise<any> {
     return this.aspireLeaderService.generateCourseReport(
       reportDto,
       tenantOrg.tenantId,
