@@ -82,7 +82,7 @@
             "type": "number",
             "title": "Allowed image size in MB",
             "description": "Allowed image size in MB",
-            "default": "50"
+            "default": "5"
           },
           "video_mime_type": {
             "type": "string",
@@ -94,7 +94,7 @@
             "type": "number",
             "title": "Allowed video size in MB",
             "description": "Allowed video size in MB",
-            "default": 500
+            "default": 50
           },
           "document_mime_type": {
             "type": "string",
@@ -106,37 +106,37 @@
             "type": "number",
             "title": "Allowed document size in MB",
             "description": "Allowed document size in MB",
-            "default": 500
+            "default": 50
           },
           "courses_upload_path": {
             "type": "string",
             "title": "Courses Upload Path",
             "description": "Courses Upload Path",
-            "default": "courses"
+            "default": "lms/courses"
           },
           "modules_upload_path": {
             "type": "string",
             "title": "Modules Upload Path",
             "description": "Modules Upload Path",
-            "default": "modules"
+            "default": "lms/modules"
           },
           "lessons_upload_path": {
             "type": "string",
             "title": "Lessons Upload Path",
             "description": "Lessons Upload Path",
-            "default": "lessons"
+            "default": "lms/lessons"
           },
           "lessons_media_upload_path": {
             "type": "string",
             "title": "Lessons Media Upload Path",
             "description": "Filesystem path for lesson media uploads",
-            "default": ""
+            "default": "lms/lessons/media"
           },
           "lessons_associated_media_upload_path": {
             "type": "string",
             "title": "Lessons Associated Media Upload Path",
             "description": "Filesystem path for associated lesson media uploads",
-            "default": ""
+            "default": "lms/lessons/media"
           }
         }
       },

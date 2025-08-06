@@ -145,7 +145,7 @@ export class CacheService {
   // Configuration-specific cache methods
   async getTenantConfig(tenantId: string): Promise<TenantConfigValue | null> {  
     const key = this.cacheConfig.getTenantConfigKey(tenantId);
-    const value = await this.cacheManager.get<TenantConfigValue>(key);
+    const value = await this.cacheManager.get<any>(key);
     if (value !== undefined && value !== null) {
       this.logger.debug(`Cache HIT for key ${key}`);
       return value;
@@ -158,7 +158,7 @@ export class CacheService {
   async setTenantConfig(tenantId: string, config: TenantConfigValue): Promise<void> {
    
     const key = this.cacheConfig.getTenantConfigKey(tenantId);
-    await this.cacheManager.set(key, config); 
+    await this.cacheManager.set(key, config, 0);  
   
   }
 
