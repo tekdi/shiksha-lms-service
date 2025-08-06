@@ -176,7 +176,7 @@ export class CoursesService {
     const orderClause: any = {};
     orderClause[sortBy] = orderBy;
 
-    // Fetch courses
+    // Fetch courses - can use Join query to get courses , module and enrollment counts in future if there are more courses - with aspire case one cohort can hvae 2-5 courses.
     const [courses, total] = await this.courseRepository.findAndCount({
       where: this.buildSearchConditions(filters, whereClause),
       order: orderClause,
@@ -184,14 +184,14 @@ export class CoursesService {
       skip: offset,
     });
 
-    // Batch fetch module counts
-    const coursesWithModuleCounts = await this.enrichCoursesWithModuleCounts(
+    // Batch fetch module and enrollment counts
+    const coursesWithCounts = await this.enrichCoursesWithCounts(
       courses,
       tenantId
     );
 
     const result: SearchCourseResponseDto = { 
-      courses: coursesWithModuleCounts, 
+      courses: coursesWithCounts, 
       totalElements: total,
       offset,
       limit
@@ -266,32 +266,54 @@ export class CoursesService {
     ];
   }
 
-  private async enrichCoursesWithModuleCounts(
+  private async enrichCoursesWithCounts(
     courses: Course[],
     tenantId: string
   ): Promise<Course[]> {
     if (courses.length === 0) return [];
 
     const courseIds = courses.map(c => c.courseId);
-    const moduleCounts = await this.moduleRepository
-      .createQueryBuilder('module')
-      .select('module.courseId', 'courseId')
-      .addSelect('COUNT(*)', 'count')
-      .where({
-        courseId: In(courseIds),
-        tenantId,
-        status: Not(ModuleStatus.ARCHIVED)
-      })
-      .groupBy('module.courseId')
-      .getRawMany();
+    
+    // Get module counts using count method
+    const moduleCountPromises = courseIds.map(async (courseId) => {
+      const count = await this.moduleRepository.count({
+        where: {
+          courseId,
+          tenantId,
+          status: Not(ModuleStatus.ARCHIVED)
+        }
+      });
+      return { courseId, count };
+    });
 
-    const countMap = new Map(
-      moduleCounts.map(mc => [mc.courseId, parseInt(mc.count)])
+    const moduleCounts = await Promise.all(moduleCountPromises);
+
+    // Get enrollment counts using count method
+    const enrollmentCountPromises = courseIds.map(async (courseId) => {
+      const count = await this.userEnrollmentRepository.count({
+        where: {
+          courseId,
+          tenantId,
+          status: EnrollmentStatus.PUBLISHED
+        }
+      });
+      return { courseId, count };
+    });
+
+    const enrollmentCounts = await Promise.all(enrollmentCountPromises);
+
+    const moduleCountMap = new Map(
+      moduleCounts.map(mc => [mc.courseId, mc.count])
+    );
+    
+    const enrollmentCountMap = new Map(
+      enrollmentCounts.map(ec => [ec.courseId, ec.count])
     );
 
     return courses.map(course => ({
       ...course,
-      moduleCount: countMap.get(course.courseId) || 0
+      moduleCount: moduleCountMap.get(course.courseId) || 0,
+      enrolledUsersCount: enrollmentCountMap.get(course.courseId) || 0
     }));
   }
 

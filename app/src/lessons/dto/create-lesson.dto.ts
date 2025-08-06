@@ -110,9 +110,9 @@ export class CreateLessonDto {
 
   @ApiProperty({
     description: VALIDATION_MESSAGES.LESSON.DESCRIPTION,
-    example: 'Learn the basics of HTML tags and their usage',
-    required: true
+    example: 'Learn the basics of HTML tags and their usage'
   })
+  @IsOptional()
   @IsString({ message: VALIDATION_MESSAGES.COMMON.STRING('Description') })
   description?: string;
 
