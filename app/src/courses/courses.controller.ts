@@ -82,7 +82,7 @@ export class CoursesController {
   @ApiId(API_IDS.SEARCH_COURSES)  
   @ApiOperation({ 
     summary: 'Search and filter courses',
-    description: 'Search and filter courses with various criteria including keyword search and multiple filters'
+    description: 'Search and filter courses with various criteria including keyword search and multiple filters. Returns courses with module counts and enrolled user counts.'
   })
   @ApiResponse({ 
     status: 200, 
