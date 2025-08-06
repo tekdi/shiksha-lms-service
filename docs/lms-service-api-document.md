@@ -357,9 +357,9 @@ organisationid: <organisation-id>
 **Request Parameters**:
 - `title` (string, required): Course title (max 255 characters)
 - `alias` (string, optional): Course alias/slug
-- `startDatetime` (string, required): Course start date (ISO format)
+- `startDatetime` (string, optional): Course start date (ISO format)
 - `endDatetime` (string, required): Course end date (ISO format)
-- `shortDescription` (string, required): Brief description
+- `shortDescription` (string, optional): Brief description
 - `description` (string, required): Detailed description
 - `image` (file, optional): Course thumbnail image
 - `featured` (boolean, optional): Whether course is featured (default: false)
@@ -422,9 +422,9 @@ organisationid: <organisation-id>
 
 **Input Validation Rules**:
 - `title` must be present, non-empty, and max 255 characters
-- `startDatetime` must be present and valid date format
+- `startDatetime` must be valid date format (if provided)
 - `endDatetime` must be valid date format and after startDatetime (if provided)
-- `shortDescription` must be present and string type
+- `shortDescription` must be string type (if provided)
 - `description` must be present, non-empty, and string type
 - `alias` must be unique within the tenant (if provided, auto-generated if not)
 - `image` file must be valid image format and within tenant-configured size limits (if provided)
@@ -462,7 +462,7 @@ organisationid: <organisation-id>
 
 **HTTP Method**: GET
 
-**Description**: Search and filter courses with various criteria
+**Description**: Search and filter courses with various criteria including keyword search and multiple filters. Returns courses with module counts and enrolled user counts.
 
 **Headers**:
 ```
@@ -526,7 +526,9 @@ organisationid: <organisation-id>
         "createdBy": "789e0123-e89b-12d3-a456-426614174000",
         "createdAt": "2024-01-01T00:00:00Z",
         "updatedBy": "789e0123-e89b-12d3-a456-426614174000",
-        "updatedAt": "2024-01-01T00:00:00Z"
+        "updatedAt": "2024-01-01T00:00:00Z",
+        "moduleCount": 5,
+        "enrolledUsersCount": 25
       }
     ],
     "totalElements": 25,
@@ -566,6 +568,8 @@ organisationid: <organisation-id>
 - Featured courses should appear first when featured=true
 - Search must be case-insensitive
 - Results must be ordered by relevance when query is provided
+- Module counts and enrolled user counts are calculated efficiently using batch queries
+- Performance is optimized for small to medium course catalogs (2-5 courses per cohort)
 
 **Authorization Conditions**:
 - User must have read permissions for courses in the tenant
@@ -1528,7 +1532,7 @@ organisationid: <organisation-id>
 - `ordering` (number, optional): Module order within course or parent module
 - `status` (enum, optional): Module status - 'published', 'unpublished', 'archived' (default: 'unpublished')
 - `image` (file, optional): Module thumbnail image
-- `startDatetime` (string, optional): Module start date (ISO format)
+- `startDatetime` (string, required): Module start date (ISO format)
 - `endDatetime` (string, optional): Module end date (ISO format)
 - `prerequisites` (array, optional): Array of prerequisite module IDs
 - `badgeId` (UUID, optional): Badge ID associated with the module
@@ -1586,7 +1590,7 @@ organisationid: <organisation-id>
 - `description` must be string (if provided)
 - `status` must be one of: 'published', 'unpublished', 'archived' (default: 'unpublished')
 - `image` file must be valid image format and within tenant-configured size limits (if provided)
-- `startDatetime` must be valid date format (if provided)
+- `startDatetime` must be present and valid date format
 - `endDatetime` must be valid date format and after startDatetime (if provided)
 - `prerequisites` must be array of valid UUIDs (if provided)
 - `badgeId` must be valid UUID format (if provided)
@@ -1887,6 +1891,25 @@ organisationid: <organisation-id>
 
 ### Lessons
 
+#### Lesson Sub-Formats
+
+The following lesson sub-formats are supported for different types of content:
+
+**Standard Formats:**
+- `youtube.url`: YouTube video content
+- `video.url`: General video content
+- `pdf`: PDF document content
+- `quiz`: Interactive quiz content
+- `assessment`: Assessment/test content
+- `feedback`: Feedback collection content
+- `event`: Event-based content
+- `external.url`: External URL content
+
+**Project-Specific Formats (ASPIRE_LEADER):**
+- `reflection.prompt`: Reflection prompt content for leadership development
+- `discord.url`: Discord community link content
+- `external.assessment.url`: External assessment URL content
+
 #### Create Lesson
 
 **Endpoint**: `POST /lessons`
@@ -1906,13 +1929,13 @@ organisationid: <organisation-id>
 **Request Parameters**:
 - `title` (string, required): Lesson title (max 255 characters)
 - `alias` (string, optional): Lesson alias/slug
-- `description` (string, optional): Lesson description
+- `description` (string, optional): Lesson description (optional field)
 - `moduleId` (UUID, required): Parent module ID
 - `courseId` (UUID, optional): Course ID
 - `format` (enum, required): Lesson format - 'video', 'document', 'test', 'event', 'text_and_media'
 - `mediaContentSource` (string, required): Media content source (URL for video/external content)
 - `mediaContentPath` (string, required for document format): Media content path
-- `mediaContentSubFormat` (enum, required): Media content sub-format - 'youtube.url', 'video.url', 'pdf', 'quiz', 'assessment', 'feedback', 'event', 'external.url'
+- `mediaContentSubFormat` (enum, required): Media content sub-format - 'youtube.url', 'video.url', 'pdf', 'quiz', 'assessment', 'feedback', 'reflection.prompt', 'event', 'external.url', 'discord.url', 'external.assessment.url'
 - `image` (file, optional): Lesson thumbnail image
 - `checkedOut` (UUID, optional): User ID who checked out the lesson
 - `status` (enum, optional): Lesson status - 'published', 'unpublished', 'archived' (default: 'published')
@@ -1991,7 +2014,7 @@ organisationid: <organisation-id>
 - `format` must be one of: 'video', 'document', 'test', 'event', 'text_and_media'
 - `mediaContentSource` must be present and valid URL (for non-document formats)
 - `mediaContentPath` must be present for document format
-- `mediaContentSubFormat` must be one of: 'youtube.url', 'video.url', 'pdf', 'quiz', 'assessment', 'feedback', 'event', 'external.url'
+- `mediaContentSubFormat` must be one of: 'youtube.url', 'video.url', 'pdf', 'quiz', 'assessment', 'feedback', 'reflection.prompt', 'event', 'external.url', 'discord.url', 'external.assessment.url'
 - `alias` must be string (if provided)
 - `description` must be string type (if provided)
 - `image` file must be valid image format and within tenant-configured size limits (if provided)
@@ -3557,3 +3580,34 @@ Use the **Get LMS Configuration** endpoint (`GET /config`) to retrieve current t
 ## Multi-tenancy
 
 All endpoints require tenant and organization context for data isolation. The system automatically filters data based on the authenticated user's tenant and organization. 
+
+---
+
+## Changelog
+
+### Recent Updates (Latest)
+
+#### Course Management Updates
+- **Search Courses Enhancement**: Updated search functionality to include module counts and enrolled user counts in response
+- **Performance Optimization**: Improved search performance with batch queries for small to medium course catalogs
+- **Validation Updates**: Made `startDatetime` and `shortDescription` optional in course creation
+
+#### Lesson Management Updates
+- **New Sub-Formats**: Added support for project-specific lesson formats:
+  - `reflection.prompt`: For leadership development reflection content
+  - `discord.url`: For Discord community links
+  - `external.assessment.url`: For external assessment URLs
+- **Description Field**: Made lesson description field optional
+
+#### Module Management Updates
+- **Validation Change**: Made `startDatetime` required for module creation
+
+#### API Response Enhancements
+- **Search Courses**: Now returns `moduleCount` and `enrolledUsersCount` for each course
+- **Performance**: Optimized for cohorts with 2-5 courses as per ASPIRE_LEADER project requirements
+
+### Previous Updates
+- Initial API documentation structure
+- Multi-tenancy support documentation
+- Comprehensive endpoint documentation
+- Error handling and validation documentation
