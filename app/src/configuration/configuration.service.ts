@@ -128,7 +128,7 @@ export class ConfigurationService  {
         throw new InternalServerErrorException(RESPONSE_MESSAGES.ERROR.CONFIG_URL_MISSING);
       }
 
-      const response = await axios.get(`${externalConfigUrl}/${tenantId}?context=lms`);
+      const response = await axios.get(`${externalConfigUrl}/tenant/${tenantId}?context=lms`);
       return response.data.result;
     } catch (error) {
       return {};

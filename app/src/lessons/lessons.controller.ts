@@ -199,4 +199,28 @@ export class LessonsController {
     );
   }
 
+  @Post(':lessonId/clone')
+  @ApiId(API_IDS.CLONE_LESSON)
+  @ApiOperation({ summary: 'Clone a lesson with all its media and associated files' })
+  @ApiResponse({ 
+    status: 201, 
+    description: 'Lesson cloned successfully', 
+    type: Lesson 
+  })
+  @ApiResponse({ status: 400, description: 'Bad request' })
+  @ApiResponse({ status: 404, description: 'Lesson not found' })
+  @ApiParam({ name: 'lessonId', type: String, format: 'uuid' })
+  async cloneLesson(
+    @Param('lessonId', ParseUUIDPipe) lessonId: string,
+    @Query() query: CommonQueryDto,
+    @TenantOrg() tenantOrg: { tenantId: string; organisationId: string }
+  ) {
+    return this.lessonsService.cloneLesson(
+      lessonId,
+      query.userId,
+      tenantOrg.tenantId,
+      tenantOrg.organisationId
+    );
+  }
+
 }

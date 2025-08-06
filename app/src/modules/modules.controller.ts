@@ -200,4 +200,28 @@ export class ModulesController {
       tenantOrg.organisationId
     );
   }
+
+  @Post(':moduleId/clone')
+  @ApiId(API_IDS.CLONE_MODULE)
+  @ApiOperation({ summary: 'Clone a module with all its lessons and submodules' })
+  @ApiResponse({ 
+    status: 201, 
+    description: 'Module cloned successfully', 
+    type: Module 
+  })
+  @ApiResponse({ status: 400, description: 'Bad request' })
+  @ApiResponse({ status: 404, description: 'Module not found' })
+  @ApiParam({ name: 'moduleId', type: String, format: 'uuid' })
+  async cloneModule(
+    @Param('moduleId', ParseUUIDPipe) moduleId: string,
+    @Query() query: CommonQueryDto,
+    @TenantOrg() tenantOrg: { tenantId: string; organisationId: string }
+  ) {
+    return this.modulesService.cloneModule(
+      moduleId,
+      query.userId,
+      tenantOrg.tenantId,
+      tenantOrg.organisationId
+    );
+  }
 }
