@@ -30,9 +30,12 @@ export enum LessonSubFormat {
   QUIZ = 'quiz',
   ASSESSMENT = 'assessment',
   FEEDBACK = 'feedback',
+  REFLECTION_PROMPT = 'reflection.prompt', // PROJECT SECIFIC - ASPRE_LEADER
   EVENT = 'event',
   VIDEO = 'video.url',
   EXTERNAL_URL = 'external.url',
+  DISCORD_URL = 'discord.url', // PROJECT SECIFIC - ASPRE_LEADER
+  EXTERNAL_ASSESSMENT_URL = 'external.assessment.url', // PROJECT SECIFIC - ASPRE_LEADER
 }
 
 export enum LessonStatus {

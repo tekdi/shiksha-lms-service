@@ -29,6 +29,7 @@
    - [Get Module by ID](#get-module-by-id)
    - [Update Module](#update-module)
    - [Delete Module](#delete-module)
+   - [Clone Module](#clone-module)
 
 6. [Lessons](#lessons)
    - [Create Lesson](#create-lesson)
@@ -37,6 +38,7 @@
    - [Get Lessons by Module](#get-lessons-by-module)
    - [Update Lesson](#update-lesson)
    - [Delete Lesson](#delete-lesson)
+   - [Clone Lesson](#clone-lesson)
 
 7. [Media](#media)
    - [Upload Media](#upload-media)
@@ -357,9 +359,9 @@ organisationid: <organisation-id>
 **Request Parameters**:
 - `title` (string, required): Course title (max 255 characters)
 - `alias` (string, optional): Course alias/slug
-- `startDatetime` (string, required): Course start date (ISO format)
+- `startDatetime` (string, optional): Course start date (ISO format)
 - `endDatetime` (string, required): Course end date (ISO format)
-- `shortDescription` (string, required): Brief description
+- `shortDescription` (string, optional): Brief description
 - `description` (string, required): Detailed description
 - `image` (file, optional): Course thumbnail image
 - `featured` (boolean, optional): Whether course is featured (default: false)
@@ -422,9 +424,9 @@ organisationid: <organisation-id>
 
 **Input Validation Rules**:
 - `title` must be present, non-empty, and max 255 characters
-- `startDatetime` must be present and valid date format
+- `startDatetime` must be valid date format (if provided)
 - `endDatetime` must be valid date format and after startDatetime (if provided)
-- `shortDescription` must be present and string type
+- `shortDescription` must be string type (if provided)
 - `description` must be present, non-empty, and string type
 - `alias` must be unique within the tenant (if provided, auto-generated if not)
 - `image` file must be valid image format and within tenant-configured size limits (if provided)
@@ -462,7 +464,7 @@ organisationid: <organisation-id>
 
 **HTTP Method**: GET
 
-**Description**: Search and filter courses with various criteria
+**Description**: Search and filter courses with various criteria including keyword search and multiple filters. Returns courses with module counts and enrolled user counts.
 
 **Headers**:
 ```
@@ -526,7 +528,9 @@ organisationid: <organisation-id>
         "createdBy": "789e0123-e89b-12d3-a456-426614174000",
         "createdAt": "2024-01-01T00:00:00Z",
         "updatedBy": "789e0123-e89b-12d3-a456-426614174000",
-        "updatedAt": "2024-01-01T00:00:00Z"
+        "updatedAt": "2024-01-01T00:00:00Z",
+        "moduleCount": 5,
+        "enrolledUsersCount": 25
       }
     ],
     "totalElements": 25,
@@ -566,6 +570,8 @@ organisationid: <organisation-id>
 - Featured courses should appear first when featured=true
 - Search must be case-insensitive
 - Results must be ordered by relevance when query is provided
+- Module counts and enrolled user counts are calculated efficiently using batch queries
+- Performance is optimized for small to medium course catalogs (2-5 courses per cohort)
 
 **Authorization Conditions**:
 - User must have read permissions for courses in the tenant
@@ -1528,7 +1534,7 @@ organisationid: <organisation-id>
 - `ordering` (number, optional): Module order within course or parent module
 - `status` (enum, optional): Module status - 'published', 'unpublished', 'archived' (default: 'unpublished')
 - `image` (file, optional): Module thumbnail image
-- `startDatetime` (string, optional): Module start date (ISO format)
+- `startDatetime` (string, required): Module start date (ISO format)
 - `endDatetime` (string, optional): Module end date (ISO format)
 - `prerequisites` (array, optional): Array of prerequisite module IDs
 - `badgeId` (UUID, optional): Badge ID associated with the module
@@ -1586,7 +1592,7 @@ organisationid: <organisation-id>
 - `description` must be string (if provided)
 - `status` must be one of: 'published', 'unpublished', 'archived' (default: 'unpublished')
 - `image` file must be valid image format and within tenant-configured size limits (if provided)
-- `startDatetime` must be valid date format (if provided)
+- `startDatetime` must be present and valid date format
 - `endDatetime` must be valid date format and after startDatetime (if provided)
 - `prerequisites` must be array of valid UUIDs (if provided)
 - `badgeId` must be valid UUID format (if provided)
@@ -1883,9 +1889,108 @@ organisationid: <organisation-id>
 }
 ```
 
+#### Clone Module
+
+**Endpoint**: `POST /modules/{moduleId}/clone`
+
+**HTTP Method**: POST
+
+**Description**: Clone a module with all its lessons and submodules
+
+**Headers**:
+```
+Content-Type: application/json
+tenantid: <tenant-id>
+organisationid: <organisation-id>
+```
+
+**Path Parameters**:
+- `moduleId` (UUID, required): Module ID to clone
+
+**Query Parameters**:
+- `userId` (UUID, required): User ID cloning the module
+
+**Response Structure**:
+```json
+{
+  "id": "api.module.clone",
+  "ver": "1.0",
+  "ts": "2024-01-01T00:00:00Z",
+  "params": {
+    "resmsgid": "msg-1234567890",
+    "status": "successful",
+    "err": null,
+    "errmsg": null
+  },
+  "responseCode": 201,
+  "result": {
+    "moduleId": "789e0123-e89b-12d3-a456-426614174000",
+    "parentId": null,
+    "courseId": "123e4567-e89b-12d3-a456-426614174000",
+    "tenantId": "123e4567-e89b-12d3-a456-426614174000",
+    "organisationId": "456e7890-e89b-12d3-a456-426614174000",
+    "title": "Module 1: HTML Basics (Copy)",
+    "description": "Learn HTML fundamentals",
+    "image": "/uploads/modules/module-thumb.jpg",
+    "startDatetime": "2024-01-01T00:00:00Z",
+    "endDatetime": "2024-12-31T23:59:59Z",
+    "prerequisites": [],
+    "badgeTerm": null,
+    "badgeId": null,
+    "ordering": 1,
+    "status": "unpublished",
+    "createdAt": "2024-01-01T00:00:00Z",
+    "createdBy": "789e0123-e89b-12d3-a456-426614174000",
+    "updatedAt": "2024-01-01T00:00:00Z",
+    "updatedBy": "789e0123-e89b-12d3-a456-426614174000"
+  }
+}
+```
+
+**Validations and Conditions**:
+
+**Input Validation Rules**:
+- `moduleId` must be present and valid UUID format
+- `userId` query parameter must be present and valid UUID
+
+**Business Logic Conditions**:
+- Module must exist and be accessible
+- Module must belong to the specified tenant and organization
+- All lessons in the module will be cloned with their media and associated files
+- All submodules will be cloned recursively
+- Assessment lessons will have their tests cloned from the assessment service
+- Cloned module will have "(Copy)" appended to the title
+- Cloned module will have "unpublished" status
+- All cloned lessons will have "-copy" appended to their aliases
+- Transaction ensures data consistency during cloning process
+
+**Authorization Conditions**:
+- User must have read permissions for the source module
+- User must have create permissions for modules in the tenant
+- User must have access to the specified organization
+
 ---
 
 ### Lessons
+
+#### Lesson Sub-Formats
+
+The following lesson sub-formats are supported for different types of content:
+
+**Standard Formats:**
+- `youtube.url`: YouTube video content
+- `video.url`: General video content
+- `pdf`: PDF document content
+- `quiz`: Interactive quiz content
+- `assessment`: Assessment/test content
+- `feedback`: Feedback collection content
+- `event`: Event-based content
+- `external.url`: External URL content
+
+**Project-Specific Formats (ASPIRE_LEADER):**
+- `reflection.prompt`: Reflection prompt content for leadership development
+- `discord.url`: Discord community link content
+- `external.assessment.url`: External assessment URL content
 
 #### Create Lesson
 
@@ -1906,13 +2011,13 @@ organisationid: <organisation-id>
 **Request Parameters**:
 - `title` (string, required): Lesson title (max 255 characters)
 - `alias` (string, optional): Lesson alias/slug
-- `description` (string, optional): Lesson description
+- `description` (string, optional): Lesson description (optional field)
 - `moduleId` (UUID, required): Parent module ID
 - `courseId` (UUID, optional): Course ID
 - `format` (enum, required): Lesson format - 'video', 'document', 'test', 'event', 'text_and_media'
 - `mediaContentSource` (string, required): Media content source (URL for video/external content)
 - `mediaContentPath` (string, required for document format): Media content path
-- `mediaContentSubFormat` (enum, required): Media content sub-format - 'youtube.url', 'video.url', 'pdf', 'quiz', 'assessment', 'feedback', 'event', 'external.url'
+- `mediaContentSubFormat` (enum, required): Media content sub-format - 'youtube.url', 'video.url', 'pdf', 'quiz', 'assessment', 'feedback', 'reflection.prompt', 'event', 'external.url', 'discord.url', 'external.assessment.url'
 - `image` (file, optional): Lesson thumbnail image
 - `checkedOut` (UUID, optional): User ID who checked out the lesson
 - `status` (enum, optional): Lesson status - 'published', 'unpublished', 'archived' (default: 'published')
@@ -1991,7 +2096,7 @@ organisationid: <organisation-id>
 - `format` must be one of: 'video', 'document', 'test', 'event', 'text_and_media'
 - `mediaContentSource` must be present and valid URL (for non-document formats)
 - `mediaContentPath` must be present for document format
-- `mediaContentSubFormat` must be one of: 'youtube.url', 'video.url', 'pdf', 'quiz', 'assessment', 'feedback', 'event', 'external.url'
+- `mediaContentSubFormat` must be one of: 'youtube.url', 'video.url', 'pdf', 'quiz', 'assessment', 'feedback', 'reflection.prompt', 'event', 'external.url', 'discord.url', 'external.assessment.url'
 - `alias` must be string (if provided)
 - `description` must be string type (if provided)
 - `image` file must be valid image format and within tenant-configured size limits (if provided)
@@ -2411,6 +2516,97 @@ organisationid: <organisation-id>
   }
 }
 ```
+
+#### Clone Lesson
+
+**Endpoint**: `POST /lessons/{lessonId}/clone`
+
+**HTTP Method**: POST
+
+**Description**: Clone a lesson with all its media and associated files
+
+**Headers**:
+```
+Content-Type: application/json
+tenantid: <tenant-id>
+organisationid: <organisation-id>
+```
+
+**Path Parameters**:
+- `lessonId` (UUID, required): Lesson ID to clone
+
+**Query Parameters**:
+- `userId` (UUID, required): User ID cloning the lesson
+
+**Response Structure**:
+```json
+{
+  "id": "api.lesson.clone",
+  "ver": "1.0",
+  "ts": "2024-01-01T00:00:00Z",
+  "params": {
+    "resmsgid": "msg-1234567890",
+    "status": "successful",
+    "err": null,
+    "errmsg": null
+  },
+  "responseCode": 201,
+  "result": {
+    "lessonId": "abc12345-e89b-12d3-a456-426614174000",
+    "moduleId": "456e7890-e89b-12d3-a456-426614174000",
+    "courseId": "123e4567-e89b-12d3-a456-426614174000",
+    "tenantId": "123e4567-e89b-12d3-a456-426614174000",
+    "organisationId": "456e7890-e89b-12d3-a456-426614174000",
+    "title": "Introduction to HTML (Copy)",
+    "alias": "introduction-to-html-copy",
+    "description": "Learn the basics of HTML tags and their usage",
+    "format": "video",
+    "image": "/uploads/lessons/lesson-thumb.jpg",
+    "startDatetime": "2024-01-01T00:00:00Z",
+    "endDatetime": "2024-12-31T23:59:59Z",
+    "storage": "local",
+    "noOfAttempts": 3,
+    "attemptsGrade": "highest",
+    "prerequisites": [],
+    "idealTime": 30,
+    "resume": false,
+    "totalMarks": 100,
+    "passingMarks": 60,
+    "params": {
+      "videoUrl": "https://example.com/video.mp4"
+    },
+    "sampleLesson": false,
+    "considerForPassing": true,
+    "createdAt": "2024-01-01T00:00:00Z",
+    "createdBy": "789e0123-e89b-12d3-a456-426614174000",
+    "updatedAt": "2024-01-01T00:00:00Z",
+    "updatedBy": "789e0123-e89b-12d3-a456-426614174000"
+  }
+}
+```
+
+**Validations and Conditions**:
+
+**Input Validation Rules**:
+- `lessonId` must be present and valid UUID format
+- `userId` query parameter must be present and valid UUID
+
+**Business Logic Conditions**:
+- Lesson must exist and be accessible
+- Lesson must belong to the specified tenant and organization
+- All media associated with the lesson will be cloned
+- All associated files will be cloned with their media
+- Assessment lessons will have their tests cloned from the assessment service
+- Cloned lesson will have "(Copy)" appended to the title
+- Cloned lesson will have "-copy" appended to the alias
+- Cloned lesson will maintain the same module and course association
+- Transaction ensures data consistency during cloning process
+- Event format lessons are skipped during cloning
+
+**Authorization Conditions**:
+- User must have read permissions for the source lesson
+- User must have create permissions for lessons in the tenant
+- User must have access to the specified organization
 
 ---
 
@@ -3557,3 +3753,5 @@ Use the **Get LMS Configuration** endpoint (`GET /config`) to retrieve current t
 ## Multi-tenancy
 
 All endpoints require tenant and organization context for data isolation. The system automatically filters data based on the authenticated user's tenant and organization. 
+
+---
