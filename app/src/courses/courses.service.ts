@@ -8,7 +8,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, FindOptionsWhere, Not, Equal, ILike, IsNull, In } from 'typeorm';
 import { Course, CourseStatus } from './entities/course.entity';
 import { Module, ModuleStatus } from '../modules/entities/module.entity';
-import { Lesson, LessonStatus } from '../lessons/entities/lesson.entity';
+import { Lesson, LessonStatus, AttemptsGradeMethod } from '../lessons/entities/lesson.entity';
 import { CourseTrack, TrackingStatus } from '../tracking/entities/course-track.entity';
 import { LessonTrack } from '../tracking/entities/lesson-track.entity';
 import { ModuleTrack } from '../tracking/entities/module-track.entity';
@@ -605,7 +605,7 @@ export class CoursesService {
       where: { courseId, userId, tenantId, organisationId }
     });
     let lessonTracks: any[] = [];
-    let lessonTrackMap = new Map();
+    let lessonAttemptsByLesson = new Map(); // Map to store all attempts for each lesson
     let totalTimeSpent = 0;
     let lastAccessedLesson: any = null;
     if (includeLessons && lessons.length > 0) {
@@ -613,11 +613,15 @@ export class CoursesService {
         where: { userId, courseId, tenantId, organisationId },
         order: { updatedAt: 'DESC', attempt: 'DESC' }
       });
+      
+      // Group all attempts by lessonId
       lessonTracks.forEach(track => {
-        if (!lessonTrackMap.has(track.lessonId)) {
-          lessonTrackMap.set(track.lessonId, track);
+        if (!lessonAttemptsByLesson.has(track.lessonId)) {
+          lessonAttemptsByLesson.set(track.lessonId, []);
         }
+        lessonAttemptsByLesson.get(track.lessonId).push(track);
       });
+      
       totalTimeSpent = lessonTracks.reduce((sum, track) => sum + (track.timeSpent || 0), 0);
       if (courseTracking && courseTracking.status !== TrackingStatus.COMPLETED && lessonTracks.length > 0) {
         const lastTrack = lessonTracks[0];
@@ -654,25 +658,28 @@ export class CoursesService {
       if (includeLessons) {
         const moduleLessons = lessonsByModule.get(module.moduleId) || [];
         lessonsWithTracking = moduleLessons.map(lesson => {
-          const lessonTrack = lessonTrackMap.get(lesson.lessonId);
+          const lessonAttempts = lessonAttemptsByLesson.get(lesson.lessonId) || [];
+          const bestAttempt = this.calculateBestAttempt(lessonAttempts, lesson.attemptsGrade);
+          const lastAttempt = this.getLastAttempt(lessonAttempts);
+          
           return {
             ...lesson,
-            tracking: lessonTrack ? {
-              status: lessonTrack.status,
-              canResume: (lesson.resume ?? true) && (lessonTrack.status === TrackingStatus.STARTED || lessonTrack.status === TrackingStatus.INCOMPLETE),
-              canReattempt: (lesson.noOfAttempts === 0 || lessonTrack.attempt < lesson.noOfAttempts) && lessonTrack.status === TrackingStatus.COMPLETED,
-              completionPercentage: lessonTrack.completionPercentage || 0,
-              lastAccessed: lessonTrack.updatedAt,
-              timeSpent: lessonTrack.timeSpent || 0,
-              score: lessonTrack.score,
-              attempt: {
-                attemptId: lessonTrack.lessonTrackId,
-                attemptNumber: lessonTrack.attempt,
-                startDatetime: lessonTrack.startDatetime,
-                endDatetime: lessonTrack.endDatetime,
-                totalContent: lessonTrack.totalContent || 0,
-                currentPosition: lessonTrack.currentPosition || 0
-              }
+            tracking: bestAttempt ? {
+              status: bestAttempt.status,
+              canResume: (lesson.resume ?? true) && (lastAttempt && (lastAttempt.status === TrackingStatus.STARTED || lastAttempt.status === TrackingStatus.INCOMPLETE)),
+              canReattempt: (lesson.noOfAttempts === 0 || (lastAttempt && lastAttempt.attempt < lesson.noOfAttempts)) && (lastAttempt && lastAttempt.status === TrackingStatus.COMPLETED),
+              completionPercentage: bestAttempt.completionPercentage || 0,
+              lastAccessed: bestAttempt.updatedAt,
+              timeSpent: bestAttempt.timeSpent || 0,
+              score: bestAttempt.score,
+              attempt: lastAttempt ? {
+                attemptId: lastAttempt.lessonTrackId,
+                attemptNumber: lastAttempt.attempt,
+                startDatetime: lastAttempt.startDatetime,
+                endDatetime: lastAttempt.endDatetime,
+                totalContent: lastAttempt.totalContent || 0,
+                currentPosition: lastAttempt.currentPosition || 0
+              } : null
             } : {
               status: TrackingStatus.NOT_STARTED,
               progress: 0,
@@ -772,6 +779,74 @@ export class CoursesService {
     if (dates.length === 0) return null;
     
     return new Date(Math.max(...dates.map(date => date instanceof Date ? date.getTime() : new Date(date).getTime())));
+  }
+
+  /**
+   * Calculate the best attempt based on the grading method
+   * @param attempts Array of lesson attempts
+   * @param gradingMethod The grading method to use
+   * @returns The best attempt based on the grading method
+   */
+  private calculateBestAttempt(attempts: LessonTrack[], gradingMethod: AttemptsGradeMethod): LessonTrack | null {
+    if (!attempts || attempts.length === 0) {
+      return null;
+    }
+
+    switch (gradingMethod) {
+      case AttemptsGradeMethod.FIRST_ATTEMPT:
+        return attempts.sort((a, b) => a.attempt - b.attempt)[0];
+      
+      case AttemptsGradeMethod.LAST_ATTEMPT:
+        return attempts.sort((a, b) => b.attempt - a.attempt)[0];
+      
+      case AttemptsGradeMethod.HIGHEST:
+        return attempts.reduce((best, current) => {
+          const bestScore = best.score || 0;
+          const currentScore = current.score || 0;
+          return currentScore > bestScore ? current : best;
+        });
+      
+      case AttemptsGradeMethod.AVERAGE:
+        // For average, we need to calculate averages and return a synthetic attempt
+        const totalScore = attempts.reduce((sum, attempt) => sum + (attempt.score || 0), 0);
+        const totalCompletion = attempts.reduce((sum, attempt) => sum + (attempt.completionPercentage || 0), 0);
+        const totalTimeSpent = attempts.reduce((sum, attempt) => sum + (attempt.timeSpent || 0), 0);
+        
+        const avgScore = totalScore / attempts.length;
+        const avgCompletion = totalCompletion / attempts.length;
+        const avgTimeSpent = totalTimeSpent / attempts.length;
+        
+        // Return the attempt with the closest score to average, or the last attempt if no score
+        const attemptWithClosestScore = attempts.reduce((closest, current) => {
+          const closestDiff = Math.abs((closest.score || 0) - avgScore);
+          const currentDiff = Math.abs((current.score || 0) - avgScore);
+          return currentDiff < closestDiff ? current : closest;
+        });
+        
+        // Create a synthetic attempt with average values
+        return {
+          ...attemptWithClosestScore,
+          score: Math.round(avgScore),
+          completionPercentage: Math.round(avgCompletion),
+          timeSpent: Math.round(avgTimeSpent)
+        };
+      
+      default:
+        // Default to last attempt
+        return attempts.sort((a, b) => b.attempt - a.attempt)[0];
+    }
+  }
+
+  /**
+   * Get the last attempt for a lesson (for attempt object in response)
+   * @param attempts Array of lesson attempts
+   * @returns The last attempt
+   */
+  private getLastAttempt(attempts: LessonTrack[]): LessonTrack | null {
+    if (!attempts || attempts.length === 0) {
+      return null;
+    }
+    return attempts.sort((a, b) => b.attempt - a.attempt)[0];
   }
 
   /**
