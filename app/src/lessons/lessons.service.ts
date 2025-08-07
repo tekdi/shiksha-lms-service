@@ -759,6 +759,7 @@ export class LessonsService {
     organisationId: string,
     transactionalEntityManager: any,
     newCourseId: string,
+    authorization: string,
   ): Promise<void> {
     try {
       // Get all lessons for the original module
@@ -780,7 +781,7 @@ export class LessonsService {
       // Clone each lesson
       for (const lesson of lessons) {
         try {
-          await this.cloneLessonWithTransaction(lesson, newModuleId, userId, tenantId, organisationId, transactionalEntityManager, newCourseId);
+          await this.cloneLessonWithTransaction(lesson, newModuleId, userId, tenantId, organisationId, transactionalEntityManager, newCourseId, authorization);
         } catch (error) {
           this.logger.error(`Error cloning lesson ${lesson.lessonId}: ${error.message}`);
           throw new Error(`${RESPONSE_MESSAGES.ERROR.LESSON_COPY_FAILED}: ${lesson.title}`);
@@ -803,6 +804,7 @@ export class LessonsService {
     organisationId: string,
     transactionalEntityManager: any,
     newCourseId: string,
+    authorization: string,
   ): Promise<Lesson | boolean> {
     try {
       if(originalLesson.format === LessonFormat.EVENT){
@@ -821,7 +823,7 @@ export class LessonsService {
 
           let clonedTestId = originalMedia.source;
           if(originalLesson.format === LessonFormat.ASSESSMENT){
-            clonedTestId = await this.cloneTest(originalMedia.source, organisationId, tenantId, '');
+            clonedTestId = await this.cloneTest(originalMedia.source, organisationId, tenantId, userId, authorization);
           }
 
           const newMediaData = {
@@ -999,11 +1001,12 @@ export class LessonsService {
     testId: string,
     organisationId: string,
     tenantId: string,
+    userId: string,
     authorization: string
   ): Promise<string> {
     try {
       // Get the assessment service URL from environment
-      const assessmentServiceUrl = this.configService.get<string>('ASSESSMENT_SERVICE_URL') || 'http://localhost:6000/assessment/v1';
+      const assessmentServiceUrl = this.configService.get<string>('ASSESSMENT_SERVICE_URL') || '';
       
       // Construct the full URL
       const url = `${assessmentServiceUrl}/tests/${testId}/clone`;
@@ -1017,6 +1020,7 @@ export class LessonsService {
           'tenantId': tenantId,
           'authorization': authorization,
           'Content-Type': 'application/json',
+          'userId': userId,
         },
       });
 
@@ -1078,6 +1082,7 @@ export class LessonsService {
     userId: string,
     tenantId: string,
     organisationId: string,
+    authorization: string,
   ): Promise<Lesson> {
     this.logger.log(`Cloning lesson: ${lessonId}`);
 
@@ -1110,7 +1115,8 @@ export class LessonsService {
           tenantId,
           organisationId,
           transactionalEntityManager,
-          originalLesson.courseId // Keep the same course
+          originalLesson.courseId, // Keep the same course
+          authorization
         );
 
         if (typeof clonedLesson === 'boolean') {

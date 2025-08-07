@@ -12,6 +12,7 @@ import {
   UploadedFile,
   Query,
   Patch,
+  Headers,
 } from '@nestjs/common';
 import { 
   ApiTags, 
@@ -32,6 +33,7 @@ import { ApiId } from '../common/decorators/api-id.decorator';
 import { getUploadPath } from '../common/utils/upload.util';
 import { uploadConfigs } from '../config/file-validation.config';
 import { TenantOrg } from '../common/decorators/tenant-org.decorator';
+import { CloneModuleDto } from './dto/clone-module.dto';
 
 @ApiTags('Modules')
 @Controller('modules')
@@ -215,13 +217,17 @@ export class ModulesController {
   async cloneModule(
     @Param('moduleId', ParseUUIDPipe) moduleId: string,
     @Query() query: CommonQueryDto,
-    @TenantOrg() tenantOrg: { tenantId: string; organisationId: string }
+    @Body() cloneModuleDto: CloneModuleDto,
+    @TenantOrg() tenantOrg: { tenantId: string; organisationId: string },
+    @Headers('authorization') authorization: string
   ) {
     return this.modulesService.cloneModule(
       moduleId,
+      cloneModuleDto.newCourseId,
       query.userId,
       tenantOrg.tenantId,
-      tenantOrg.organisationId
+      tenantOrg.organisationId,
+      authorization
     );
   }
 }

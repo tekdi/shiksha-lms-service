@@ -1031,6 +1031,7 @@ export class CoursesService {
     userId: string,
     tenantId: string,
     organisationId: string,
+    authorization: string
   ): Promise<Course> {
     this.logger.log(`Cloneing course: ${courseId}`);
 
@@ -1080,7 +1081,8 @@ export class CoursesService {
           userId, 
           tenantId, 
           organisationId,
-          transactionalEntityManager
+          transactionalEntityManager,
+          authorization
         );
 
         this.logger.log(`Course copied successfully: ${result.courseId}`);
@@ -1107,7 +1109,8 @@ export class CoursesService {
     userId: string,
     tenantId: string,
     organisationId: string,
-    transactionalEntityManager: any,
+    transactionalEntityManager: any,  
+    authorization: string
   ): Promise<void> {
     try {
       // Get only top-level modules (parentId is null or undefined)
@@ -1130,7 +1133,7 @@ export class CoursesService {
       // Clone each module
       for (const module of modules) {
         try {
-          await this.modulesService.cloneModuleWithTransaction(module, newCourseId, userId, tenantId, organisationId, transactionalEntityManager);
+          await this.modulesService.cloneModuleWithTransaction(module, newCourseId, userId, tenantId, organisationId, transactionalEntityManager, authorization);
         } catch (error) {
           this.logger.error(`Error cloning module ${module.moduleId}: ${error.message}`);
           throw new Error(`${RESPONSE_MESSAGES.ERROR.MODULE_COPY_FAILED}: ${module.title}`);

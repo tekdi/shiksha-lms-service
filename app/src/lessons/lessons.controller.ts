@@ -10,6 +10,7 @@ import {
   UploadedFile,
   ParseUUIDPipe,
   Patch,
+  Headers,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import {
@@ -213,13 +214,15 @@ export class LessonsController {
   async cloneLesson(
     @Param('lessonId', ParseUUIDPipe) lessonId: string,
     @Query() query: CommonQueryDto,
-    @TenantOrg() tenantOrg: { tenantId: string; organisationId: string }
+    @TenantOrg() tenantOrg: { tenantId: string; organisationId: string },
+    @Headers('authorization') authorization: string
   ) {
     return this.lessonsService.cloneLesson(
       lessonId,
       query.userId,
       tenantOrg.tenantId,
-      tenantOrg.organisationId
+      tenantOrg.organisationId,
+      authorization
     );
   }
 

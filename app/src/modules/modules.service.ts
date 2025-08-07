@@ -366,6 +366,7 @@ export class ModulesService {
     tenantId: string,
     organisationId: string,
     transactionalEntityManager: any,
+    authorization: string,
   ): Promise<Module | null> {
     try {
       // Create new module data
@@ -387,7 +388,7 @@ export class ModulesService {
       }
 
       // Clone lessons for this module
-      await this.lessonsService.cloneLessonsWithTransaction(originalModule.moduleId, savedModule.moduleId, userId, tenantId, organisationId, transactionalEntityManager, newCourseId);
+      await this.lessonsService.cloneLessonsWithTransaction(originalModule.moduleId, savedModule.moduleId, userId, tenantId, organisationId, transactionalEntityManager, newCourseId, authorization);
 
       // Clone submodules if any
       const submodules = await transactionalEntityManager.find(Module, {
@@ -407,12 +408,15 @@ export class ModulesService {
 
       for (const submodule of submodules) {
         try {
-          await this.cloneSubmoduleWithTransaction(submodule, savedModule.moduleId, userId, tenantId, organisationId, transactionalEntityManager, newCourseId);
+          await this.cloneSubmoduleWithTransaction(submodule, savedModule.moduleId, userId, tenantId, organisationId, transactionalEntityManager, newCourseId, authorization);
         } catch (error) {
           this.logger.error(`Error cloning submodule ${submodule.moduleId}: ${error.message}`);
           throw new Error(`${RESPONSE_MESSAGES.ERROR.SUBMODULE_COPY_FAILED}: ${submodule.title}`);
         }
       }
+       // Handle cache operations after successful transaction
+       await this.cacheService.invalidateModule(savedModule.moduleId, newCourseId, tenantId, organisationId);
+
 
       return savedModule;
     } catch (error) {
@@ -432,6 +436,7 @@ export class ModulesService {
     organisationId: string,
     transactionalEntityManager: any,
     newCourseId: string,
+    authorization: string,
   ): Promise<Module> {
   try {
     // Create new submodule data
@@ -449,7 +454,7 @@ export class ModulesService {
     const savedSubmodule = await transactionalEntityManager.save(Module, newSubmodule);
 
     // Clone lessons for this submodule
-    await this.lessonsService.cloneLessonsWithTransaction(originalSubmodule.moduleId, savedSubmodule.moduleId, userId, tenantId, organisationId, transactionalEntityManager, newCourseId);
+    await this.lessonsService.cloneLessonsWithTransaction(originalSubmodule.moduleId, savedSubmodule.moduleId, userId, tenantId, organisationId, transactionalEntityManager, newCourseId, authorization);
 
     return savedSubmodule;
     } catch (error) {
@@ -463,96 +468,29 @@ export class ModulesService {
    */
   async cloneModule(
     moduleId: string,
+    newCourseId: string,
     userId: string,
     tenantId: string,
     organisationId: string,
+    authorization: string,
   ): Promise<Module> {
     this.logger.log(`Cloning module: ${moduleId}`);
 
     try {
       // Use a database transaction to ensure data consistency
       const result = await this.moduleRepository.manager.transaction(async (transactionalEntityManager) => {
-        // Find the original module
-        const originalModule = await transactionalEntityManager.findOne(Module, {
-          where: { 
-            moduleId,
-            tenantId,
-            organisationId,
-          },
-        });
-
-        if (!originalModule) {
-          throw new NotFoundException(RESPONSE_MESSAGES.ERROR.MODULE_NOT_FOUND);
-        }
-
-        // Generate title for the copied module
-        const newTitle = `${originalModule.title} (Copy)`;
-
-        // Create the new module
-        const newModuleData = {
-          ...originalModule,
-          title: newTitle,
-          status: ModuleStatus.UNPUBLISHED,
-          createdBy: userId,
-          updatedBy: userId,
-          // Remove properties that should not be copied
-          moduleId: undefined,
-        };
-
-        this.logger.log(`Creating new module with title: ${newTitle}`);
-
-        const newModule = transactionalEntityManager.create(Module, newModuleData);
-        const savedModule = await transactionalEntityManager.save(Module, newModule);
-        const result = Array.isArray(savedModule) ? savedModule[0] : savedModule;
-
-        // Clone lessons for this module
-        await this.lessonsService.cloneLessonsWithTransaction(
-          originalModule.moduleId,
-          result.moduleId, 
-          userId, 
-          tenantId, 
-          organisationId,
-          transactionalEntityManager,
-          result.courseId
-        );
-
-        // Clone submodules if any
-        const submodules = await transactionalEntityManager.find(Module, {
-          where: {
-            parentId: originalModule.moduleId,
-            status: Not(ModuleStatus.ARCHIVED),
-            tenantId,
-            organisationId,
-          },
-          order: { ordering: 'ASC' },
-        });
-
-        if (submodules && submodules.length > 0) {
-          for (const submodule of submodules) {
-            try {
-              await this.cloneSubmoduleWithTransaction(submodule, result.moduleId, userId, tenantId, organisationId, transactionalEntityManager, result.courseId);
-            } catch (error) {
-              this.logger.error(`Error cloning submodule ${submodule.moduleId}: ${error.message}`);
-              throw new Error(`${RESPONSE_MESSAGES.ERROR.SUBMODULE_COPY_FAILED}: ${submodule.title}`);
-            }
-          }
-        }
-
-        this.logger.log(`Module copied successfully: ${result.moduleId}`);
-        return result;
+       
+        const module = await this.findOne(moduleId, tenantId, organisationId);
+        const clonedModule = await this.cloneModuleWithTransaction(module, newCourseId, userId, tenantId, organisationId, transactionalEntityManager, authorization);
+        return clonedModule;
       });
-
-      // Handle cache operations after successful transaction
-      await this.cacheService.invalidateModule(moduleId, tenantId, organisationId, '');
-
+      if (!result) {
+        throw new Error(RESPONSE_MESSAGES.ERROR.MODULE_COPY_FAILED);
+      }
       return result;
     } catch (error) {
-      this.logger.error(`Error cloning module ${moduleId}: ${error.message}`, error.stack);
-      
-      if (error instanceof NotFoundException) {
-        throw error;
-      }
-      throw new InternalServerErrorException(RESPONSE_MESSAGES.ERROR.MODULE_COPY_FAILED);
+      this.logger.error(`Error in cloneModule: ${error.message}`);
+      throw error;
     }
   }
 

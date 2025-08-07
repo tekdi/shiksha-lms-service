@@ -29,6 +29,7 @@
    - [Get Module by ID](#get-module-by-id)
    - [Update Module](#update-module)
    - [Delete Module](#delete-module)
+   - [Clone Module](#clone-module)
 
 6. [Lessons](#lessons)
    - [Create Lesson](#create-lesson)
@@ -37,6 +38,7 @@
    - [Get Lessons by Module](#get-lessons-by-module)
    - [Update Lesson](#update-lesson)
    - [Delete Lesson](#delete-lesson)
+   - [Clone Lesson](#clone-lesson)
 
 7. [Media](#media)
    - [Upload Media](#upload-media)
@@ -1887,6 +1889,86 @@ organisationid: <organisation-id>
 }
 ```
 
+#### Clone Module
+
+**Endpoint**: `POST /modules/{moduleId}/clone`
+
+**HTTP Method**: POST
+
+**Description**: Clone a module with all its lessons and submodules
+
+**Headers**:
+```
+Content-Type: application/json
+tenantid: <tenant-id>
+organisationid: <organisation-id>
+```
+
+**Path Parameters**:
+- `moduleId` (UUID, required): Module ID to clone
+
+**Query Parameters**:
+- `userId` (UUID, required): User ID cloning the module
+
+**Response Structure**:
+```json
+{
+  "id": "api.module.clone",
+  "ver": "1.0",
+  "ts": "2024-01-01T00:00:00Z",
+  "params": {
+    "resmsgid": "msg-1234567890",
+    "status": "successful",
+    "err": null,
+    "errmsg": null
+  },
+  "responseCode": 201,
+  "result": {
+    "moduleId": "789e0123-e89b-12d3-a456-426614174000",
+    "parentId": null,
+    "courseId": "123e4567-e89b-12d3-a456-426614174000",
+    "tenantId": "123e4567-e89b-12d3-a456-426614174000",
+    "organisationId": "456e7890-e89b-12d3-a456-426614174000",
+    "title": "Module 1: HTML Basics (Copy)",
+    "description": "Learn HTML fundamentals",
+    "image": "/uploads/modules/module-thumb.jpg",
+    "startDatetime": "2024-01-01T00:00:00Z",
+    "endDatetime": "2024-12-31T23:59:59Z",
+    "prerequisites": [],
+    "badgeTerm": null,
+    "badgeId": null,
+    "ordering": 1,
+    "status": "unpublished",
+    "createdAt": "2024-01-01T00:00:00Z",
+    "createdBy": "789e0123-e89b-12d3-a456-426614174000",
+    "updatedAt": "2024-01-01T00:00:00Z",
+    "updatedBy": "789e0123-e89b-12d3-a456-426614174000"
+  }
+}
+```
+
+**Validations and Conditions**:
+
+**Input Validation Rules**:
+- `moduleId` must be present and valid UUID format
+- `userId` query parameter must be present and valid UUID
+
+**Business Logic Conditions**:
+- Module must exist and be accessible
+- Module must belong to the specified tenant and organization
+- All lessons in the module will be cloned with their media and associated files
+- All submodules will be cloned recursively
+- Assessment lessons will have their tests cloned from the assessment service
+- Cloned module will have "(Copy)" appended to the title
+- Cloned module will have "unpublished" status
+- All cloned lessons will have "-copy" appended to their aliases
+- Transaction ensures data consistency during cloning process
+
+**Authorization Conditions**:
+- User must have read permissions for the source module
+- User must have create permissions for modules in the tenant
+- User must have access to the specified organization
+
 ---
 
 ### Lessons
@@ -2434,6 +2516,97 @@ organisationid: <organisation-id>
   }
 }
 ```
+
+#### Clone Lesson
+
+**Endpoint**: `POST /lessons/{lessonId}/clone`
+
+**HTTP Method**: POST
+
+**Description**: Clone a lesson with all its media and associated files
+
+**Headers**:
+```
+Content-Type: application/json
+tenantid: <tenant-id>
+organisationid: <organisation-id>
+```
+
+**Path Parameters**:
+- `lessonId` (UUID, required): Lesson ID to clone
+
+**Query Parameters**:
+- `userId` (UUID, required): User ID cloning the lesson
+
+**Response Structure**:
+```json
+{
+  "id": "api.lesson.clone",
+  "ver": "1.0",
+  "ts": "2024-01-01T00:00:00Z",
+  "params": {
+    "resmsgid": "msg-1234567890",
+    "status": "successful",
+    "err": null,
+    "errmsg": null
+  },
+  "responseCode": 201,
+  "result": {
+    "lessonId": "abc12345-e89b-12d3-a456-426614174000",
+    "moduleId": "456e7890-e89b-12d3-a456-426614174000",
+    "courseId": "123e4567-e89b-12d3-a456-426614174000",
+    "tenantId": "123e4567-e89b-12d3-a456-426614174000",
+    "organisationId": "456e7890-e89b-12d3-a456-426614174000",
+    "title": "Introduction to HTML (Copy)",
+    "alias": "introduction-to-html-copy",
+    "description": "Learn the basics of HTML tags and their usage",
+    "format": "video",
+    "image": "/uploads/lessons/lesson-thumb.jpg",
+    "startDatetime": "2024-01-01T00:00:00Z",
+    "endDatetime": "2024-12-31T23:59:59Z",
+    "storage": "local",
+    "noOfAttempts": 3,
+    "attemptsGrade": "highest",
+    "prerequisites": [],
+    "idealTime": 30,
+    "resume": false,
+    "totalMarks": 100,
+    "passingMarks": 60,
+    "params": {
+      "videoUrl": "https://example.com/video.mp4"
+    },
+    "sampleLesson": false,
+    "considerForPassing": true,
+    "createdAt": "2024-01-01T00:00:00Z",
+    "createdBy": "789e0123-e89b-12d3-a456-426614174000",
+    "updatedAt": "2024-01-01T00:00:00Z",
+    "updatedBy": "789e0123-e89b-12d3-a456-426614174000"
+  }
+}
+```
+
+**Validations and Conditions**:
+
+**Input Validation Rules**:
+- `lessonId` must be present and valid UUID format
+- `userId` query parameter must be present and valid UUID
+
+**Business Logic Conditions**:
+- Lesson must exist and be accessible
+- Lesson must belong to the specified tenant and organization
+- All media associated with the lesson will be cloned
+- All associated files will be cloned with their media
+- Assessment lessons will have their tests cloned from the assessment service
+- Cloned lesson will have "(Copy)" appended to the title
+- Cloned lesson will have "-copy" appended to the alias
+- Cloned lesson will maintain the same module and course association
+- Transaction ensures data consistency during cloning process
+- Event format lessons are skipped during cloning
+
+**Authorization Conditions**:
+- User must have read permissions for the source lesson
+- User must have create permissions for lessons in the tenant
+- User must have access to the specified organization
 
 ---
 

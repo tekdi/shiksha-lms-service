@@ -38,6 +38,7 @@ import { TenantOrg } from '../common/decorators/tenant-org.decorator';
 import { CourseStructureDto } from '../courses/dto/course-structure.dto';
 import { SearchCourseResponseDto } from './dto/search-course.dto';
 import { CourseHierarchyFilterDto } from './dto/course-hierarchy-filter.dto';
+import { Headers } from '@nestjs/common';
 
 
 @ApiTags('Courses')
@@ -290,12 +291,14 @@ export class CoursesController {
     @Param('courseId', ParseUUIDPipe) courseId: string,
     @Query() query: CommonQueryDto,
     @TenantOrg() tenantOrg: { tenantId: string; organisationId: string },
+    @Headers('authorization') authorization: string
   ) {
     const copiedCourse = await this.coursesService.cloneCourse(
       courseId,
       query.userId,
       tenantOrg.tenantId,
       tenantOrg.organisationId,
+      authorization
     );
     return copiedCourse;
   }
