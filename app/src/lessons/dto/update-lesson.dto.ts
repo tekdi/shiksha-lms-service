@@ -16,7 +16,7 @@ import {
   IsUrl,
   IsArray,
 } from 'class-validator';
-import { Type } from 'class-transformer';
+import { Type, Transform } from 'class-transformer';
 import { VALIDATION_MESSAGES } from '../../common/constants/response-messages.constant';
 import { LessonFormat, LessonSubFormat, AttemptsGradeMethod } from '../entities/lesson.entity';
 import { LessonStatus } from '../entities/lesson.entity';
@@ -171,6 +171,36 @@ export class UpdateLessonDto extends PartialType(
   })
   @IsOptional()
   @IsEnum(AttemptsGradeMethod, { message: VALIDATION_MESSAGES.COMMON.ENUM('Grade calculation method') })
+  @Transform(({ value, obj }) => {
+    // If attemptsGrade is explicitly provided, use it
+    if (value !== undefined) {
+      return value;
+    }
+    
+    // Set default based on format and mediaContentSubFormat
+    const format = obj.format;
+    const mediaContentSubFormat = obj.mediaContentSubFormat;
+    
+    // For video, document, text_and_media, or event formats, use FIRST_ATTEMPT
+    if ([LessonFormat.VIDEO, LessonFormat.DOCUMENT, LessonFormat.TEXT_AND_MEDIA, LessonFormat.EVENT].includes(format)) {
+      return AttemptsGradeMethod.FIRST_ATTEMPT;
+    }
+    
+    // For test format, check the sub-format
+    if (format === LessonFormat.ASSESSMENT) {
+      // For quiz, use LAST_ATTEMPT
+      if (mediaContentSubFormat === LessonSubFormat.QUIZ) {
+        return AttemptsGradeMethod.LAST_ATTEMPT;
+      }
+      // For reflection.prompt, feedback, or assessment, use FIRST_ATTEMPT
+      if ([LessonSubFormat.REFLECTION_PROMPT, LessonSubFormat.FEEDBACK, LessonSubFormat.ASSESSMENT].includes(mediaContentSubFormat)) {
+        return AttemptsGradeMethod.FIRST_ATTEMPT;
+      }
+    }
+    
+    // Default fallback
+    return AttemptsGradeMethod.LAST_ATTEMPT;
+  })
   attemptsGrade?: AttemptsGradeMethod;
 
   @ApiProperty({
