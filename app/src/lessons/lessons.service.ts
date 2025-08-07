@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Not, FindOneOptions, FindOptionsWhere } from 'typeorm';
+import axios from 'axios';
 import { Lesson, LessonStatus, AttemptsGradeMethod, LessonFormat } from './entities/lesson.entity';
 import { Course, CourseStatus } from '../courses/entities/course.entity';
 import { Module, ModuleStatus } from '../modules/entities/module.entity';
@@ -21,6 +22,7 @@ import { CacheService } from '../cache/cache.service';
 import { ConfigService } from '@nestjs/config';
 import { CacheConfigService } from '../cache/cache-config.service';
 import { OrderingService } from '../common/services/ordering.service';
+import { AssociatedFile } from '../media/entities/associated-file.entity';
 
 @Injectable()
 export class LessonsService {
@@ -742,6 +744,432 @@ export class LessonsService {
         throw error;
       }
       throw new InternalServerErrorException(RESPONSE_MESSAGES.ERROR.ERROR_REMOVING_LESSON);
+    }
+  }
+
+
+  /**
+   * Clone lessons for a module using transaction
+   */
+  public async cloneLessonsWithTransaction(
+    originalModuleId: string,
+    newModuleId: string,
+    userId: string,
+    tenantId: string,
+    organisationId: string,
+    transactionalEntityManager: any,
+    newCourseId: string,
+    authorization: string,
+  ): Promise<void> {
+    try {
+      // Get all lessons for the original module
+      const lessons = await transactionalEntityManager.find(Lesson, {
+        where: {
+          moduleId: originalModuleId,
+          status: Not(LessonStatus.ARCHIVED),
+          tenantId,
+          organisationId,
+        },
+        relations: ['media', 'associatedFiles.media'],
+      });
+
+      if (!lessons || lessons.length === 0) {
+        this.logger.warn(`No lessons found for module ${originalModuleId}`);
+        return;
+      }
+
+      // Clone each lesson
+      for (const lesson of lessons) {
+        try {
+          await this.cloneLessonWithTransaction(lesson, newModuleId, userId, tenantId, organisationId, transactionalEntityManager, newCourseId, authorization);
+        } catch (error) {
+          this.logger.error(`Error cloning lesson ${lesson.lessonId}: ${error.message}`);
+          throw new Error(`${RESPONSE_MESSAGES.ERROR.LESSON_COPY_FAILED}: ${lesson.title}`);
+        }
+      }
+    } catch (error) {
+      this.logger.error(`Error in cloneLessonsWithTransaction for module ${originalModuleId}: ${error.message}`);
+      throw error;
+    }
+  }
+
+  /**
+   * Clone a single lesson with its media using transaction
+   */
+  private async cloneLessonWithTransaction(
+    originalLesson: Lesson,
+    newModuleId: string,
+    userId: string,
+    tenantId: string,
+    organisationId: string,
+    transactionalEntityManager: any,
+    newCourseId: string,
+    authorization: string,
+  ): Promise<Lesson | boolean> {
+    try {
+      if(originalLesson.format === LessonFormat.EVENT){
+        return true;
+      }else{
+        
+      let newMediaId: string | undefined;
+
+      // Clone media if lesson has media
+      if (originalLesson.mediaId) {
+        const originalMedia = await transactionalEntityManager.findOne(Media, {
+          where: { mediaId: originalLesson.mediaId },
+        });
+
+        if (originalMedia) {
+
+          let clonedTestId = originalMedia.source;
+          if(originalLesson.format === LessonFormat.ASSESSMENT){
+            clonedTestId = await this.cloneTest(originalMedia.source, organisationId, tenantId, userId, authorization);
+          }
+
+          const newMediaData = {
+            ...originalMedia,
+            createdBy: userId,
+            updatedBy: userId,
+            source: clonedTestId,
+            // Remove properties that should not be copied
+            mediaId: undefined,
+            // Don't set createdAt/updatedAt - let TypeORM handle them automatically
+          };
+
+          const newMedia = transactionalEntityManager.create(Media, newMediaData);
+          const savedMedia = await transactionalEntityManager.save(Media, newMedia);
+          
+          if (!savedMedia) {
+            throw new Error(`${RESPONSE_MESSAGES.ERROR.MEDIA_SAVE_FAILED}: ${originalLesson.title}`);
+          }
+          
+          newMediaId = savedMedia.mediaId;
+        }
+      }
+     
+
+      this.logger.log(`Final newMediaId value: ${newMediaId}`);
+
+      // Create new lesson data
+      const newLessonData = {
+        // Copy all properties from original lesson except the ones we want to override
+        title: originalLesson.title,
+        alias: originalLesson.alias + '-copy',
+        format: originalLesson.format,
+        image: originalLesson.image,
+        description: originalLesson.description,
+        status: originalLesson.status,
+        startDatetime: originalLesson.startDatetime,
+        endDatetime: originalLesson.endDatetime,
+        storage: originalLesson.storage,
+        noOfAttempts: originalLesson.noOfAttempts,
+        attemptsGrade: originalLesson.attemptsGrade,
+        prerequisites: originalLesson.prerequisites,
+        idealTime: originalLesson.idealTime,
+        resume: originalLesson.resume,
+        totalMarks: originalLesson.totalMarks,
+        passingMarks: originalLesson.passingMarks,
+        params: originalLesson.params || {},
+        sampleLesson: originalLesson.sampleLesson,
+        considerForPassing: originalLesson.considerForPassing,
+        tenantId,
+        organisationId,
+        // Override with new values
+        mediaId: newMediaId || null, //Use null if no new media was created
+        courseId: newCourseId,
+        moduleId: newModuleId,
+        createdBy: userId,
+        updatedBy: userId,
+      };
+
+
+      const newLesson = transactionalEntityManager.create(Lesson, newLessonData);
+      const savedLesson = await transactionalEntityManager.save(Lesson, newLesson);
+
+      if (!savedLesson) {
+        throw new Error(`${RESPONSE_MESSAGES.ERROR.LESSON_SAVE_FAILED}: ${originalLesson.title}`);
+      }
+
+
+      // Clone associated files if lesson has them
+      if (originalLesson.associatedFiles && originalLesson.associatedFiles.length > 0) {
+        try {
+          await this.cloneAssociatedFilesWithTransaction(originalLesson.lessonId, savedLesson.lessonId, userId, tenantId, organisationId, transactionalEntityManager);
+        } catch (error) {
+          this.logger.error(`Error cloning associated files for lesson ${originalLesson.lessonId}: ${error.message}`);
+          // Don't throw here as the lesson was already saved
+        }
+      }
+
+      return savedLesson;
+    }
+    } catch (error) {
+      this.logger.error(`Error in cloneLessonWithTransaction for lesson ${originalLesson.lessonId}: ${error.message}`);
+      throw error;
+    }
+  }
+
+  /**
+   * Clone associated files for a lesson using transaction
+   */
+  private async cloneAssociatedFilesWithTransaction(
+    originalLessonId: string,
+    newLessonId: string,
+    userId: string,
+    tenantId: string,
+    organisationId: string,
+    transactionalEntityManager: any,
+  ): Promise<void> {
+    try {
+      const associatedFiles = await transactionalEntityManager.find(AssociatedFile, {
+        where: {
+          lessonId: originalLessonId,
+          tenantId,
+          organisationId,
+        },
+        relations: ['media'],
+      });
+
+      if (!associatedFiles || associatedFiles.length === 0) {
+        this.logger.warn(`No associated files found for lesson ${originalLessonId}`);
+        return;
+      }
+
+      for (const associatedFile of associatedFiles) {
+        try {
+          let newMediaId: string | undefined;
+
+          // Clone media if it exists
+          if (associatedFile.media) {
+            const originalMedia = associatedFile.media;
+            const newMediaData = {
+              ...originalMedia,
+              createdBy: userId,
+              updatedBy: userId,
+              // Remove properties that should not be copied
+              mediaId: undefined,
+            };
+
+            const newMedia = transactionalEntityManager.create(Media, newMediaData);
+            const savedMedia = await transactionalEntityManager.save(Media, newMedia);
+            
+            if (!savedMedia) {
+              throw new Error(RESPONSE_MESSAGES.ERROR.MEDIA_SAVE_FAILED);
+            }
+            
+            newMediaId = savedMedia.mediaId;
+            this.logger.log(`Cloned associated file media from ${originalMedia.mediaId} to ${newMediaId}`);
+
+            // Create new associated file record
+            const newAssociatedFileData = {
+              lessonId: newLessonId,
+              mediaId: newMediaId,
+              tenantId,
+              organisationId,
+              createdBy: userId,
+              updatedBy: userId,
+            };
+
+            const newAssociatedFile = transactionalEntityManager.create(AssociatedFile, newAssociatedFileData);
+            const savedAssociatedFile = await transactionalEntityManager.save(AssociatedFile, newAssociatedFile);
+            
+            if (!savedAssociatedFile) {
+              throw new Error(RESPONSE_MESSAGES.ERROR.ASSOCIATED_FILE_SAVE_FAILED);
+            }
+          }
+        } catch (error) {
+          this.logger.error(`Error cloning associated file ${associatedFile.associatedFileId}: ${error.message}`);
+          // Continue with other files even if one fails
+        }
+      }
+    } catch (error) {
+      this.logger.error(`Error in cloneAssociatedFilesWithTransaction for lesson ${originalLessonId}: ${error.message}`);
+      throw error;
+    }
+  }
+
+  /**
+   * Clone a test from the assessment microservice
+   * @param testId The test ID to clone
+   * @param organisationId The organization ID for the request
+   * @param tenantId The tenant ID for the request
+   * @param authorization The authorization header
+   * @returns The cloned test ID
+   * @throws BadRequestException if the request fails or response is invalid
+   */
+  async cloneTest(
+    testId: string,
+    organisationId: string,
+    tenantId: string,
+    userId: string,
+    authorization: string
+  ): Promise<string> {
+    try {
+      // Get the assessment service URL from environment
+      const assessmentServiceUrl = this.configService.get<string>('ASSESSMENT_SERVICE_URL') || '';
+      
+      // Construct the full URL
+      const url = `${assessmentServiceUrl}/tests/${testId}/clone`;
+      
+      this.logger.log(`Cloning test ${testId} from ${url}`);
+
+      // Make the POST request using direct axios
+      const response = await axios.post(url, {}, {
+        headers: {
+          'organisationId': organisationId,
+          'tenantId': tenantId,
+          'authorization': authorization,
+          'Content-Type': 'application/json',
+          'userId': userId,
+        },
+      });
+
+      const responseData = response.data;
+
+      // Validate response structure
+      if (!responseData || !responseData.result) {
+        this.logger.error(`Invalid response structure from assessment service: ${JSON.stringify(responseData)}`);
+        throw new BadRequestException('Invalid response from assessment service');
+      }
+
+      // Check if the operation was successful
+      if (responseData.params.status !== 'successful') {
+        const errorMessage = responseData.params.errmsg || 'Failed to clone test';
+        this.logger.error(`Assessment service error: ${errorMessage}`);
+        throw new BadRequestException(errorMessage);
+      }
+
+      // Extract the cloned test ID
+      const clonedTestId = responseData.result.clonedTestId;
+      if (!clonedTestId) {
+        this.logger.error('No cloned test ID in response');
+        throw new BadRequestException('No cloned test ID received from assessment service');
+      }
+
+      this.logger.log(`Successfully cloned test ${testId} to ${clonedTestId}`);
+      return clonedTestId;
+
+    } catch (error) {
+      this.logger.error(`Error cloning test ${testId}: ${error.message}`, error.stack);
+      
+      // Re-throw BadRequestException as is
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+      
+      // Handle axios errors
+      if (axios.isAxiosError(error) && error.response) {
+        const status = error.response.status;
+        const errorMessage = error.response.data?.params?.errmsg || `Assessment service error (${status})`;
+        throw new BadRequestException(errorMessage);
+      }
+      
+      // Handle network errors
+      if (error.code === 'ECONNREFUSED' || error.code === 'ENOTFOUND') {
+        throw new BadRequestException('Unable to connect to assessment service');
+      }
+      
+      // Generic error
+      throw new BadRequestException('Failed to clone test');
+    }
+  }
+
+  /**
+   * Clone a lesson with all its media and associated files
+   */
+  async cloneLesson(
+    lessonId: string,    
+    userId: string,
+    tenantId: string,
+    organisationId: string,
+    authorization: string,
+    newCourseId: string,
+    newModuleId: string,
+  ): Promise<Lesson> {
+    this.logger.log(`Cloning lesson: ${lessonId}`);
+
+    try {
+      // Use a database transaction to ensure data consistency
+      const result = await this.lessonRepository.manager.transaction(async (transactionalEntityManager) => {
+        // Find the original lesson
+        const originalLesson = await transactionalEntityManager.findOne(Lesson, {
+          where: { 
+            lessonId,
+            tenantId,
+            organisationId,
+          },
+          relations: ['media', 'associatedFiles.media'],
+        });
+
+        if (!originalLesson) {
+          throw new NotFoundException(RESPONSE_MESSAGES.ERROR.LESSON_NOT_FOUND);
+        }
+
+        // Generate title and alias for the copied lesson
+        const newTitle = `${originalLesson.title} (Copy)`;
+        const newAlias = originalLesson.alias + '-copy';
+
+        const course = await this.courseRepository.findOne({
+          where: {
+            courseId: newCourseId,
+            tenantId,
+            organisationId,
+          },
+        });
+        if(!course){
+          throw new NotFoundException(RESPONSE_MESSAGES.ERROR.COURSE_NOT_FOUND);
+        }
+
+        const module = await this.moduleRepository.findOne({
+          where: {
+            moduleId: newModuleId,
+            courseId: newCourseId,
+            tenantId,
+            organisationId,
+          },
+        });
+        if(!module){
+          throw new NotFoundException(RESPONSE_MESSAGES.ERROR.MODULE_NOT_FOUND);
+        }
+
+        // Clone the lesson using the existing transaction method
+        const clonedLesson = await this.cloneLessonWithTransaction(
+          originalLesson,
+          newModuleId,
+          userId,
+          tenantId,
+          organisationId,
+          transactionalEntityManager,
+          newCourseId,
+          authorization
+        );
+
+        if (typeof clonedLesson === 'boolean') {
+          throw new Error(RESPONSE_MESSAGES.ERROR.LESSON_COPY_FAILED);
+        }
+
+        // Update the title and alias
+        clonedLesson.title = newTitle;
+        clonedLesson.alias = newAlias;
+
+        // Save the updated lesson
+        const savedLesson = await transactionalEntityManager.save(Lesson, clonedLesson);
+
+        this.logger.log(`Lesson copied successfully: ${savedLesson.lessonId}`);
+        return savedLesson;
+      });
+
+      // Handle cache operations after successful transaction
+      await this.cacheService.invalidateLesson(lessonId, '', '', tenantId, organisationId);
+
+      return result;
+    } catch (error) {
+      this.logger.error(`Error cloning lesson ${lessonId}: ${error.message}`, error.stack);
+      
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      throw new InternalServerErrorException(RESPONSE_MESSAGES.ERROR.LESSON_COPY_FAILED);
     }
   }
 

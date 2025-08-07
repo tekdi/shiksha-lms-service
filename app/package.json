@@ -38,6 +38,7 @@
     "@nestjs/typeorm": "^10.0.1",
     "@redis/client": "^1.6.1",
     "@vinayak-patil/cloud-storage": "https://github.com/vinayak-patil/cloud-storage/archive/refs/tags/v1.0.1.tar.gz",
+    "axios": "^1.11.0",
     "cache-manager": "^5.4.0",
     "cache-manager-redis-yet": "^5.1.5",
     "class-transformer": "^0.5.1",

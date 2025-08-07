@@ -13,6 +13,7 @@ import { ModuleTrack } from '../tracking/entities/module-track.entity';
 import { Media } from '../media/entities/media.entity';
 import { AssociatedFile } from '../media/entities/associated-file.entity';
 import { UserEnrollment } from '../enrollments/entities/user-enrollment.entity';
+import { ModulesModule } from '../modules/modules.module';
 
 @Module({
   imports: [
@@ -29,7 +30,7 @@ import { UserEnrollment } from '../enrollments/entities/user-enrollment.entity';
     ]),
     CommonModule,
     CacheModule,
-
+    ModulesModule,
   ],
   controllers: [CoursesController],
   providers: [CoursesService],
