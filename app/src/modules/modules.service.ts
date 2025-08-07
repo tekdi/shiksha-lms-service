@@ -402,7 +402,7 @@ export class ModulesService {
       });
        if (!submodules || submodules.length === 0) {
         this.logger.warn(`No submodules found for module ${originalModule.moduleId}`);
-        return null;
+        return savedModule;
       }
 
 

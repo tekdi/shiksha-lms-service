@@ -1031,7 +1031,8 @@ export class CoursesService {
     userId: string,
     tenantId: string,
     organisationId: string,
-    authorization: string
+    authorization: string,
+    newCohortId?: string
   ): Promise<Course> {
     this.logger.log(`Cloneing course: ${courseId}`);
 
@@ -1065,6 +1066,10 @@ export class CoursesService {
           updatedBy: userId,
           // Remove properties that should not be copied
           courseId: undefined,
+          params: newCohortId ? {
+            ...originalCourse.params,
+            cohortId: newCohortId
+          } : originalCourse.params
         };
 
         this.logger.log(`Creating new course with title: ${newTitle}`);

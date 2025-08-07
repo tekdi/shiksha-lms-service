@@ -34,6 +34,7 @@ import { getUploadPath } from '../common/utils/upload.util';
 import { uploadConfigs } from '../config/file-validation.config';
 import { TenantOrg } from '../common/decorators/tenant-org.decorator';
 import { ParseEnumPipe } from '@nestjs/common';
+import { CloneLessonDto } from './dto/clone-lesson.dto';
 
 @ApiTags('Lessons')
 @Controller('lessons')
@@ -214,15 +215,18 @@ export class LessonsController {
   async cloneLesson(
     @Param('lessonId', ParseUUIDPipe) lessonId: string,
     @Query() query: CommonQueryDto,
+    @Body() requestBody: CloneLessonDto,
     @TenantOrg() tenantOrg: { tenantId: string; organisationId: string },
     @Headers('authorization') authorization: string
   ) {
     return this.lessonsService.cloneLesson(
-      lessonId,
+      lessonId,     
       query.userId,
       tenantOrg.tenantId,
       tenantOrg.organisationId,
-      authorization
+      authorization,
+      requestBody.newCourseId,
+      requestBody.newModuleId,
     );
   }
 

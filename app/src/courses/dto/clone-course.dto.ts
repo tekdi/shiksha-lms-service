@@ -1,5 +1,6 @@
 import {
   IsNotEmpty,
+  IsOptional,
   IsUUID,
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
@@ -9,13 +10,13 @@ import { VALIDATION_MESSAGES } from '../../common/constants/response-messages.co
  * DTO for creating a new module
  * Note: tenantId and organisationId are handled automatically through the authenticated user's context
  */
-export class CloneModuleDto {
+export class CloneCourseDto {
   @ApiProperty({
-    description: 'New course ID',
+    description: 'New Cohort ID',
     example: '123e4567-e89b-12d3-a456-426614174000',
-    required: true,
+    required: false,
   })
-  @IsNotEmpty({ message: VALIDATION_MESSAGES.COMMON.REQUIRED('New course ID') })
-  @IsUUID('4', { message: VALIDATION_MESSAGES.COMMON.UUID('New course ID') })
-  newCourseId: string;
+  @IsOptional()
+  @IsUUID('4', { message: VALIDATION_MESSAGES.COMMON.UUID('New Cohort ID') })
+  newCohortId: string;
 }

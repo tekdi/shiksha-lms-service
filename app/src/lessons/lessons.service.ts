@@ -1078,11 +1078,13 @@ export class LessonsService {
    * Clone a lesson with all its media and associated files
    */
   async cloneLesson(
-    lessonId: string,
+    lessonId: string,    
     userId: string,
     tenantId: string,
     organisationId: string,
     authorization: string,
+    newCourseId: string,
+    newModuleId: string,
   ): Promise<Lesson> {
     this.logger.log(`Cloning lesson: ${lessonId}`);
 
@@ -1107,15 +1109,38 @@ export class LessonsService {
         const newTitle = `${originalLesson.title} (Copy)`;
         const newAlias = originalLesson.alias + '-copy';
 
+        const course = await this.courseRepository.findOne({
+          where: {
+            courseId: newCourseId,
+            tenantId,
+            organisationId,
+          },
+        });
+        if(!course){
+          throw new NotFoundException(RESPONSE_MESSAGES.ERROR.COURSE_NOT_FOUND);
+        }
+
+        const module = await this.moduleRepository.findOne({
+          where: {
+            moduleId: newModuleId,
+            courseId: newCourseId,
+            tenantId,
+            organisationId,
+          },
+        });
+        if(!module){
+          throw new NotFoundException(RESPONSE_MESSAGES.ERROR.MODULE_NOT_FOUND);
+        }
+
         // Clone the lesson using the existing transaction method
         const clonedLesson = await this.cloneLessonWithTransaction(
           originalLesson,
-          originalLesson.moduleId, // Keep the same module
+          newModuleId,
           userId,
           tenantId,
           organisationId,
           transactionalEntityManager,
-          originalLesson.courseId, // Keep the same course
+          newCourseId,
           authorization
         );
 
