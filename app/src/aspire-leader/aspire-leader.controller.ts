@@ -16,6 +16,7 @@ import { CourseReportDto, CourseReportHeadersDto } from './dto/course-report.dto
 import { API_IDS } from '../common/constants/api-ids.constant';
 import { ApiId } from '../common/decorators/api-id.decorator';
 import { TenantOrg } from '../common/decorators/tenant-org.decorator';
+import { CommonQueryDto } from 'src/common/dto/common-query.dto';
 
 @ApiTags('Aspire Leader Reports')
 @Controller('course')
@@ -46,13 +47,15 @@ export class AspireLeaderController {
   async generateCourseReport(
     @Query() reportDto: CourseReportDto,
     @TenantOrg() tenantOrg: { tenantId: string; organisationId: string },
+    @Query() query: CommonQueryDto,
     @Headers() headers: CourseReportHeadersDto,
   ): Promise<any> {
     return this.aspireLeaderService.generateCourseReport(
       reportDto,
       tenantOrg.tenantId,
       tenantOrg.organisationId,
-      headers.authorization
+      headers.authorization,
+      query.userId
     );
   }
 } 

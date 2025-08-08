@@ -45,6 +45,7 @@ export class AspireLeaderService {
     tenantId: string,
     organisationId: string,
     authorization: string,
+    userId: string,
   ): Promise<any> {
     const startTime = Date.now();
     this.logger.log(`Generating course report for courseId: ${reportDto.courseId}, cohortId: ${reportDto.cohortId}`);
@@ -66,9 +67,9 @@ export class AspireLeaderService {
     // Check if lesson-level report is requested
     let result: any;
     if (reportDto.lessonId) {
-      result = await this.generateLessonLevelReport(reportDto, course, tenantId, organisationId, authorization);
+      result = await this.generateLessonLevelReport(reportDto, course, tenantId, organisationId, authorization, userId);
     } else {
-      result = await this.generateCourseLevelReport(reportDto, course, tenantId, organisationId, authorization);
+      result = await this.generateCourseLevelReport(reportDto, course, tenantId, organisationId, authorization, userId);
     }
 
     const duration = Date.now() - startTime;
@@ -86,6 +87,7 @@ export class AspireLeaderService {
     tenantId: string,
     organisationId: string,
     authorization: string,
+    userId: string,
   ): Promise<any> {
     // Query with INNER JOIN course and course track, LEFT JOIN with enrollment
     const enrollmentData = await this.courseTrackRepository
@@ -138,7 +140,7 @@ export class AspireLeaderService {
     const userIds = enrollmentData.map(enrollment => enrollment.userId);
 
     // Fetch user data from external API - limit matches the number of users we're requesting
-    const userData = await this.fetchUserData(userIds, tenantId, organisationId, authorization);
+    const userData = await this.fetchUserData(userIds, userId, tenantId, organisationId, authorization);
 
     // Combine data and create report items
     const reportItems: any[] = [];
@@ -202,6 +204,7 @@ export class AspireLeaderService {
     tenantId: string,
     organisationId: string,
     authorization: string,
+    userId: string,
   ): Promise<any> {
     // Validate lesson exists
     const lesson = await this.lessonRepository.findOne({
@@ -257,7 +260,7 @@ export class AspireLeaderService {
     const userIds = enrollmentData.map(enrollment => enrollment.userId);
 
     // Fetch user data from external API - limit matches the number of users we're requesting
-    const userData = await this.fetchUserData(userIds, tenantId, organisationId, authorization);
+    const userData = await this.fetchUserData(userIds, userId, tenantId, organisationId, authorization);
 
     // Combine data and create report items
     const reportItems: any[] = [];
@@ -307,15 +310,15 @@ export class AspireLeaderService {
   /**
    * Fetch user data from external API
    */
-  private async fetchUserData(userIds: string[], tenantId: string, organisationId: string, authorization: string): Promise<any[]> {
+  private async fetchUserData(userIds: string[], userId: string, tenantId: string, organisationId: string, authorization: string): Promise<any[]> {
     try {
-      const middlewareUrl = this.configService.get('MIDDLEWARE_URL', '');
+      const userServiceUrl = this.configService.get('USER_SERVICE_URL', '');
 
-      if (!middlewareUrl) {
-        throw new BadRequestException(RESPONSE_MESSAGES.ERROR.MIDDLEWARE_URL_NOT_CONFIGURED);
+      if (!userServiceUrl) {
+        throw new BadRequestException(RESPONSE_MESSAGES.ERROR.USER_SERVICE_URL_NOT_CONFIGURED);
       }
 
-      const response = await axios.post(`${middlewareUrl}/user/v1/list`, {
+      const response = await axios.post(`${userServiceUrl}/list`, {
         filters: { userId: userIds },
         limit: userIds.length,
         includeCustomFields: false,
@@ -323,6 +326,7 @@ export class AspireLeaderService {
           headers: {
             'tenantid': tenantId,
             'organisationId': organisationId,
+            'userId': userId,
             'Authorization': authorization,
             'Content-Type': 'application/json'
           }
@@ -359,10 +363,8 @@ export class AspireLeaderService {
       switch (sortBy) {
         case 'progress':
           return 'lessonTrack.completionPercentage';
-        case 'timeSpentMins':
-          return 'lessonTrack.timeSpent';
-        case 'lessonTitle':
-          return 'lessonTrack.lessonId';
+        case 'timeSpent':
+          return 'lessonTrack.timeSpent';        
         default:
           return 'lessonTrack.completionPercentage';
       }

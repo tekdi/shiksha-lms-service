@@ -123,12 +123,12 @@ export class ConfigurationService  {
 
   async fetchExternalConfig(tenantId: string): Promise<any> {
     try {
-      const externalConfigUrl = this.configService.get('CONFIG_URL');
+      const externalConfigUrl = this.configService.get('USER_SERVICE_URL');
       if (!externalConfigUrl) {
         throw new InternalServerErrorException(RESPONSE_MESSAGES.ERROR.CONFIG_URL_MISSING);
       }
 
-      const response = await axios.get(`${externalConfigUrl}/${tenantId}?context=lms`);
+      const response = await axios.get(`${externalConfigUrl}/tenant/${tenantId}?context=lms`);
       return response.data.result;
     } catch (error) {
       return {};

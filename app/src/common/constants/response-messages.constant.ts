@@ -121,7 +121,7 @@ export const RESPONSE_MESSAGES = {
     CONFIG_NOT_FOUND: 'LMS Configuration not found',
     CONFIG_FAILED: 'Failed to get LMS Configuration',
     LMS_CONFIG_LOAD_FAILED: 'Failed to load LMS Configuration',
-    MIDDLEWARE_URL_NOT_CONFIGURED: 'Middleware URL not configured',
+    USER_SERVICE_URL_NOT_CONFIGURED: 'User service URL not configured',
     FAILED_TO_FETCH_USER_DATA: 'Failed to fetch user data from external service',
     
     // Course Cloning Specific Errors
