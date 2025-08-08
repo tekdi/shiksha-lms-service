@@ -30,9 +30,12 @@ export enum LessonSubFormat {
   QUIZ = 'quiz',
   ASSESSMENT = 'assessment',
   FEEDBACK = 'feedback',
+  REFLECTION_PROMPT = 'reflection.prompt', // PROJECT SECIFIC - ASPRE_LEADER
   EVENT = 'event',
   VIDEO = 'video.url',
   EXTERNAL_URL = 'external.url',
+  DISCORD_URL = 'discord.url', // PROJECT SECIFIC - ASPRE_LEADER
+  EXTERNAL_ASSESSMENT_URL = 'external.assessment.url', // PROJECT SECIFIC - ASPRE_LEADER
 }
 
 export enum LessonStatus {
@@ -99,6 +102,13 @@ export class Lesson {
 
   @Column({ type: 'integer', nullable: true })
   noOfAttempts: number;
+
+  @ApiProperty({ 
+    description: 'Allow users to resubmit the same attempt multiple times. When true, users can only have one attempt and can submit it multiple times. This configuration will override resume and noOfAttempts',
+    default: false 
+  })
+  @Column({ type: 'boolean', default: false })
+  allowResubmission: boolean;
 
   @Column({
     type: 'varchar',

@@ -18,6 +18,7 @@ export const API_IDS = {
   GET_SUBMODULES_BY_PARENT: 'api.module.list',
   UPDATE_MODULE: 'api.module.update',
   DELETE_MODULE: 'api.module.delete',
+  CLONE_MODULE: 'api.module.clone',
   
   // Lesson APIs
   CREATE_LESSON: 'api.lesson.create',
@@ -27,6 +28,7 @@ export const API_IDS = {
   GET_LESSON_BY_TEST_ID: 'api.lesson.read',
   UPDATE_LESSON: 'api.lesson.update',
   DELETE_LESSON: 'api.lesson.delete',
+  CLONE_LESSON: 'api.lesson.clone',
   
     // Media APIs
   UPLOAD_MEDIA: 'api.media.upload',

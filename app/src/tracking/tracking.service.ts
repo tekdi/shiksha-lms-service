@@ -9,7 +9,7 @@ import { Repository, FindOptionsWhere, Not, FindManyOptions, IsNull, In } from '
 import { CourseTrack, TrackingStatus } from './entities/course-track.entity';
 import { LessonTrack } from './entities/lesson-track.entity';
 import { Course, CourseStatus } from '../courses/entities/course.entity';
-import { Lesson, LessonStatus } from '../lessons/entities/lesson.entity';
+import { Lesson, LessonStatus, AttemptsGradeMethod } from '../lessons/entities/lesson.entity';
 import { Module, ModuleStatus } from '../modules/entities/module.entity';
 import { RESPONSE_MESSAGES } from '../common/constants/response-messages.constant';
 import { UpdateLessonTrackingDto } from './dto/update-lesson-tracking.dto';
@@ -147,6 +147,10 @@ export class TrackingService {
       if (canResume) {
         return incompleteAttempt;
       }      
+    }
+    if (lesson.allowResubmission && existingTracks.length > 0) {
+      // If resubmission is allowed, always return the existing attempt
+      return existingTracks[0];
     }
 
     // Check max attempts
@@ -311,7 +315,12 @@ export class TrackingService {
     const latestTrack = existingTracks[0];
    
     if (action === 'resume') {
-            // Check if lesson allows resume
+      // For resubmission mode, always allow resume regardless of lesson.resume setting
+      if (lesson.allowResubmission) {
+        return latestTrack;
+      }
+      
+      // Check if lesson allows resume
       const canResume = lesson.resume ?? true;
       if (!canResume) {
         throw new BadRequestException(RESPONSE_MESSAGES.ERROR.RESUME_NOT_ALLOWED);
@@ -321,11 +330,25 @@ export class TrackingService {
       }
       return latestTrack;
     } else { 
+      // start over
+      if (lesson.allowResubmission) {
+        // For resubmission mode, reset the existing attempt instead of creating new one
+        latestTrack.status = TrackingStatus.STARTED;
+        latestTrack.startDatetime = new Date();
+        latestTrack.completionPercentage = 0;
+        latestTrack.score = 0;
+        latestTrack.totalContent = 0;
+        latestTrack.currentPosition = 0;
+        latestTrack.timeSpent = 0;
+        
+        const savedTracking = await this.lessonTrackRepository.save(latestTrack);
+        return savedTracking;
+      }
       
       if (latestTrack.status === TrackingStatus.COMPLETED) {
         throw new BadRequestException(RESPONSE_MESSAGES.ERROR.CANNOT_START_COMPLETED);
       }
-      // start over
+      
       // Check max attempts
       const maxAttempts = lesson.noOfAttempts || 1;
       if (maxAttempts > 0 && latestTrack.attempt >= maxAttempts) {
@@ -426,14 +449,21 @@ export class TrackingService {
       status.lastAttemptId = latestTrack.lessonTrackId;
       status.lastAttemptStatus = latestTrack.status;
 
-      const canResume = lesson.resume ?? true;
-      if (canResume && (latestTrack.status === TrackingStatus.STARTED || latestTrack.status === TrackingStatus.INCOMPLETE)) {
+      if (lesson.allowResubmission) {
+        // For resubmission mode, always allow resume and reattempt
         status.canResume = true;
-      }
-
-      const maxAttempts = lesson.noOfAttempts || 0;
-      if ((maxAttempts === 0 || latestTrack.attempt < maxAttempts) && latestTrack.status === TrackingStatus.COMPLETED) {
         status.canReattempt = true;
+      } else {
+        // Original logic for non-resubmission mode
+        const canResume = lesson.resume ?? true;
+        if (canResume && (latestTrack.status === TrackingStatus.STARTED || latestTrack.status === TrackingStatus.INCOMPLETE)) {
+          status.canResume = true;
+        }
+
+        const maxAttempts = lesson.noOfAttempts || 0;
+        if ((maxAttempts === 0 || latestTrack.attempt < maxAttempts) && latestTrack.status === TrackingStatus.COMPLETED) {
+          status.canReattempt = true;
+        }
       }
     } else {
       // No attempts yet, can start first attempt
@@ -562,23 +592,28 @@ export class TrackingService {
 
     // If the lesson is completed, update completed lessons count
     if (lessonTrack.status === TrackingStatus.COMPLETED || courseTrack.status === TrackingStatus.STARTED) {
-      // Get all completed lessons for this course that have considerForPassing = true
-      const completedLessonTracksWithConsiderFlag = await this.lessonTrackRepository
-        .createQueryBuilder('lessonTrack')
-        .innerJoin('lessonTrack.lesson', 'lesson')
-        .where('lessonTrack.courseId = :courseId', { courseId: lessonTrack.courseId })
-        .andWhere('lessonTrack.userId = :userId', { userId: lessonTrack.userId })
-        .andWhere('lessonTrack.status = :status', { status: TrackingStatus.COMPLETED })
-        .andWhere('lessonTrack.tenantId = :tenantId', { tenantId })
-        .andWhere('lessonTrack.organisationId = :organisationId', { organisationId })
-        .andWhere('lesson.considerForPassing = :considerForPassing', { considerForPassing: true })
-        .getMany();
+      // Get all lessons for this course that have considerForPassing = true
+      const courseLessons = await this.lessonRepository.find({
+        where: { 
+          courseId: lessonTrack.courseId,
+          tenantId,
+          organisationId,
+          status: LessonStatus.PUBLISHED,
+          considerForPassing: true
+        } as FindOptionsWhere<Lesson>,
+      });
 
-      // Get unique lesson IDs
-      const uniqueCompletedLessonIds = [...new Set(completedLessonTracksWithConsiderFlag.map(track => track.lessonId))];
+      // Calculate completed lessons based on attemptsGrade
+      const completedLessonsCount = await this.calculateCompletedLessonsBasedOnAttemptsGrade(
+        courseLessons,
+        lessonTrack.userId,
+        lessonTrack.courseId,
+        tenantId,
+        organisationId
+      );
       
       // Update course track
-      courseTrack.completedLessons = uniqueCompletedLessonIds.length;
+      courseTrack.completedLessons = completedLessonsCount;
       
       // Check if course is completed
       // if (courseTrack.completedLessons >= courseTrack.noOfLessons) {
@@ -601,6 +636,93 @@ export class TrackingService {
     if (lesson && lesson.moduleId) {
       await this.updateModuleTracking(lesson.moduleId, lessonTrack.userId, lessonTrack.tenantId, lessonTrack.organisationId);
     }
+  }
+
+  /**
+   * Calculate completed lessons based on attemptsGrade method
+   */
+  private async calculateCompletedLessonsBasedOnAttemptsGrade(
+    lessons: Lesson[],
+    userId: string,
+    courseId: string | null,
+    tenantId: string,
+    organisationId: string
+  ): Promise<number> {
+    let completedLessonsCount = 0;
+
+    for (const lesson of lessons) {
+      // Get all attempts for this lesson
+      const whereClause: any = { 
+        lessonId: lesson.lessonId,
+        userId,
+        tenantId,
+        organisationId,
+        status: TrackingStatus.COMPLETED
+      };
+      
+      // Add courseId filter only if it's provided
+      if (courseId) {
+        whereClause.courseId = courseId;
+      }
+
+      const lessonAttempts = await this.lessonTrackRepository.find({
+        where: whereClause as FindOptionsWhere<LessonTrack>,
+        order: { attempt: 'ASC' }
+      });
+
+      if (lessonAttempts.length === 0) {
+        continue; // No completed attempts
+      }
+
+      let isLessonCompleted = false;
+
+      switch (lesson.attemptsGrade) {
+        case AttemptsGradeMethod.FIRST_ATTEMPT:
+          // Consider completed if first attempt is completed
+          isLessonCompleted = lessonAttempts.some(attempt => attempt.attempt === 1);
+          break;
+
+        case AttemptsGradeMethod.LAST_ATTEMPT:
+          // Consider completed if any attempt is completed (last attempt)
+          isLessonCompleted = true;
+          break;
+
+        case AttemptsGradeMethod.AVERAGE:
+          // Consider completed if average score meets passing criteria
+          if (lesson.passingMarks && lesson.totalMarks) {
+            const averageScore = lessonAttempts.reduce((sum, attempt) => sum + (attempt.score || 0), 0) / lessonAttempts.length;
+            const averagePercentage = (averageScore / lesson.totalMarks) * 100;
+            isLessonCompleted = averagePercentage >= (lesson.passingMarks / lesson.totalMarks) * 100;
+          } else {
+            // If no passing criteria, consider completed if any attempt exists
+            isLessonCompleted = true;
+          }
+          break;
+
+        case AttemptsGradeMethod.HIGHEST:
+          // Consider completed if highest score meets passing criteria
+          if (lesson.passingMarks && lesson.totalMarks) {
+            const highestScore = Math.max(...lessonAttempts.map(attempt => attempt.score || 0));
+            const highestPercentage = (highestScore / lesson.totalMarks) * 100;
+            isLessonCompleted = highestPercentage >= (lesson.passingMarks / lesson.totalMarks) * 100;
+          } else {
+            // If no passing criteria, consider completed if any attempt exists
+            isLessonCompleted = true;
+          }
+          break;
+
+        default:
+          // Default behavior: consider completed if any attempt is completed
+          isLessonCompleted = true;
+          break;
+      }
+
+      if (isLessonCompleted) {
+        completedLessonsCount++;
+      }
+    }
+
+    return completedLessonsCount;
   }
 
   /**
@@ -657,28 +779,22 @@ export class TrackingService {
       } as FindOptionsWhere<Lesson>,
     });
 
-    // Get completed lessons for this module that have considerForPassing = true
-    const completedLessonTracks = await this.lessonTrackRepository
-      .createQueryBuilder('lessonTrack')
-      .innerJoin('lessonTrack.lesson', 'lesson')
-      .where('lessonTrack.lessonId IN (:...lessonIds)', { lessonIds: moduleLessons.map(l => l.lessonId) })
-      .andWhere('lessonTrack.userId = :userId', { userId })
-      .andWhere('lessonTrack.status = :status', { status: TrackingStatus.COMPLETED })
-      .andWhere('lessonTrack.tenantId = :tenantId', { tenantId })
-      .andWhere('lessonTrack.organisationId = :organisationId', { organisationId })
-      .andWhere('lesson.considerForPassing = :considerForPassing', { considerForPassing: true })
-      .getMany();
-
-    // Get unique completed lesson IDs
-    const uniqueCompletedLessonIds = [...new Set(completedLessonTracks.map(track => track.lessonId))];
+    // Calculate completed lessons based on attemptsGrade
+    const completedLessonsCount = await this.calculateCompletedLessonsBasedOnAttemptsGrade(
+      moduleLessons,
+      userId,
+      null, // No courseId for module tracking
+      tenantId,
+      organisationId
+    );
 
     // Update module tracking data
-    moduleTrack.completedLessons = uniqueCompletedLessonIds.length;
+    moduleTrack.completedLessons = completedLessonsCount;
     moduleTrack.totalLessons = moduleLessons.length;
-    moduleTrack.progress = moduleLessons.length > 0 ? Math.round((uniqueCompletedLessonIds.length / moduleLessons.length) * 100) : 0;
+    moduleTrack.progress = moduleLessons.length > 0 ? Math.round((completedLessonsCount / moduleLessons.length) * 100) : 0;
 
     // Update module status based on completion
-    if (uniqueCompletedLessonIds.length === moduleLessons.length && moduleLessons.length > 0) {
+    if (completedLessonsCount === moduleLessons.length && moduleLessons.length > 0) {
       moduleTrack.status = ModuleTrackStatus.COMPLETED;
     } else {
       moduleTrack.status = ModuleTrackStatus.INCOMPLETE;

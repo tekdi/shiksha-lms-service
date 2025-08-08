@@ -12,6 +12,7 @@ import {
   UploadedFile,
   Query,
   Patch,
+  Headers,
 } from '@nestjs/common';
 import { 
   ApiTags, 
@@ -32,6 +33,7 @@ import { ApiId } from '../common/decorators/api-id.decorator';
 import { getUploadPath } from '../common/utils/upload.util';
 import { uploadConfigs } from '../config/file-validation.config';
 import { TenantOrg } from '../common/decorators/tenant-org.decorator';
+import { CloneModuleDto } from './dto/clone-module.dto';
 
 @ApiTags('Modules')
 @Controller('modules')
@@ -198,6 +200,34 @@ export class ModulesController {
       query.userId,
       tenantOrg.tenantId,
       tenantOrg.organisationId
+    );
+  }
+
+  @Post(':moduleId/clone')
+  @ApiId(API_IDS.CLONE_MODULE)
+  @ApiOperation({ summary: 'Clone a module with all its lessons and submodules' })
+  @ApiResponse({ 
+    status: 201, 
+    description: 'Module cloned successfully', 
+    type: Module 
+  })
+  @ApiResponse({ status: 400, description: 'Bad request' })
+  @ApiResponse({ status: 404, description: 'Module not found' })
+  @ApiParam({ name: 'moduleId', type: String, format: 'uuid' })
+  async cloneModule(
+    @Param('moduleId', ParseUUIDPipe) moduleId: string,
+    @Query() query: CommonQueryDto,
+    @Body() cloneModuleDto: CloneModuleDto,
+    @TenantOrg() tenantOrg: { tenantId: string; organisationId: string },
+    @Headers('authorization') authorization: string
+  ) {
+    return this.modulesService.cloneModule(
+      moduleId,
+      cloneModuleDto.newCourseId,
+      query.userId,
+      tenantOrg.tenantId,
+      tenantOrg.organisationId,
+      authorization
     );
   }
 }

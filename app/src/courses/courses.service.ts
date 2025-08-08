@@ -8,7 +8,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, FindOptionsWhere, Not, Equal, ILike, IsNull, In } from 'typeorm';
 import { Course, CourseStatus } from './entities/course.entity';
 import { Module, ModuleStatus } from '../modules/entities/module.entity';
-import { Lesson, LessonStatus } from '../lessons/entities/lesson.entity';
+import { Lesson, LessonStatus, AttemptsGradeMethod } from '../lessons/entities/lesson.entity';
 import { CourseTrack, TrackingStatus } from '../tracking/entities/course-track.entity';
 import { LessonTrack } from '../tracking/entities/lesson-track.entity';
 import { ModuleTrack } from '../tracking/entities/module-track.entity';
@@ -25,6 +25,7 @@ import { CacheService } from '../cache/cache.service';
 import { ConfigService } from '@nestjs/config';
 import { CourseStructureDto } from '../courses/dto/course-structure.dto';
 import { CacheConfigService } from '../cache/cache-config.service';
+import { ModulesService } from 'src/modules/modules.service';
 
 @Injectable()
 export class CoursesService {
@@ -51,6 +52,7 @@ export class CoursesService {
     private readonly userEnrollmentRepository: Repository<UserEnrollment>,
     private readonly cacheService: CacheService,
     private readonly cacheConfig: CacheConfigService,
+    private readonly modulesService: ModulesService,
   ) {}
 
   /**
@@ -176,7 +178,7 @@ export class CoursesService {
     const orderClause: any = {};
     orderClause[sortBy] = orderBy;
 
-    // Fetch courses
+    // Fetch courses - can use Join query to get courses , module and enrollment counts in future if there are more courses - with aspire case one cohort can hvae 2-5 courses.
     const [courses, total] = await this.courseRepository.findAndCount({
       where: this.buildSearchConditions(filters, whereClause),
       order: orderClause,
@@ -184,14 +186,14 @@ export class CoursesService {
       skip: offset,
     });
 
-    // Batch fetch module counts
-    const coursesWithModuleCounts = await this.enrichCoursesWithModuleCounts(
+    // Batch fetch module and enrollment counts
+    const coursesWithCounts = await this.enrichCoursesWithCounts(
       courses,
       tenantId
     );
 
     const result: SearchCourseResponseDto = { 
-      courses: coursesWithModuleCounts, 
+      courses: coursesWithCounts, 
       totalElements: total,
       offset,
       limit
@@ -266,32 +268,54 @@ export class CoursesService {
     ];
   }
 
-  private async enrichCoursesWithModuleCounts(
+  private async enrichCoursesWithCounts(
     courses: Course[],
     tenantId: string
   ): Promise<Course[]> {
     if (courses.length === 0) return [];
 
     const courseIds = courses.map(c => c.courseId);
-    const moduleCounts = await this.moduleRepository
-      .createQueryBuilder('module')
-      .select('module.courseId', 'courseId')
-      .addSelect('COUNT(*)', 'count')
-      .where({
-        courseId: In(courseIds),
-        tenantId,
-        status: Not(ModuleStatus.ARCHIVED)
-      })
-      .groupBy('module.courseId')
-      .getRawMany();
+    
+    // Get module counts using count method
+    const moduleCountPromises = courseIds.map(async (courseId) => {
+      const count = await this.moduleRepository.count({
+        where: {
+          courseId,
+          tenantId,
+          status: Not(ModuleStatus.ARCHIVED)
+        }
+      });
+      return { courseId, count };
+    });
 
-    const countMap = new Map(
-      moduleCounts.map(mc => [mc.courseId, parseInt(mc.count)])
+    const moduleCounts = await Promise.all(moduleCountPromises);
+
+    // Get enrollment counts using count method
+    const enrollmentCountPromises = courseIds.map(async (courseId) => {
+      const count = await this.userEnrollmentRepository.count({
+        where: {
+          courseId,
+          tenantId,
+          status: EnrollmentStatus.PUBLISHED
+        }
+      });
+      return { courseId, count };
+    });
+
+    const enrollmentCounts = await Promise.all(enrollmentCountPromises);
+
+    const moduleCountMap = new Map(
+      moduleCounts.map(mc => [mc.courseId, mc.count])
+    );
+    
+    const enrollmentCountMap = new Map(
+      enrollmentCounts.map(ec => [ec.courseId, ec.count])
     );
 
     return courses.map(course => ({
       ...course,
-      moduleCount: countMap.get(course.courseId) || 0
+      moduleCount: moduleCountMap.get(course.courseId) || 0,
+      enrolledUsersCount: enrollmentCountMap.get(course.courseId) || 0
     }));
   }
 
@@ -581,7 +605,7 @@ export class CoursesService {
       where: { courseId, userId, tenantId, organisationId }
     });
     let lessonTracks: any[] = [];
-    let lessonTrackMap = new Map();
+    let lessonAttemptsByLesson = new Map(); // Map to store all attempts for each lesson
     let totalTimeSpent = 0;
     let lastAccessedLesson: any = null;
     if (includeLessons && lessons.length > 0) {
@@ -589,11 +613,15 @@ export class CoursesService {
         where: { userId, courseId, tenantId, organisationId },
         order: { updatedAt: 'DESC', attempt: 'DESC' }
       });
+      
+      // Group all attempts by lessonId
       lessonTracks.forEach(track => {
-        if (!lessonTrackMap.has(track.lessonId)) {
-          lessonTrackMap.set(track.lessonId, track);
+        if (!lessonAttemptsByLesson.has(track.lessonId)) {
+          lessonAttemptsByLesson.set(track.lessonId, []);
         }
+        lessonAttemptsByLesson.get(track.lessonId).push(track);
       });
+      
       totalTimeSpent = lessonTracks.reduce((sum, track) => sum + (track.timeSpent || 0), 0);
       if (courseTracking && courseTracking.status !== TrackingStatus.COMPLETED && lessonTracks.length > 0) {
         const lastTrack = lessonTracks[0];
@@ -630,25 +658,28 @@ export class CoursesService {
       if (includeLessons) {
         const moduleLessons = lessonsByModule.get(module.moduleId) || [];
         lessonsWithTracking = moduleLessons.map(lesson => {
-          const lessonTrack = lessonTrackMap.get(lesson.lessonId);
+          const lessonAttempts = lessonAttemptsByLesson.get(lesson.lessonId) || [];
+          const bestAttempt = this.calculateBestAttempt(lessonAttempts, lesson.attemptsGrade);
+          const lastAttempt = this.getLastAttempt(lessonAttempts);
+          
           return {
             ...lesson,
-            tracking: lessonTrack ? {
-              status: lessonTrack.status,
-              canResume: (lesson.resume ?? true) && (lessonTrack.status === TrackingStatus.STARTED || lessonTrack.status === TrackingStatus.INCOMPLETE),
-              canReattempt: (lesson.noOfAttempts === 0 || lessonTrack.attempt < lesson.noOfAttempts) && lessonTrack.status === TrackingStatus.COMPLETED,
-              completionPercentage: lessonTrack.completionPercentage || 0,
-              lastAccessed: lessonTrack.updatedAt,
-              timeSpent: lessonTrack.timeSpent || 0,
-              score: lessonTrack.score,
-              attempt: {
-                attemptId: lessonTrack.lessonTrackId,
-                attemptNumber: lessonTrack.attempt,
-                startDatetime: lessonTrack.startDatetime,
-                endDatetime: lessonTrack.endDatetime,
-                totalContent: lessonTrack.totalContent || 0,
-                currentPosition: lessonTrack.currentPosition || 0
-              }
+            tracking: bestAttempt ? {
+              status: bestAttempt.status,
+              canResume: (lesson.resume ?? true) && (lastAttempt && (lastAttempt.status === TrackingStatus.STARTED || lastAttempt.status === TrackingStatus.INCOMPLETE)),
+              canReattempt: (lesson.noOfAttempts === 0 || (lastAttempt && lastAttempt.attempt < lesson.noOfAttempts)) && (lastAttempt && lastAttempt.status === TrackingStatus.COMPLETED),
+              completionPercentage: bestAttempt.completionPercentage || 0,
+              lastAccessed: bestAttempt.updatedAt,
+              timeSpent: bestAttempt.timeSpent || 0,
+              score: bestAttempt.score,
+              attempt: lastAttempt ? {
+                attemptId: lastAttempt.lessonTrackId,
+                attemptNumber: lastAttempt.attempt,
+                startDatetime: lastAttempt.startDatetime,
+                endDatetime: lastAttempt.endDatetime,
+                totalContent: lastAttempt.totalContent || 0,
+                currentPosition: lastAttempt.currentPosition || 0
+              } : null
             } : {
               status: TrackingStatus.NOT_STARTED,
               progress: 0,
@@ -748,6 +779,74 @@ export class CoursesService {
     if (dates.length === 0) return null;
     
     return new Date(Math.max(...dates.map(date => date instanceof Date ? date.getTime() : new Date(date).getTime())));
+  }
+
+  /**
+   * Calculate the best attempt based on the grading method
+   * @param attempts Array of lesson attempts
+   * @param gradingMethod The grading method to use
+   * @returns The best attempt based on the grading method
+   */
+  private calculateBestAttempt(attempts: LessonTrack[], gradingMethod: AttemptsGradeMethod): LessonTrack | null {
+    if (!attempts || attempts.length === 0) {
+      return null;
+    }
+
+    switch (gradingMethod) {
+      case AttemptsGradeMethod.FIRST_ATTEMPT:
+        return attempts.sort((a, b) => a.attempt - b.attempt)[0];
+      
+      case AttemptsGradeMethod.LAST_ATTEMPT:
+        return attempts.sort((a, b) => b.attempt - a.attempt)[0];
+      
+      case AttemptsGradeMethod.HIGHEST:
+        return attempts.reduce((best, current) => {
+          const bestScore = best.score || 0;
+          const currentScore = current.score || 0;
+          return currentScore > bestScore ? current : best;
+        });
+      
+      case AttemptsGradeMethod.AVERAGE:
+        // For average, we need to calculate averages and return a synthetic attempt
+        const totalScore = attempts.reduce((sum, attempt) => sum + (attempt.score || 0), 0);
+        const totalCompletion = attempts.reduce((sum, attempt) => sum + (attempt.completionPercentage || 0), 0);
+        const totalTimeSpent = attempts.reduce((sum, attempt) => sum + (attempt.timeSpent || 0), 0);
+        
+        const avgScore = totalScore / attempts.length;
+        const avgCompletion = totalCompletion / attempts.length;
+        const avgTimeSpent = totalTimeSpent / attempts.length;
+        
+        // Return the attempt with the closest score to average, or the last attempt if no score
+        const attemptWithClosestScore = attempts.reduce((closest, current) => {
+          const closestDiff = Math.abs((closest.score || 0) - avgScore);
+          const currentDiff = Math.abs((current.score || 0) - avgScore);
+          return currentDiff < closestDiff ? current : closest;
+        });
+        
+        // Create a synthetic attempt with average values
+        return {
+          ...attemptWithClosestScore,
+          score: Math.round(avgScore),
+          completionPercentage: Math.round(avgCompletion),
+          timeSpent: Math.round(avgTimeSpent)
+        };
+      
+      default:
+        // Default to last attempt
+        return attempts.sort((a, b) => b.attempt - a.attempt)[0];
+    }
+  }
+
+  /**
+   * Get the last attempt for a lesson (for attempt object in response)
+   * @param attempts Array of lesson attempts
+   * @returns The last attempt
+   */
+  private getLastAttempt(attempts: LessonTrack[]): LessonTrack | null {
+    if (!attempts || attempts.length === 0) {
+      return null;
+    }
+    return attempts.sort((a, b) => b.attempt - a.attempt)[0];
   }
 
   /**
@@ -1007,6 +1106,8 @@ export class CoursesService {
     userId: string,
     tenantId: string,
     organisationId: string,
+    authorization: string,
+    newCohortId?: string
   ): Promise<Course> {
     this.logger.log(`Cloneing course: ${courseId}`);
 
@@ -1040,6 +1141,10 @@ export class CoursesService {
           updatedBy: userId,
           // Remove properties that should not be copied
           courseId: undefined,
+          params: newCohortId ? {
+            ...originalCourse.params,
+            cohortId: newCohortId
+          } : originalCourse.params
         };
 
         this.logger.log(`Creating new course with title: ${newTitle}`);
@@ -1056,7 +1161,8 @@ export class CoursesService {
           userId, 
           tenantId, 
           organisationId,
-          transactionalEntityManager
+          transactionalEntityManager,
+          authorization
         );
 
         this.logger.log(`Course copied successfully: ${result.courseId}`);
@@ -1083,7 +1189,8 @@ export class CoursesService {
     userId: string,
     tenantId: string,
     organisationId: string,
-    transactionalEntityManager: any,
+    transactionalEntityManager: any,  
+    authorization: string
   ): Promise<void> {
     try {
       // Get only top-level modules (parentId is null or undefined)
@@ -1106,7 +1213,7 @@ export class CoursesService {
       // Clone each module
       for (const module of modules) {
         try {
-          await this.cloneModuleWithTransaction(module, newCourseId, userId, tenantId, organisationId, transactionalEntityManager);
+          await this.modulesService.cloneModuleWithTransaction(module, newCourseId, userId, tenantId, organisationId, transactionalEntityManager, authorization);
         } catch (error) {
           this.logger.error(`Error cloning module ${module.moduleId}: ${error.message}`);
           throw new Error(`${RESPONSE_MESSAGES.ERROR.MODULE_COPY_FAILED}: ${module.title}`);
@@ -1114,334 +1221,6 @@ export class CoursesService {
       }
     } catch (error) {
       this.logger.error(`Error in cloneModulesWithTransaction: ${error.message}`);
-      throw error;
-    }
-  }
-
-  /**
-   * Clone a single module with its lessons using transaction
-   */
-  private async cloneModuleWithTransaction(
-    originalModule: Module,
-    newCourseId: string,
-    userId: string,
-    tenantId: string,
-    organisationId: string,
-    transactionalEntityManager: any,
-  ): Promise<Module | null> {
-    try {
-      // Create new module data
-      const newModuleData = {
-        ...originalModule,
-        courseId: newCourseId,
-        parentId: undefined,
-        createdBy: userId,
-        updatedBy: userId,
-        // Remove properties that should not be copied
-        moduleId: undefined,
-      };
-
-      const newModule = transactionalEntityManager.create(Module, newModuleData);
-      const savedModule = await transactionalEntityManager.save(Module, newModule);
-
-      if (!savedModule) {
-        throw new Error(`${RESPONSE_MESSAGES.ERROR.MODULE_SAVE_FAILED}: ${originalModule.title}`);
-      }
-
-      // Clone lessons for this module
-      await this.cloneLessonsWithTransaction(originalModule.moduleId, savedModule.moduleId, userId, tenantId, organisationId, transactionalEntityManager, newCourseId);
-
-      // Clone submodules if any
-      const submodules = await transactionalEntityManager.find(Module, {
-        where: {
-          parentId: originalModule.moduleId,
-          status: Not(ModuleStatus.ARCHIVED),
-          tenantId,
-          organisationId,
-        },
-        order: { ordering: 'ASC' },
-      });
-       if (!submodules || submodules.length === 0) {
-        this.logger.warn(`No submodules found for module ${originalModule.moduleId}`);
-        return null;
-      }
-
-
-      for (const submodule of submodules) {
-        try {
-          await this.cloneSubmoduleWithTransaction(submodule, savedModule.moduleId, userId, tenantId, organisationId, transactionalEntityManager, newCourseId);
-        } catch (error) {
-          this.logger.error(`Error cloning submodule ${submodule.moduleId}: ${error.message}`);
-          throw new Error(`${RESPONSE_MESSAGES.ERROR.SUBMODULE_COPY_FAILED}: ${submodule.title}`);
-        }
-      }
-
-      return savedModule;
-    } catch (error) {
-      this.logger.error(`Error in cloneModuleWithTransaction for module ${originalModule.moduleId}: ${error.message}`);
-      throw error;
-    }
-  }
-
-  /**
-   * Clone a submodule using transaction
-   */
-  private async cloneSubmoduleWithTransaction(
-    originalSubmodule: Module,
-    newParentId: string,
-    userId: string,
-    tenantId: string,
-    organisationId: string,
-    transactionalEntityManager: any,
-    newCourseId: string,
-  ): Promise<Module> {
-  try {
-    // Create new submodule data
-    const newSubmoduleData = {
-      ...originalSubmodule,
-      courseId: newCourseId,
-      parentId: newParentId,
-      createdBy: userId,
-      updatedBy: userId,
-      // Remove properties that should not be copied
-      moduleId: undefined,
-    };
-
-    const newSubmodule = transactionalEntityManager.create(Module, newSubmoduleData);
-    const savedSubmodule = await transactionalEntityManager.save(Module, newSubmodule);
-
-    // Clone lessons for this submodule
-    await this.cloneLessonsWithTransaction(originalSubmodule.moduleId, savedSubmodule.moduleId, userId, tenantId, organisationId, transactionalEntityManager, newCourseId);
-
-    return savedSubmodule;
-    } catch (error) {
-      this.logger.error(`Error in cloneSubmoduleWithTransaction for submodule ${originalSubmodule.moduleId}: ${error.message}`);
-      throw error;
-    }
-  }
-
-  /**
-   * Clone lessons for a module using transaction
-   */
-  private async cloneLessonsWithTransaction(
-    originalModuleId: string,
-    newModuleId: string,
-    userId: string,
-    tenantId: string,
-    organisationId: string,
-    transactionalEntityManager: any,
-    newCourseId: string,
-  ): Promise<void> {
-    try {
-      // Get all lessons for the original module
-      const lessons = await transactionalEntityManager.find(Lesson, {
-        where: {
-          moduleId: originalModuleId,
-          status: Not(LessonStatus.ARCHIVED),
-          tenantId,
-          organisationId,
-        },
-        relations: ['media', 'associatedFiles.media'],
-      });
-
-      if (!lessons || lessons.length === 0) {
-        this.logger.warn(`No lessons found for module ${originalModuleId}`);
-        return;
-      }
-
-      // Clone each lesson
-      for (const lesson of lessons) {
-        try {
-          await this.cloneLessonWithTransaction(lesson, newModuleId, userId, tenantId, organisationId, transactionalEntityManager, newCourseId);
-        } catch (error) {
-          this.logger.error(`Error cloning lesson ${lesson.lessonId}: ${error.message}`);
-          throw new Error(`${RESPONSE_MESSAGES.ERROR.LESSON_COPY_FAILED}: ${lesson.title}`);
-        }
-      }
-    } catch (error) {
-      this.logger.error(`Error in cloneLessonsWithTransaction for module ${originalModuleId}: ${error.message}`);
-      throw error;
-    }
-  }
-
-  /**
-   * Clone a single lesson with its media using transaction
-   */
-  private async cloneLessonWithTransaction(
-    originalLesson: Lesson,
-    newModuleId: string,
-    userId: string,
-    tenantId: string,
-    organisationId: string,
-    transactionalEntityManager: any,
-    newCourseId: string,
-  ): Promise<Lesson> {
-    try {
-      let newMediaId: string | undefined;
-
-      // Clone media if lesson has media
-      if (originalLesson.mediaId) {
-        const originalMedia = await transactionalEntityManager.findOne(Media, {
-          where: { mediaId: originalLesson.mediaId },
-        });
-
-        if (originalMedia) {
-          const newMediaData = {
-            ...originalMedia,
-            createdBy: userId,
-            updatedBy: userId,
-            // Remove properties that should not be copied
-            mediaId: undefined,
-            // Don't set createdAt/updatedAt - let TypeORM handle them automatically
-          };
-
-          const newMedia = transactionalEntityManager.create(Media, newMediaData);
-          const savedMedia = await transactionalEntityManager.save(Media, newMedia);
-          
-          if (!savedMedia) {
-            throw new Error(`${RESPONSE_MESSAGES.ERROR.MEDIA_SAVE_FAILED}: ${originalLesson.title}`);
-          }
-          
-          newMediaId = savedMedia.mediaId;
-        }
-      }
-     
-
-      this.logger.log(`Final newMediaId value: ${newMediaId}`);
-
-      // Create new lesson data
-      const newLessonData = {
-        // Copy all properties from original lesson except the ones we want to override
-        title: originalLesson.title,
-        alias: originalLesson.alias + '-copy',
-        format: originalLesson.format,
-        image: originalLesson.image,
-        description: originalLesson.description,
-        status: originalLesson.status,
-        startDatetime: originalLesson.startDatetime,
-        endDatetime: originalLesson.endDatetime,
-        storage: originalLesson.storage,
-        noOfAttempts: originalLesson.noOfAttempts,
-        attemptsGrade: originalLesson.attemptsGrade,
-        prerequisites: originalLesson.prerequisites,
-        idealTime: originalLesson.idealTime,
-        resume: originalLesson.resume,
-        totalMarks: originalLesson.totalMarks,
-        passingMarks: originalLesson.passingMarks,
-        params: originalLesson.params || {},
-        sampleLesson: originalLesson.sampleLesson,
-        considerForPassing: originalLesson.considerForPassing,
-        tenantId,
-        organisationId,
-        // Override with new values
-        mediaId: newMediaId || null, //Use null if no new media was created
-        courseId: newCourseId,
-        moduleId: newModuleId,
-        createdBy: userId,
-        updatedBy: userId,
-      };
-
-
-      const newLesson = transactionalEntityManager.create(Lesson, newLessonData);
-      const savedLesson = await transactionalEntityManager.save(Lesson, newLesson);
-
-      if (!savedLesson) {
-        throw new Error(`${RESPONSE_MESSAGES.ERROR.LESSON_SAVE_FAILED}: ${originalLesson.title}`);
-      }
-
-
-      // Clone associated files if lesson has them
-      if (originalLesson.associatedFiles && originalLesson.associatedFiles.length > 0) {
-        try {
-          await this.cloneAssociatedFilesWithTransaction(originalLesson.lessonId, savedLesson.lessonId, userId, tenantId, organisationId, transactionalEntityManager);
-        } catch (error) {
-          this.logger.error(`Error cloning associated files for lesson ${originalLesson.lessonId}: ${error.message}`);
-          // Don't throw here as the lesson was already saved
-        }
-      }
-
-      return savedLesson;
-    } catch (error) {
-      this.logger.error(`Error in cloneLessonWithTransaction for lesson ${originalLesson.lessonId}: ${error.message}`);
-      throw error;
-    }
-  }
-
-  /**
-   * Clone associated files for a lesson using transaction
-   */
-  private async cloneAssociatedFilesWithTransaction(
-    originalLessonId: string,
-    newLessonId: string,
-    userId: string,
-    tenantId: string,
-    organisationId: string,
-    transactionalEntityManager: any,
-  ): Promise<void> {
-    try {
-      const associatedFiles = await transactionalEntityManager.find(AssociatedFile, {
-        where: {
-          lessonId: originalLessonId,
-          tenantId,
-          organisationId,
-        },
-        relations: ['media'],
-      });
-
-      if (!associatedFiles || associatedFiles.length === 0) {
-        this.logger.warn(`No associated files found for lesson ${originalLessonId}`);
-        return;
-      }
-
-      for (const associatedFile of associatedFiles) {
-        try {
-          let newMediaId: string | undefined;
-
-          // Clone media if it exists
-          if (associatedFile.media) {
-            const originalMedia = associatedFile.media;
-            const newMediaData = {
-              ...originalMedia,
-              createdBy: userId,
-              updatedBy: userId,
-              // Remove properties that should not be copied
-              mediaId: undefined,
-            };
-
-            const newMedia = transactionalEntityManager.create(Media, newMediaData);
-            const savedMedia = await transactionalEntityManager.save(Media, newMedia);
-            
-            if (!savedMedia) {
-              throw new Error(RESPONSE_MESSAGES.ERROR.MEDIA_SAVE_FAILED);
-            }
-            
-            newMediaId = savedMedia.mediaId;
-            this.logger.log(`Cloned associated file media from ${originalMedia.mediaId} to ${newMediaId}`);
-
-            // Create new associated file record
-            const newAssociatedFileData = {
-              lessonId: newLessonId,
-              mediaId: newMediaId,
-              tenantId,
-              organisationId,
-              createdBy: userId,
-              updatedBy: userId,
-            };
-
-            const newAssociatedFile = transactionalEntityManager.create(AssociatedFile, newAssociatedFileData);
-            const savedAssociatedFile = await transactionalEntityManager.save(AssociatedFile, newAssociatedFile);
-            
-            if (!savedAssociatedFile) {
-              throw new Error(RESPONSE_MESSAGES.ERROR.ASSOCIATED_FILE_SAVE_FAILED);
-            }
-          }
-        } catch (error) {
-          this.logger.error(`Error cloning associated file ${associatedFile.associatedFileId}: ${error.message}`);
-          // Continue with other files even if one fails
-        }
-      }
-    } catch (error) {
-      this.logger.error(`Error in cloneAssociatedFilesWithTransaction for lesson ${originalLessonId}: ${error.message}`);
       throw error;
     }
   }

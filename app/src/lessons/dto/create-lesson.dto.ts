@@ -16,7 +16,7 @@ import {
   IsUrl,
   IsArray,
 } from 'class-validator';
-import { Type } from 'class-transformer';
+import { Type, Transform } from 'class-transformer';
 import { VALIDATION_MESSAGES } from '../../common/constants/response-messages.constant';
 import { LessonStatus, LessonSubFormat } from '../entities/lesson.entity';
 import { LessonFormat, AttemptsGradeMethod } from '../entities/lesson.entity';
@@ -110,9 +110,9 @@ export class CreateLessonDto {
 
   @ApiProperty({
     description: VALIDATION_MESSAGES.LESSON.DESCRIPTION,
-    example: 'Learn the basics of HTML tags and their usage',
-    required: true
+    example: 'Learn the basics of HTML tags and their usage'
   })
+  @IsOptional()
   @IsString({ message: VALIDATION_MESSAGES.COMMON.STRING('Description') })
   description?: string;
 
@@ -168,7 +168,37 @@ export class CreateLessonDto {
   })
   @IsOptional()
   @IsEnum(AttemptsGradeMethod, { message: VALIDATION_MESSAGES.COMMON.ENUM('Grade calculation method') })
-  attemptsGrade?: AttemptsGradeMethod = AttemptsGradeMethod.HIGHEST;
+  @Transform(({ value, obj }) => {
+    // If attemptsGrade is explicitly provided, use it
+    if (value !== undefined) {
+      return value;
+    }
+    
+    // Set default based on format and mediaContentSubFormat
+    const format = obj.format;
+    const mediaContentSubFormat = obj.mediaContentSubFormat;
+    
+    // For video, document, text_and_media, or event formats, use FIRST_ATTEMPT
+    if ([LessonFormat.VIDEO, LessonFormat.DOCUMENT, LessonFormat.TEXT_AND_MEDIA, LessonFormat.EVENT].includes(format)) {
+      return AttemptsGradeMethod.FIRST_ATTEMPT;
+    }
+    
+    // For test format, check the sub-format
+    if (format === LessonFormat.ASSESSMENT) {
+      // For quiz, use LAST_ATTEMPT
+      if (mediaContentSubFormat === LessonSubFormat.QUIZ) {
+        return AttemptsGradeMethod.LAST_ATTEMPT;
+      }
+      // For reflection.prompt, feedback, or assessment, use FIRST_ATTEMPT
+      if ([LessonSubFormat.REFLECTION_PROMPT, LessonSubFormat.FEEDBACK, LessonSubFormat.ASSESSMENT].includes(mediaContentSubFormat)) {
+        return AttemptsGradeMethod.FIRST_ATTEMPT;
+      }
+    }
+    
+    // Default fallback
+    return AttemptsGradeMethod.HIGHEST;
+  })
+  attemptsGrade?: AttemptsGradeMethod;
 
   @ApiProperty({
     description: 'Prerequisites for the lesson - array of prerequisite lesson IDs',
@@ -284,4 +314,13 @@ export class CreateLessonDto {
   @IsBoolean({ message: VALIDATION_MESSAGES.COMMON.BOOLEAN('Consider for passing') })
   @Type(() => Boolean)
   considerForPassing?: boolean = true;
+
+  @ApiProperty({ 
+    description: 'Allow users to resubmit the same attempt multiple times. When true, users can only have one attempt and can submit it multiple times. This configuration will override resume and noOfAttempts',
+    default: false 
+  })
+  @IsOptional()
+  @IsBoolean({ message: VALIDATION_MESSAGES.COMMON.BOOLEAN('Allow resubmission') })
+  @Type(() => Boolean)
+  allowResubmission?: boolean = false;
 }

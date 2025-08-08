@@ -10,6 +10,7 @@ import { CommonModule } from '../common/common.module';
 import { CacheModule } from '../cache/cache.module';
 import { CourseTrack } from '../tracking/entities/course-track.entity';
 import { LessonTrack } from '../tracking/entities/lesson-track.entity';
+import { LessonsModule } from '../lessons/lessons.module';
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { LessonTrack } from '../tracking/entities/lesson-track.entity';
     ]),
     CommonModule,
     CacheModule,
+    LessonsModule,
   ],
   controllers: [ModulesController],
   providers: [ModulesService],

@@ -10,6 +10,7 @@ import {
   UploadedFile,
   ParseUUIDPipe,
   Patch,
+  Headers,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import {
@@ -33,6 +34,7 @@ import { getUploadPath } from '../common/utils/upload.util';
 import { uploadConfigs } from '../config/file-validation.config';
 import { TenantOrg } from '../common/decorators/tenant-org.decorator';
 import { ParseEnumPipe } from '@nestjs/common';
+import { CloneLessonDto } from './dto/clone-lesson.dto';
 
 @ApiTags('Lessons')
 @Controller('lessons')
@@ -196,6 +198,35 @@ export class LessonsController {
       query.userId,
       tenantOrg.tenantId,
       tenantOrg.organisationId
+    );
+  }
+
+  @Post(':lessonId/clone')
+  @ApiId(API_IDS.CLONE_LESSON)
+  @ApiOperation({ summary: 'Clone a lesson with all its media and associated files' })
+  @ApiResponse({ 
+    status: 201, 
+    description: 'Lesson cloned successfully', 
+    type: Lesson 
+  })
+  @ApiResponse({ status: 400, description: 'Bad request' })
+  @ApiResponse({ status: 404, description: 'Lesson not found' })
+  @ApiParam({ name: 'lessonId', type: String, format: 'uuid' })
+  async cloneLesson(
+    @Param('lessonId', ParseUUIDPipe) lessonId: string,
+    @Query() query: CommonQueryDto,
+    @Body() requestBody: CloneLessonDto,
+    @TenantOrg() tenantOrg: { tenantId: string; organisationId: string },
+    @Headers('authorization') authorization: string
+  ) {
+    return this.lessonsService.cloneLesson(
+      lessonId,     
+      query.userId,
+      tenantOrg.tenantId,
+      tenantOrg.organisationId,
+      authorization,
+      requestBody.newCourseId,
+      requestBody.newModuleId,
     );
   }
 

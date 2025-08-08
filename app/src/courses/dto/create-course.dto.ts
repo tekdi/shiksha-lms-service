@@ -25,9 +25,9 @@ export class CreateCourseDto {
 
   @ApiProperty({ 
     description: VALIDATION_MESSAGES.COURSE.START_DATE,
-    example: '2024-01-01T00:00:00Z',
-    required: true
+    example: '2024-01-01T00:00:00Z'
   })
+  @IsOptional()
   startDatetime: string;
 
   @ApiProperty({ 
@@ -43,9 +43,9 @@ export class CreateCourseDto {
 
   @ApiProperty({ 
     description: VALIDATION_MESSAGES.COURSE.SHORT_DESCRIPTION,
-    example: 'A brief intro to web development',
-    required: true
+    example: 'A brief intro to web development'
   })
+  @IsOptional()
   @IsString({ message: VALIDATION_MESSAGES.COMMON.STRING('Short description') })
   shortDescription: string;
 

@@ -38,6 +38,8 @@ import { TenantOrg } from '../common/decorators/tenant-org.decorator';
 import { CourseStructureDto } from '../courses/dto/course-structure.dto';
 import { SearchCourseResponseDto } from './dto/search-course.dto';
 import { CourseHierarchyFilterDto } from './dto/course-hierarchy-filter.dto';
+import { Headers } from '@nestjs/common';
+import { CloneCourseDto } from './dto/clone-course.dto';
 
 
 @ApiTags('Courses')
@@ -82,7 +84,7 @@ export class CoursesController {
   @ApiId(API_IDS.SEARCH_COURSES)  
   @ApiOperation({ 
     summary: 'Search and filter courses',
-    description: 'Search and filter courses with various criteria including keyword search and multiple filters'
+    description: 'Search and filter courses with various criteria including keyword search and multiple filters. Returns courses with module counts and enrolled user counts.'
   })
   @ApiResponse({ 
     status: 200, 
@@ -290,12 +292,16 @@ export class CoursesController {
     @Param('courseId', ParseUUIDPipe) courseId: string,
     @Query() query: CommonQueryDto,
     @TenantOrg() tenantOrg: { tenantId: string; organisationId: string },
+    @Headers('authorization') authorization: string,
+    @Body() requestBody: CloneCourseDto
   ) {
     const copiedCourse = await this.coursesService.cloneCourse(
       courseId,
       query.userId,
       tenantOrg.tenantId,
       tenantOrg.organisationId,
+      authorization,
+      requestBody.newCohortId
     );
     return copiedCourse;
   }
