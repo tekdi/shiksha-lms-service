@@ -666,8 +666,8 @@ export class CoursesService {
             ...lesson,
             tracking: bestAttempt ? {
               status: bestAttempt.status,
-              canResume: (lesson.resume ?? true) && (lastAttempt && (lastAttempt.status === TrackingStatus.STARTED || lastAttempt.status === TrackingStatus.INCOMPLETE)),
-              canReattempt: (lesson.noOfAttempts === 0 || (lastAttempt && lastAttempt.attempt < lesson.noOfAttempts)) && (lastAttempt && lastAttempt.status === TrackingStatus.COMPLETED),
+              canResume: lesson.allowResubmission ? true : (lesson.resume ?? true) && (lastAttempt && (lastAttempt.status === TrackingStatus.STARTED || lastAttempt.status === TrackingStatus.INCOMPLETE)),
+              canReattempt: lesson.allowResubmission ? true : (lesson.noOfAttempts === 0 || (lastAttempt && lastAttempt.attempt < lesson.noOfAttempts)) && (lastAttempt && lastAttempt.status === TrackingStatus.COMPLETED),              
               completionPercentage: bestAttempt.completionPercentage || 0,
               lastAccessed: bestAttempt.updatedAt,
               timeSpent: bestAttempt.timeSpent || 0,
