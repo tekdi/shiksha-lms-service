@@ -108,6 +108,7 @@ export class AspireLeaderService {
       .andWhere('courseTrack.organisationId = :organisationId', { organisationId })
       .andWhere('(enrollment.status IS NULL OR enrollment.status != :status)', { status: EnrollmentStatus.ARCHIVED })
       .orderBy(this.getSortField(reportDto.sortBy || 'progress', true), (reportDto.orderBy?.toUpperCase() as 'ASC' | 'DESC') || 'DESC')
+      .addOrderBy('courseTrack.courseTrackId', 'ASC') // Secondary sort for consistent ordering
       .skip(reportDto.offset || 0)
       .take(reportDto.limit || 10)
       .getMany();
@@ -140,12 +141,14 @@ export class AspireLeaderService {
     // Fetch user data from external API - limit matches the number of users we're requesting
     const userData = await this.fetchUserData(userIds, tenantId, organisationId, authorization);
 
-    // Combine data and create report items
+    // Create a map of user data for efficient lookup while preserving order
+    const userDataMap = new Map(userData.map(user => [user.userId, user]));
+
+    // Combine data and create report items - maintain the original database order
     const reportItems: any[] = [];
 
-
     for (const courseTrackData of enrollmentData) {
-      const user = userData.find(u => u.userId === courseTrackData.userId);
+      const user = userDataMap.get(courseTrackData.userId);
       const course = courseTrackData['course'];
       const enrollment = courseTrackData['enrollment'];
 
@@ -182,12 +185,10 @@ export class AspireLeaderService {
       }
     }
 
-    // Apply pagination
-    const paginatedItems = this.applyPagination(reportItems, reportDto.offset || 0, reportDto.limit || 10);
-
+    // No need to apply pagination again since it's already applied at database level
     return {
-      data: paginatedItems,
-      totalElements: reportItems.length,
+      data: reportItems,
+      totalElements: totalCount,
       offset: reportDto.offset || 0,
       limit: reportDto.limit || 10,
     };
@@ -241,9 +242,25 @@ export class AspireLeaderService {
       .andWhere('lessonTrack.organisationId = :organisationId', { organisationId })
       .andWhere('(enrollment.status IS NULL OR enrollment.status != :status)', { status: EnrollmentStatus.ARCHIVED })
       .orderBy(this.getSortField(reportDto.sortBy || 'progress', false), (reportDto.orderBy?.toUpperCase() as 'ASC' | 'DESC') || 'DESC')
+      .addOrderBy('lessonTrack.lessonTrackId', 'ASC') // Secondary sort for consistent ordering
       .skip(reportDto.offset || 0)
       .take(reportDto.limit || 10)
       .getMany();
+
+    // Get total count for pagination
+    const totalCount = await this.lessonTrackRepository
+      .createQueryBuilder('lessonTrack')
+      .leftJoin(
+        'user_enrollments',
+        'enrollment',
+        'enrollment.courseId = lessonTrack.courseId AND enrollment.userId = lessonTrack.userId AND enrollment.tenantId = lessonTrack.tenantId'
+      )
+      .where('lessonTrack.lessonId = :lessonId', { lessonId: reportDto.lessonId })
+      .andWhere('lessonTrack.courseId = :courseId', { courseId: reportDto.courseId })
+      .andWhere('lessonTrack.tenantId = :tenantId', { tenantId })
+      .andWhere('lessonTrack.organisationId = :organisationId', { organisationId })
+      .andWhere('(enrollment.status IS NULL OR enrollment.status != :status)', { status: EnrollmentStatus.ARCHIVED })
+      .getCount();
 
     if (enrollmentData.length === 0) {
       return {
@@ -259,11 +276,14 @@ export class AspireLeaderService {
     // Fetch user data from external API - limit matches the number of users we're requesting
     const userData = await this.fetchUserData(userIds, tenantId, organisationId, authorization);
 
-    // Combine data and create report items
+    // Create a map of user data for efficient lookup while preserving order
+    const userDataMap = new Map(userData.map(user => [user.userId, user]));
+
+    // Combine data and create report items - maintain the original database order
     const reportItems: any[] = [];
 
     for (const lessonTrackData of enrollmentData) {
-      const user = userData.find(u => u.userId === lessonTrackData.userId);
+      const user = userDataMap.get(lessonTrackData.userId);
       const course = lessonTrackData['course'];
       const enrollment = lessonTrackData['enrollment'];
 
@@ -291,14 +311,10 @@ export class AspireLeaderService {
       }
     }
 
-    // Sort data
-
-    // Apply pagination
-    const paginatedItems = this.applyPagination(reportItems, reportDto.offset || 0, reportDto.limit || 10);
-
+    // No need to apply pagination again since it's already applied at database level
     return {
-      data: paginatedItems,
-      totalElements: reportItems.length,
+      data: reportItems,
+      totalElements: totalCount,
       offset: reportDto.offset || 0,
       limit: reportDto.limit || 10,
     };
@@ -367,14 +383,5 @@ export class AspireLeaderService {
     }
   }
 
-  /**
-   * Apply pagination to report data
-   */
-  private applyPagination<T extends any[]>(
-    data: T,
-    offset: number,
-    limit: number
-  ): T {
-    return data.slice(offset, offset + limit) as T;
-  }
+
 } 
