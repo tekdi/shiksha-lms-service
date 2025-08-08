@@ -47,7 +47,6 @@ export class AspireLeaderController {
   async generateCourseReport(
     @Query() reportDto: CourseReportDto,
     @TenantOrg() tenantOrg: { tenantId: string; organisationId: string },
-    @Query() query: CommonQueryDto,
     @Headers() headers: CourseReportHeadersDto,
   ): Promise<any> {
     return this.aspireLeaderService.generateCourseReport(
@@ -55,7 +54,6 @@ export class AspireLeaderController {
       tenantOrg.tenantId,
       tenantOrg.organisationId,
       headers.authorization,
-      query.userId
     );
   }
 } 
