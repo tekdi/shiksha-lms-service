@@ -103,6 +103,13 @@ export class Lesson {
   @Column({ type: 'integer', nullable: true })
   noOfAttempts: number;
 
+  @ApiProperty({ 
+    description: 'Allow users to resubmit the same attempt multiple times. When true, users can only have one attempt and can submit it multiple times. This configuration will override resume and noOfAttempts',
+    default: false 
+  })
+  @Column({ type: 'boolean', default: false })
+  allowResubmission: boolean;
+
   @Column({
     type: 'varchar',
     length: 255,

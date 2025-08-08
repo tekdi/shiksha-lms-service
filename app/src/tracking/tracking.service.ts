@@ -148,6 +148,10 @@ export class TrackingService {
         return incompleteAttempt;
       }      
     }
+    if (lesson.allowResubmission && existingTracks.length > 0) {
+      // If resubmission is allowed, always return the existing attempt
+      return existingTracks[0];
+    }
 
     // Check max attempts
     const maxAttempts = lesson.noOfAttempts || 1;
@@ -311,7 +315,12 @@ export class TrackingService {
     const latestTrack = existingTracks[0];
    
     if (action === 'resume') {
-            // Check if lesson allows resume
+      // For resubmission mode, always allow resume regardless of lesson.resume setting
+      if (lesson.allowResubmission) {
+        return latestTrack;
+      }
+      
+      // Check if lesson allows resume
       const canResume = lesson.resume ?? true;
       if (!canResume) {
         throw new BadRequestException(RESPONSE_MESSAGES.ERROR.RESUME_NOT_ALLOWED);
@@ -321,11 +330,25 @@ export class TrackingService {
       }
       return latestTrack;
     } else { 
+      // start over
+      if (lesson.allowResubmission) {
+        // For resubmission mode, reset the existing attempt instead of creating new one
+        latestTrack.status = TrackingStatus.STARTED;
+        latestTrack.startDatetime = new Date();
+        latestTrack.completionPercentage = 0;
+        latestTrack.score = 0;
+        latestTrack.totalContent = 0;
+        latestTrack.currentPosition = 0;
+        latestTrack.timeSpent = 0;
+        
+        const savedTracking = await this.lessonTrackRepository.save(latestTrack);
+        return savedTracking;
+      }
       
       if (latestTrack.status === TrackingStatus.COMPLETED) {
         throw new BadRequestException(RESPONSE_MESSAGES.ERROR.CANNOT_START_COMPLETED);
       }
-      // start over
+      
       // Check max attempts
       const maxAttempts = lesson.noOfAttempts || 1;
       if (maxAttempts > 0 && latestTrack.attempt >= maxAttempts) {
@@ -426,14 +449,21 @@ export class TrackingService {
       status.lastAttemptId = latestTrack.lessonTrackId;
       status.lastAttemptStatus = latestTrack.status;
 
-      const canResume = lesson.resume ?? true;
-      if (canResume && (latestTrack.status === TrackingStatus.STARTED || latestTrack.status === TrackingStatus.INCOMPLETE)) {
+      if (lesson.allowResubmission) {
+        // For resubmission mode, always allow resume and reattempt
         status.canResume = true;
-      }
-
-      const maxAttempts = lesson.noOfAttempts || 0;
-      if ((maxAttempts === 0 || latestTrack.attempt < maxAttempts) && latestTrack.status === TrackingStatus.COMPLETED) {
         status.canReattempt = true;
+      } else {
+        // Original logic for non-resubmission mode
+        const canResume = lesson.resume ?? true;
+        if (canResume && (latestTrack.status === TrackingStatus.STARTED || latestTrack.status === TrackingStatus.INCOMPLETE)) {
+          status.canResume = true;
+        }
+
+        const maxAttempts = lesson.noOfAttempts || 0;
+        if ((maxAttempts === 0 || latestTrack.attempt < maxAttempts) && latestTrack.status === TrackingStatus.COMPLETED) {
+          status.canReattempt = true;
+        }
       }
     } else {
       // No attempts yet, can start first attempt
