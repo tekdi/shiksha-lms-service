@@ -55,4 +55,7 @@ export const API_IDS = {
   GET_LESSON_PREREQUISITES: 'api.lesson.prerequisites.read',
   GET_ATTEMPT: 'api.lesson.attempt.read',
   UPDATE_ATTEMPT_PROGRESS: 'api.lesson.attempt.update',
+
+  // Aspire Leader Report APIs
+  GET_COURSE_REPORT: 'api.course.report',
 };
