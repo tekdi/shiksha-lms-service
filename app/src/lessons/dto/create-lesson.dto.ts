@@ -314,4 +314,13 @@ export class CreateLessonDto {
   @IsBoolean({ message: VALIDATION_MESSAGES.COMMON.BOOLEAN('Consider for passing') })
   @Type(() => Boolean)
   considerForPassing?: boolean = true;
+
+  @ApiProperty({ 
+    description: 'Allow users to resubmit the same attempt multiple times. When true, users can only have one attempt and can submit it multiple times. This configuration will override resume and noOfAttempts',
+    default: false 
+  })
+  @IsOptional()
+  @IsBoolean({ message: VALIDATION_MESSAGES.COMMON.BOOLEAN('Allow resubmission') })
+  @Type(() => Boolean)
+  allowResubmission?: boolean = false;
 }
