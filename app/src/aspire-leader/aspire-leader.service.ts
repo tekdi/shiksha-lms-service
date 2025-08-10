@@ -108,7 +108,7 @@ export class AspireLeaderService {
       .andWhere('courseTrack.organisationId = :organisationId', { organisationId })
       .andWhere('(enrollment.status IS NULL OR enrollment.status != :status)', { status: EnrollmentStatus.ARCHIVED })
       .orderBy(this.getSortField(reportDto.sortBy || 'progress', true), (reportDto.orderBy?.toUpperCase() as 'ASC' | 'DESC') || 'DESC')
-      .addOrderBy('courseTrack.courseTrackId', 'ASC') // Secondary sort for consistent ordering
+      .addOrderBy('courseTrack.lastAccessedDate', 'DESC') // Secondary sort for consistent ordering
       .skip(reportDto.offset || 0)
       .take(reportDto.limit || 10)
       .getMany();
@@ -242,7 +242,7 @@ export class AspireLeaderService {
       .andWhere('lessonTrack.organisationId = :organisationId', { organisationId })
       .andWhere('(enrollment.status IS NULL OR enrollment.status != :status)', { status: EnrollmentStatus.ARCHIVED })
       .orderBy(this.getSortField(reportDto.sortBy || 'progress', false), (reportDto.orderBy?.toUpperCase() as 'ASC' | 'DESC') || 'DESC')
-      .addOrderBy('lessonTrack.lessonTrackId', 'ASC') // Secondary sort for consistent ordering
+      .addOrderBy('lessonTrack.updatedAt', 'DESC') // Tertiary sort by last update time
       .skip(reportDto.offset || 0)
       .take(reportDto.limit || 10)
       .getMany();
