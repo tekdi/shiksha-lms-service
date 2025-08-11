@@ -6,13 +6,14 @@ import {
   Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Not, FindOneOptions, FindOptionsWhere } from 'typeorm';
+import { Repository, Not, FindOneOptions, FindOptionsWhere, In } from 'typeorm';
 import axios from 'axios';
-import { Lesson, LessonStatus, AttemptsGradeMethod, LessonFormat } from './entities/lesson.entity';
+import { Lesson, LessonStatus, AttemptsGradeMethod, LessonFormat, LessonSubFormat } from './entities/lesson.entity';
 import { Course, CourseStatus } from '../courses/entities/course.entity';
 import { Module, ModuleStatus } from '../modules/entities/module.entity';
 import { Media, MediaStatus } from '../media/entities/media.entity';
 import { LessonTrack } from '../tracking/entities/lesson-track.entity';
+import { UserEnrollment, EnrollmentStatus } from '../enrollments/entities/user-enrollment.entity';
 import { CreateLessonDto } from './dto/create-lesson.dto';
 import { UpdateLessonDto } from './dto/update-lesson.dto';
 import { PaginationDto } from '../common/dto/pagination.dto';
@@ -23,6 +24,7 @@ import { ConfigService } from '@nestjs/config';
 import { CacheConfigService } from '../cache/cache-config.service';
 import { OrderingService } from '../common/services/ordering.service';
 import { AssociatedFile } from '../media/entities/associated-file.entity';
+import { SearchLessonDto } from './dto/search-lesson.dto';
 
 @Injectable()
 export class LessonsService {
@@ -38,6 +40,8 @@ export class LessonsService {
     private readonly mediaRepository: Repository<Media>,
     @InjectRepository(LessonTrack)
     private readonly lessonTrackRepository: Repository<LessonTrack>,
+    @InjectRepository(UserEnrollment)
+    private readonly userEnrollmentRepository: Repository<UserEnrollment>,
     private readonly cacheService: CacheService,
     private readonly configService: ConfigService,
     private readonly cacheConfig: CacheConfigService,
@@ -221,6 +225,7 @@ export class LessonsService {
     }
   }
 
+  
   /**
    * Find all lessons with pagination and filters
    * @param tenantId The tenant ID for data isolation
@@ -228,55 +233,98 @@ export class LessonsService {
    * @param paginationDto Pagination parameters
    * @param status Optional status filter
    * @param format Optional format filter
+   * @param subFormat Optional sub-format filter
+   * @param query Optional search query for title and description
+   * @param cohort Optional cohort filter from course params
+   * @param courseId Optional course ID filter
+   * @param moduleId Optional module ID filter
    */
-  async findAll(
+  async getLessons(
     tenantId: string,
     organisationId: string,
     paginationDto: PaginationDto,
-    status?: LessonStatus,
-    format?: LessonFormat,
-  ): Promise<{ count: number; lessons: Lesson[] }> {
+    searchDto: SearchLessonDto,
+  ): Promise<{ totalElements: number; offset: number; limit: number; lessons: Lesson[] }> {
     try {
-      const { page = 1, limit = 10 } = paginationDto;
-      // Generate cache key using standardized pattern
-      const cacheKey = this.cacheConfig.getLessonPattern(tenantId, organisationId);
+      const { limit = 10 } = paginationDto;
+      const offset = paginationDto.skip || 0;
+      
+      // Generate cache key using standardized pattern - include all filters for proper caching
+      const cacheKey = this.cacheConfig.getLessonPattern(tenantId, organisationId) +
+        (searchDto.cohortId ? `:cohortId:${searchDto.cohortId}` : '') +
+        (searchDto.courseId ? `:courseId:${searchDto.courseId}` : '') +
+        (searchDto.moduleId ? `:moduleId:${searchDto.moduleId}` : '') +
+        (searchDto.format ? `:format:${searchDto.format}` : '') +
+        (searchDto.subFormat ? `:subFormat:${searchDto.subFormat}` : '') +
+        (searchDto.status ? `:status:${searchDto.status}` : '') +       
+        (searchDto.query ? `:query:${searchDto.query}` : '') +
+        `:offset:${offset}:limit:${limit}`;
 
       // Try to get from cache first
-      const cachedResult = await this.cacheService.get<{ count: number; lessons: Lesson[] }>(cacheKey);
+      const cachedResult = await this.cacheService.get<{ totalElements: number; offset: number; limit: number; lessons: Lesson[] }>(cacheKey);
       if (cachedResult) {
         return cachedResult;
-      }
+      } 
 
-      const skip = (page - 1) * limit;
-
-      // Build query with filters
-      const whereConditions: any = {
-        status: Not(LessonStatus.ARCHIVED), // Exclude archived lessons by default
-        tenantId: tenantId,
-        organisationId: organisationId
-      };
-
+      // Execute query with pagination and joins to ensure only published courses and modules
+      let queryBuilder = this.lessonRepository.createQueryBuilder('lesson')
+        .leftJoinAndSelect('lesson.media', 'media')
+        .where('lesson.status != :archivedStatus', { archivedStatus: LessonStatus.ARCHIVED })
+        .andWhere('lesson.tenantId = :tenantId', { tenantId })
+        .andWhere('lesson.organisationId = :organisationId', { organisationId })
+        
       // Add optional filters
-      if (status) {
-        whereConditions.status = status;
+      if (searchDto.status) {
+        queryBuilder = queryBuilder.andWhere('lesson.status = :status', { status: searchDto.status });
       }
 
-      if (format) {
-        whereConditions.format = format;
+      if (searchDto.format) {
+        queryBuilder = queryBuilder.andWhere('lesson.format = :format', { format: searchDto.format });
       }
 
-      // Execute query with pagination
-      const [lessons, count] = await this.lessonRepository.findAndCount({
-        where: whereConditions,
-        skip,
-        take: limit,
-        order: {
-          createdAt: 'DESC',
-        },
-        relations: ['media'],
-      });
+      if (searchDto.subFormat) {
+        queryBuilder = queryBuilder.andWhere('media.subFormat = :subFormat', { subFormat: searchDto.subFormat });
+      }
 
-      const result = { count, lessons };
+      // Add search query filter for title and description
+      if (searchDto.query) {
+        queryBuilder = queryBuilder.andWhere(
+          '(lesson.title ILIKE :query OR lesson.description ILIKE :query)',
+          { query: `%${searchDto.query}%` }
+        );
+      }
+
+      // Add course ID filter
+      if (searchDto.courseId || searchDto.cohortId) {
+        queryBuilder = queryBuilder.leftJoin('lesson.course', 'course')
+        queryBuilder = queryBuilder.andWhere('course.status != :courseStatus', { courseStatus: CourseStatus.ARCHIVED })
+        // Add cohort filter (search in course.params.cohort)
+        if (searchDto.cohortId) {
+          console.log('cohortId', searchDto.cohortId);
+          queryBuilder = queryBuilder.andWhere(
+            "course.params->>'cohortId' = :cohortId",
+            { cohortId: searchDto.cohortId }
+          );
+        }
+        if (searchDto.courseId) {
+          queryBuilder = queryBuilder.andWhere('lesson.courseId = :courseId', { courseId: searchDto.courseId });
+        }
+      }
+
+      // Add module ID filter
+      if (searchDto.moduleId) {
+        queryBuilder = queryBuilder.leftJoin('lesson.module', 'module')
+        queryBuilder = queryBuilder.andWhere('(module.status != :moduleStatus OR module.status IS NULL)', { moduleStatus: ModuleStatus.ARCHIVED });
+        queryBuilder = queryBuilder.andWhere('lesson.moduleId = :moduleId', { moduleId: searchDto.moduleId });
+      }
+
+      const [lessons, totalElements] = await queryBuilder
+        .skip(offset)
+        .take(limit)
+        .orderBy('lesson.createdAt', 'DESC')
+        .getManyAndCount();
+
+      const result = { totalElements, offset, limit, lessons };
 
       // Cache the result
       await this.cacheService.set(cacheKey, result, this.cacheConfig.LESSON_TTL);
@@ -719,6 +767,24 @@ export class LessonsService {
         throw new NotFoundException(RESPONSE_MESSAGES.ERROR.LESSON_NOT_FOUND);
       }
 
+      // Check if lesson's course has active enrollments
+      if (lesson.courseId) {
+        const activeEnrollments = await this.userEnrollmentRepository.count({
+          where: {
+            courseId: lesson.courseId,
+            tenantId,
+            organisationId,
+            status: EnrollmentStatus.PUBLISHED
+          }
+        });
+
+        if (activeEnrollments > 0) {
+          throw new BadRequestException(
+            `Cannot delete lesson. The course has ${activeEnrollments} active enrollment(s). Please cancel all enrollments first.`
+          );
+        }
+      }
+
       // Soft delete by updating status
       lesson.status = LessonStatus.ARCHIVED;
       lesson.updatedBy = userId;
@@ -747,6 +813,135 @@ export class LessonsService {
     }
   }
 
+  /**
+   * Archive multiple lessons by module ID (for cascading soft deletes)
+   * @param moduleId The module ID whose lessons should be archived
+   * @param userId The user ID for audit trail
+   * @param tenantId The tenant ID for data isolation
+   * @param organisationId The organization ID for data isolation
+   */
+  async archiveLessonsByModule(
+    moduleId: string,
+    userId: string,
+    tenantId: string,
+    organisationId: string
+  ): Promise<{ success: boolean; message: string; archivedCount: number }> {
+    try {
+      // Find all lessons for the module
+      const lessons = await this.lessonRepository.find({
+        where: {
+          moduleId,
+          tenantId,
+          organisationId,
+          status: Not(LessonStatus.ARCHIVED)
+        },
+        select: ['lessonId', 'status']
+      });
+
+      if (lessons.length === 0) {
+        return {
+          success: true,
+          message: 'No lessons found to archive',
+          archivedCount: 0
+        };
+      }
+
+      // Archive all lessons
+      const lessonIds = lessons.map(lesson => lesson.lessonId);
+      await this.lessonRepository.update(
+        { lessonId: In(lessonIds) },
+        { 
+          status: LessonStatus.ARCHIVED,
+          updatedBy: userId,
+          updatedAt: new Date()
+        }
+      );
+
+      // Invalidate related caches
+      await Promise.all([
+        ...lessonIds.map(lessonId => 
+          this.cacheService.invalidateLesson(lessonId, moduleId, '', tenantId, organisationId)
+        ),
+        this.cacheService.invalidateModule(moduleId, '', tenantId, organisationId)
+      ]);
+
+      this.logger.log(`Archived ${lessons.length} lessons for module ${moduleId}`);
+
+      return {
+        success: true,
+        message: `Successfully archived ${lessons.length} lessons`,
+        archivedCount: lessons.length
+      };
+    } catch (error) {
+      this.logger.error(`Error archiving lessons for module ${moduleId}: ${error.message}`);
+      throw new InternalServerErrorException(RESPONSE_MESSAGES.ERROR.ERROR_REMOVING_LESSON);
+    }
+  }
+
+  /**
+   * Archive multiple lessons by course ID (for cascading soft deletes)
+   * @param courseId The course ID whose lessons should be archived
+   * @param userId The user ID for audit trail
+   * @param tenantId The tenant ID for data isolation
+   * @param organisationId The organization ID for data isolation
+   */
+  async archiveLessonsByCourse(
+    courseId: string,
+    userId: string,
+    tenantId: string,
+    organisationId: string
+  ): Promise<{ success: boolean; message: string; archivedCount: number }> {
+    try {
+      // Find all lessons for the course
+      const lessons = await this.lessonRepository.find({
+        where: {
+          courseId,
+          tenantId,
+          organisationId,
+          status: Not(LessonStatus.ARCHIVED)
+        },
+        select: ['lessonId', 'moduleId', 'status']
+      });
+
+      if (lessons.length === 0) {
+        return {
+          success: true,
+          message: 'No lessons found to archive',
+          archivedCount: 0
+        };
+      }
+
+      // Archive all lessons
+      const lessonIds = lessons.map(lesson => lesson.lessonId);
+      await this.lessonRepository.update(
+        { lessonId: In(lessonIds) },
+        { 
+          status: LessonStatus.ARCHIVED,
+          updatedBy: userId,
+          updatedAt: new Date()
+        }
+      );
+
+      // Invalidate related caches
+      await Promise.all([
+        ...lessons.map(lesson => 
+          this.cacheService.invalidateLesson(lesson.lessonId, lesson.moduleId, courseId, tenantId, organisationId)
+        ),
+        this.cacheService.invalidateCourse(courseId, tenantId, organisationId)
+      ]);
+
+      this.logger.log(`Archived ${lessons.length} lessons for course ${courseId}`);
+
+      return {
+        success: true,
+        message: `Successfully archived ${lessons.length} lessons`,
+        archivedCount: lessons.length
+      };
+    } catch (error) {
+      this.logger.error(`Error archiving lessons for course ${courseId}: ${error.message}`);
+      throw new InternalServerErrorException(RESPONSE_MESSAGES.ERROR.ERROR_REMOVING_LESSON);
+    }
+  }
 
   /**
    * Clone lessons for a module using transaction

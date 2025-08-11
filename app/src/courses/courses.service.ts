@@ -15,14 +15,11 @@ import { ModuleTrack } from '../tracking/entities/module-track.entity';
 import { Media } from '../media/entities/media.entity';
 import { AssociatedFile } from '../media/entities/associated-file.entity';
 import { UserEnrollment, EnrollmentStatus } from '../enrollments/entities/user-enrollment.entity';
-import { PaginationDto } from '../common/dto/pagination.dto';
 import { RESPONSE_MESSAGES } from '../common/constants/response-messages.constant';
-import { API_IDS } from '../common/constants/api-ids.constant';
 import { HelperUtil } from '../common/utils/helper.util';
 import { CreateCourseDto } from './dto/create-course.dto';
 import { SearchCourseDto, SearchCourseResponseDto, SortBy, SortOrder } from './dto/search-course.dto';
 import { CacheService } from '../cache/cache.service';
-import { ConfigService } from '@nestjs/config';
 import { CourseStructureDto } from '../courses/dto/course-structure.dto';
 import { CacheConfigService } from '../cache/cache-config.service';
 import { ModulesService } from 'src/modules/modules.service';
@@ -1080,12 +1077,69 @@ export class CoursesService {
   ): Promise<{ success: boolean; message: string }> {
     try {
       const course = await this.findOne(courseId, tenantId, organisationId);
-      course.status = CourseStatus.ARCHIVED;
-      course.updatedBy = userId;
-      course.updatedAt = new Date();
-      const savedCourse = await this.courseRepository.save(course);
+      
+      // Check if course has active enrollments
+      const activeEnrollments = await this.userEnrollmentRepository.count({
+        where: {
+          courseId,
+          tenantId,
+          organisationId,
+          status: EnrollmentStatus.PUBLISHED
+        }
+      });
 
-       // Cache the new course and invalidate related caches
+      if (activeEnrollments > 0) {
+        throw new BadRequestException(
+          `Cannot delete course. Course has ${activeEnrollments} active enrollment(s). Please delete all enrollments first.`
+        );
+      }
+      
+      // Use a database transaction to ensure data consistency
+      const result = await this.courseRepository.manager.transaction(async (transactionalEntityManager) => {
+        // Archive all modules for this course in bulk
+        const moduleArchiveResult = await transactionalEntityManager.update(
+          Module,
+          { 
+            courseId,
+            tenantId,
+            organisationId,
+            status: Not(ModuleStatus.ARCHIVED)
+          },
+          { 
+            status: ModuleStatus.ARCHIVED,
+            updatedBy: userId,
+            updatedAt: new Date()
+          }
+        );
+
+        // Archive all lessons for this course in bulk
+        const lessonArchiveResult = await transactionalEntityManager.update(
+          Lesson,
+          { 
+            courseId,
+            tenantId,
+            organisationId,
+            status: Not(LessonStatus.ARCHIVED)
+          },
+          { 
+            status: LessonStatus.ARCHIVED,
+            updatedBy: userId,
+            updatedAt: new Date()
+          }
+        );
+
+        this.logger.log(`Archived ${moduleArchiveResult.affected || 0} modules and ${lessonArchiveResult.affected || 0} lessons for course ${courseId}`);
+
+        // Archive the course
+        course.status = CourseStatus.ARCHIVED;
+        course.updatedBy = userId;
+        course.updatedAt = new Date();
+        await transactionalEntityManager.save(Course, course);
+
+        return { moduleArchiveResult, lessonArchiveResult };
+      });
+
+      // Invalidate all related caches after successful transaction
       await this.cacheService.invalidateCourse(courseId, tenantId, organisationId);
 
       return { 

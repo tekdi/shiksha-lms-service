@@ -29,12 +29,13 @@ import { PaginationDto } from '../common/dto/pagination.dto';
 import { API_IDS } from '../common/constants/api-ids.constant';
 import { CommonQueryDto } from '../common/dto/common-query.dto';
 import { ApiId } from '../common/decorators/api-id.decorator';
-import { Lesson, LessonFormat, LessonStatus } from './entities/lesson.entity';
+import { Lesson, LessonFormat, LessonStatus, LessonSubFormat } from './entities/lesson.entity';
 import { getUploadPath } from '../common/utils/upload.util';
 import { uploadConfigs } from '../config/file-validation.config';
 import { TenantOrg } from '../common/decorators/tenant-org.decorator';
 import { ParseEnumPipe } from '@nestjs/common';
 import { CloneLessonDto } from './dto/clone-lesson.dto';
+import { SearchLessonDto } from './dto/search-lesson.dto';
 
 @ApiTags('Lessons')
 @Controller('lessons')
@@ -74,26 +75,45 @@ export class LessonsController {
     return lesson;
   }
 
+
   @Get()
   @ApiId(API_IDS.GET_ALL_LESSONS)
   @ApiOperation({ summary: 'Get all lessons' })
-  @ApiResponse({ status: 200, description: 'Lessons retrieved successfully' })
-  @ApiQuery({ name: 'status', required: false, enum: ['published', 'unpublished', 'archived'] })
-  @ApiQuery({ name: 'format', required: false, enum: ['video', 'document', 'quiz', 'event', 'text_and_media'] })
-  @ApiQuery({ name: 'page', required: false, type: Number })
-  @ApiQuery({ name: 'limit', required: false, type: Number })
+  @ApiResponse({ 
+    status: 200, 
+    description: 'Lessons retrieved successfully',
+    schema: {
+      type: 'object',
+      properties: {
+        totalElements: { type: 'number', example: 13 },
+        offset: { type: 'number', example: 5 },
+        limit: { type: 'number', example: 5 },
+        lessons: { 
+          type: 'array',
+          items: { $ref: '#/components/schemas/Lesson' }
+        }
+      }
+    }
+  })
+  @ApiQuery({ name: 'status', required: false, enum: LessonStatus })
+  @ApiQuery({ name: 'format', required: false, enum: LessonFormat })
+  @ApiQuery({ name: 'subFormat', required: false, enum: LessonSubFormat })
+  @ApiQuery({ name: 'query', required: false, type: String, description: 'Search query for lesson title and description' })
+  @ApiQuery({ name: 'cohort', required: false, type: String, description: 'Filter by course cohort parameter' })
+  @ApiQuery({ name: 'courseId', required: false, type: String, description: 'Filter by specific course ID' })
+  @ApiQuery({ name: 'moduleId', required: false, type: String, description: 'Filter by specific module ID' })
+  @ApiQuery({ name: 'offset', required: false, type: Number, description: 'Number of items to skip for pagination (default: 0)' })
+  @ApiQuery({ name: 'limit', required: false, type: Number, description: 'Number of items to return (default: 10)' })
   async getAllLessons(
     @TenantOrg() tenantOrg: { tenantId: string; organisationId: string },
-    @Query() paginationDto: PaginationDto,
-    @Query('status', new ParseEnumPipe(LessonStatus, { optional: true })) status?: LessonStatus,
-    @Query('format', new ParseEnumPipe(LessonFormat, { optional: true })) format?: LessonFormat,
+    @Query() paginationDto: PaginationDto, 
+    @Query() searchDto: SearchLessonDto,
   ) {
-    return this.lessonsService.findAll(
+    return this.lessonsService.getLessons(
       tenantOrg.tenantId,
       tenantOrg.organisationId,
       paginationDto,
-      status as LessonStatus,
-      format as LessonFormat
+      searchDto,
     );
   }
   
@@ -187,6 +207,16 @@ export class LessonsController {
   @ApiOperation({ summary: 'Delete a lesson' })
   @ApiResponse({ status: 200, description: 'Lesson deleted successfully' })
   @ApiResponse({ status: 404, description: 'Lesson not found' })
+  @ApiResponse({ 
+    status: 400, 
+    description: 'Cannot delete lesson with active enrollments',
+    schema: {
+      properties: {
+        success: { type: 'boolean' },
+        message: { type: 'string' }
+      }
+    }
+  })
   @ApiParam({ name: 'lessonId', type: String, format: 'uuid' })
   async deleteLesson(
     @Param('lessonId', ParseUUIDPipe) lessonId: string,
