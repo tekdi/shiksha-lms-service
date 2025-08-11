@@ -190,6 +190,16 @@ export class ModulesController {
     }
   })
   @ApiResponse({ status: 404, description: 'Module not found' })
+  @ApiResponse({ 
+    status: 400, 
+    description: 'Cannot delete module with active enrollments',
+    schema: {
+      properties: {
+        success: { type: 'boolean' },
+        message: { type: 'string' }
+      }
+    }
+  })
   async deleteModule(
     @Param('moduleId', ParseUUIDPipe) moduleId: string,
     @Query() query: CommonQueryDto,

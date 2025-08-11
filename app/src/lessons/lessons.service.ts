@@ -6,13 +6,14 @@ import {
   Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Not, FindOneOptions, FindOptionsWhere } from 'typeorm';
+import { Repository, Not, FindOneOptions, FindOptionsWhere, In } from 'typeorm';
 import axios from 'axios';
 import { Lesson, LessonStatus, AttemptsGradeMethod, LessonFormat, LessonSubFormat } from './entities/lesson.entity';
 import { Course, CourseStatus } from '../courses/entities/course.entity';
 import { Module, ModuleStatus } from '../modules/entities/module.entity';
 import { Media, MediaStatus } from '../media/entities/media.entity';
 import { LessonTrack } from '../tracking/entities/lesson-track.entity';
+import { UserEnrollment, EnrollmentStatus } from '../enrollments/entities/user-enrollment.entity';
 import { CreateLessonDto } from './dto/create-lesson.dto';
 import { UpdateLessonDto } from './dto/update-lesson.dto';
 import { PaginationDto } from '../common/dto/pagination.dto';
@@ -39,6 +40,8 @@ export class LessonsService {
     private readonly mediaRepository: Repository<Media>,
     @InjectRepository(LessonTrack)
     private readonly lessonTrackRepository: Repository<LessonTrack>,
+    @InjectRepository(UserEnrollment)
+    private readonly userEnrollmentRepository: Repository<UserEnrollment>,
     private readonly cacheService: CacheService,
     private readonly configService: ConfigService,
     private readonly cacheConfig: CacheConfigService,
@@ -764,6 +767,24 @@ export class LessonsService {
         throw new NotFoundException(RESPONSE_MESSAGES.ERROR.LESSON_NOT_FOUND);
       }
 
+      // Check if lesson's course has active enrollments
+      if (lesson.courseId) {
+        const activeEnrollments = await this.userEnrollmentRepository.count({
+          where: {
+            courseId: lesson.courseId,
+            tenantId,
+            organisationId,
+            status: EnrollmentStatus.PUBLISHED
+          }
+        });
+
+        if (activeEnrollments > 0) {
+          throw new BadRequestException(
+            `Cannot delete lesson. The course has ${activeEnrollments} active enrollment(s). Please cancel all enrollments first.`
+          );
+        }
+      }
+
       // Soft delete by updating status
       lesson.status = LessonStatus.ARCHIVED;
       lesson.updatedBy = userId;
@@ -792,6 +813,135 @@ export class LessonsService {
     }
   }
 
+  /**
+   * Archive multiple lessons by module ID (for cascading soft deletes)
+   * @param moduleId The module ID whose lessons should be archived
+   * @param userId The user ID for audit trail
+   * @param tenantId The tenant ID for data isolation
+   * @param organisationId The organization ID for data isolation
+   */
+  async archiveLessonsByModule(
+    moduleId: string,
+    userId: string,
+    tenantId: string,
+    organisationId: string
+  ): Promise<{ success: boolean; message: string; archivedCount: number }> {
+    try {
+      // Find all lessons for the module
+      const lessons = await this.lessonRepository.find({
+        where: {
+          moduleId,
+          tenantId,
+          organisationId,
+          status: Not(LessonStatus.ARCHIVED)
+        },
+        select: ['lessonId', 'status']
+      });
+
+      if (lessons.length === 0) {
+        return {
+          success: true,
+          message: 'No lessons found to archive',
+          archivedCount: 0
+        };
+      }
+
+      // Archive all lessons
+      const lessonIds = lessons.map(lesson => lesson.lessonId);
+      await this.lessonRepository.update(
+        { lessonId: In(lessonIds) },
+        { 
+          status: LessonStatus.ARCHIVED,
+          updatedBy: userId,
+          updatedAt: new Date()
+        }
+      );
+
+      // Invalidate related caches
+      await Promise.all([
+        ...lessonIds.map(lessonId => 
+          this.cacheService.invalidateLesson(lessonId, moduleId, '', tenantId, organisationId)
+        ),
+        this.cacheService.invalidateModule(moduleId, '', tenantId, organisationId)
+      ]);
+
+      this.logger.log(`Archived ${lessons.length} lessons for module ${moduleId}`);
+
+      return {
+        success: true,
+        message: `Successfully archived ${lessons.length} lessons`,
+        archivedCount: lessons.length
+      };
+    } catch (error) {
+      this.logger.error(`Error archiving lessons for module ${moduleId}: ${error.message}`);
+      throw new InternalServerErrorException(RESPONSE_MESSAGES.ERROR.ERROR_REMOVING_LESSON);
+    }
+  }
+
+  /**
+   * Archive multiple lessons by course ID (for cascading soft deletes)
+   * @param courseId The course ID whose lessons should be archived
+   * @param userId The user ID for audit trail
+   * @param tenantId The tenant ID for data isolation
+   * @param organisationId The organization ID for data isolation
+   */
+  async archiveLessonsByCourse(
+    courseId: string,
+    userId: string,
+    tenantId: string,
+    organisationId: string
+  ): Promise<{ success: boolean; message: string; archivedCount: number }> {
+    try {
+      // Find all lessons for the course
+      const lessons = await this.lessonRepository.find({
+        where: {
+          courseId,
+          tenantId,
+          organisationId,
+          status: Not(LessonStatus.ARCHIVED)
+        },
+        select: ['lessonId', 'moduleId', 'status']
+      });
+
+      if (lessons.length === 0) {
+        return {
+          success: true,
+          message: 'No lessons found to archive',
+          archivedCount: 0
+        };
+      }
+
+      // Archive all lessons
+      const lessonIds = lessons.map(lesson => lesson.lessonId);
+      await this.lessonRepository.update(
+        { lessonId: In(lessonIds) },
+        { 
+          status: LessonStatus.ARCHIVED,
+          updatedBy: userId,
+          updatedAt: new Date()
+        }
+      );
+
+      // Invalidate related caches
+      await Promise.all([
+        ...lessons.map(lesson => 
+          this.cacheService.invalidateLesson(lesson.lessonId, lesson.moduleId, courseId, tenantId, organisationId)
+        ),
+        this.cacheService.invalidateCourse(courseId, tenantId, organisationId)
+      ]);
+
+      this.logger.log(`Archived ${lessons.length} lessons for course ${courseId}`);
+
+      return {
+        success: true,
+        message: `Successfully archived ${lessons.length} lessons`,
+        archivedCount: lessons.length
+      };
+    } catch (error) {
+      this.logger.error(`Error archiving lessons for course ${courseId}: ${error.message}`);
+      throw new InternalServerErrorException(RESPONSE_MESSAGES.ERROR.ERROR_REMOVING_LESSON);
+    }
+  }
 
   /**
    * Clone lessons for a module using transaction
