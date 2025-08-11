@@ -260,6 +260,16 @@ export class CoursesController {
     }
   })
   @ApiResponse({ status: 404, description: 'Course not found' })
+  @ApiResponse({ 
+    status: 400, 
+    description: 'Cannot delete course with active enrollments',
+    schema: {
+      properties: {
+        success: { type: 'boolean' },
+        message: { type: 'string' }
+      }
+    }
+  })
   async deleteCourse(
     @Param('courseId', ParseUUIDPipe) courseId: string,
     @Query() query: CommonQueryDto,

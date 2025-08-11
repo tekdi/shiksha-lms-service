@@ -129,6 +129,45 @@ All API responses follow a standardized format with the following structure:
 - **responseCode**: HTTP status code
 - **result**: Actual response data
 
+## Pagination
+
+The API supports two pagination approaches:
+
+### Page-based Pagination (Legacy)
+- `page`: Page number (default: 1)
+- `limit`: Items per page (default: 10)
+
+### Offset-based Pagination (Recommended)
+- `offset`: Number of items to skip (default: 0)
+- `limit`: Number of items to return (default: 10)
+
+**Note**: When `offset` is provided, it takes precedence over `page` calculation. The `skip` value is automatically calculated based on the provided parameters.
+
+### Pagination Response Format
+
+Most paginated endpoints return responses in this format:
+
+```json
+{
+  "totalElements": 100,
+  "offset": 20,
+  "limit": 10,
+  "items": [
+    // Array of items
+  ]
+}
+```
+
+**Response Fields:**
+- `totalElements`: Total number of items available
+- `offset`: Number of items skipped in current request
+- `limit`: Number of items returned in current request
+- `items`: Array of actual data items
+
+**Pagination Metadata:**
+- `hasNext`: Whether there are more items available (calculated as `offset + limit < totalElements`)
+- `hasPrev`: Whether there are previous items available (calculated as `offset > 0`)
+
 ## Error Handling
 
 Error responses follow this format:
@@ -156,6 +195,23 @@ Error responses follow this format:
   }
 }
 ```
+
+### Common Error Responses
+
+#### Cannot Delete with Active Enrollments
+```json
+{
+  "success": false,
+  "message": "Cannot delete course. Course has 5 active enrollment(s). Please delete all enrollments first."
+}
+```
+
+This error occurs when attempting to delete:
+- **Courses** with active enrollments
+- **Modules** whose parent course has active enrollments  
+- **Lessons** whose parent course has active enrollments
+
+**HTTP Status**: 400 Bad Request
 
 ## API Endpoints
 
@@ -1321,7 +1377,7 @@ organisationid: <organisation-id>
 
 **HTTP Method**: DELETE
 
-**Description**: Archive/delete a course
+**Description**: Archive/delete a course. Cannot delete courses with active enrollments. All associated modules and lessons are automatically archived.
 
 **Headers**:
 ```
@@ -1337,6 +1393,8 @@ organisationid: <organisation-id>
 - `userId` (UUID, required): User ID deleting the course
 
 **Response Structure**:
+
+**Success Response**:
 ```json
 {
   "id": "api.course.delete",
@@ -1356,6 +1414,14 @@ organisationid: <organisation-id>
 }
 ```
 
+**Error Response - Active Enrollments**:
+```json
+{
+  "success": false,
+  "message": "Cannot delete course. Course has 5 active enrollment(s). Please delete all enrollments first."
+}
+```
+
 **Validations and Conditions**:
 
 **Input Validation Rules**:
@@ -1367,21 +1433,22 @@ organisationid: <organisation-id>
 **Business Logic Conditions**:
 - Course must exist and be accessible for deletion
 - Course must belong to the specified tenant and organization
-- If course has active enrollments, deletion should be prevented or handled appropriately
-- If course has associated modules/lessons, they should be archived or deleted
-- If course has associated media, media should be cleaned up
-- Deletion must be atomic (all-or-nothing)
+- If course has active enrollments, deletion should be prevented
+- Active enrollments are defined as enrollments with 'published' status
+- All associated modules are automatically archived in bulk
+- All associated lessons are automatically archived in bulk
+- Course deletion is implemented as soft delete (status changed to 'archived')
+- Deletion must be atomic using database transactions
 - Audit trail must be maintained for course deletion
-- Soft delete should be implemented (mark as archived rather than hard delete)
-- If course is published and has enrollments, special handling may be required
+- Related caches must be invalidated after successful deletion
+- Bulk archiving operations are logged for monitoring
 
 **Authorization Conditions**:
 - User must have delete permissions for courses in the tenant
 - User must have access to the specified organization
 - Course creator can delete their own courses
 - Admin users can delete any course
-- If course has active enrollments, only admin users can delete
-- If course is published, special permissions may be required for deletion
+- If course has active enrollments, deletion is not allowed for any user
 
 #### Clone Course
 
@@ -1854,7 +1921,7 @@ organisationid: <organisation-id>
 
 **HTTP Method**: DELETE
 
-**Description**: Archive/delete a module
+**Description**: Archive/delete a module. Cannot delete modules if the parent course has active enrollments. All associated lessons are automatically archived.
 
 **Headers**:
 ```
@@ -1870,6 +1937,8 @@ organisationid: <organisation-id>
 - `userId` (UUID, required): User ID deleting the module
 
 **Response Structure**:
+
+**Success Response**:
 ```json
 {
   "id": "api.module.delete",
@@ -1888,6 +1957,41 @@ organisationid: <organisation-id>
   }
 }
 ```
+
+**Error Response - Active Enrollments**:
+```json
+{
+  "success": false,
+  "message": "Cannot delete module. The course has 5 active enrollment(s). Please delete all enrollments first."
+}
+```
+
+**Validations and Conditions**:
+
+**Input Validation Rules**:
+- `moduleId` path parameter must be present and valid UUID format
+- `tenantid` header must be present and valid UUID format
+- `organisationid` header must be present and valid UUID format
+- `userId` query parameter must be present and valid UUID
+
+**Business Logic Conditions**:
+- Module must exist and be accessible for deletion
+- Module must belong to the specified tenant and organization
+- If module's course has active enrollments, deletion should be prevented
+- Active enrollments are defined as enrollments with 'published' status
+- All associated lessons are automatically archived in bulk
+- Module deletion is implemented as soft delete (status changed to 'archived')
+- Deletion must be atomic using database transactions
+- Audit trail must be maintained for module deletion
+- Related caches must be invalidated after successful deletion
+- Bulk archiving operations are logged for monitoring
+
+**Authorization Conditions**:
+- User must have delete permissions for modules in the tenant
+- User must have access to the specified organization
+- Module creator can delete their own modules
+- Admin users can delete any module
+- If module's course has active enrollments, deletion is not allowed for any user
 
 #### Clone Module
 
@@ -1991,6 +2095,26 @@ The following lesson sub-formats are supported for different types of content:
 - `reflection.prompt`: Reflection prompt content for leadership development
 - `discord.url`: Discord community link content
 - `external.assessment.url`: External assessment URL content
+
+#### Search and Filtering
+
+The lessons API supports advanced search and filtering through the `SearchLessonDto`:
+
+**Available Filters:**
+- `cohortId`: Filter by course cohort parameter
+- `status`: Filter by lesson status
+- `format`: Filter by lesson format
+- `subFormat`: Filter by lesson sub-format
+- `query`: Text search in lesson title and description
+- `courseId`: Filter by specific course
+- `moduleId`: Filter by specific module
+
+**Search Behavior:**
+- Text search is case-insensitive using ILIKE
+- Filters are combined using AND logic
+- Results are automatically filtered to exclude archived courses and modules
+- Pagination supports both offset-based and page-based approaches
+- Results are ordered by creation date (newest first)
 
 #### Create Lesson
 
@@ -2146,7 +2270,7 @@ organisationid: <organisation-id>
 
 **HTTP Method**: GET
 
-**Description**: Get all lessons with optional filtering
+**Description**: Get all lessons with advanced filtering, search, and pagination. Returns lessons with enhanced filtering capabilities including cohort-based filtering, course/module filtering, and text search.
 
 **Headers**:
 ```
@@ -2158,8 +2282,13 @@ organisationid: <organisation-id>
 **Query Parameters**:
 - `status` (enum, optional): Filter by lesson status - 'published', 'unpublished', 'archived'
 - `format` (enum, optional): Filter by lesson format - 'video', 'document', 'test', 'event', 'text_and_media'
-- `page` (number, optional): Page number (default: 1)
-- `limit` (number, optional): Items per page (default: 10)
+- `subFormat` (enum, optional): Filter by lesson sub-format - 'youtube.url', 'video.url', 'pdf', 'quiz', 'assessment', 'feedback', 'reflection.prompt', 'event', 'external.url', 'discord.url', 'external.assessment.url'
+- `query` (string, optional): Search query for lesson title and description (case-insensitive)
+- `cohortId` (string, optional): Filter by course cohort parameter
+- `courseId` (string, optional): Filter by specific course ID
+- `moduleId` (string, optional): Filter by specific module ID
+- `offset` (number, optional): Number of items to skip for pagination (default: 0)
+- `limit` (number, optional): Number of items to return (default: 10)
 
 **Response Structure**:
 ```json
@@ -2174,44 +2303,77 @@ organisationid: <organisation-id>
     "errmsg": null
   },
   "responseCode": 200,
-  "result": [
-    {
-      "lessonId": "789e0123-e89b-12d3-a456-426614174000",
-      "tenantId": "123e4567-e89b-12d3-a456-426614174000",
-      "organisationId": "456e7890-e89b-12d3-a456-426614174000",
-      "checkedOut": null,
-      "checkedOutTime": null,
-      "title": "Introduction to HTML",
-      "alias": "intro-html",
-      "status": "published",
-      "description": "Learn HTML basics",
-      "image": "/uploads/lessons/lesson-thumb.jpg",
-      "startDatetime": "2024-01-01T00:00:00Z",
-      "endDatetime": "2024-12-31T23:59:59Z",
-      "storage": "local",
-      "noOfAttempts": 1,
-      "attemptsGrade": "highest",
-      "format": "video",
-      "mediaId": "abc12345-e89b-12d3-a456-426614174000",
-      "prerequisites": [],
-      "idealTime": 30,
-      "resume": false,
-      "totalMarks": 100,
-      "passingMarks": 60,
-      "params": null,
-      "courseId": "123e4567-e89b-12d3-a456-426614174000",
-      "moduleId": "456e7890-e89b-12d3-a456-426614174000",
-      "sampleLesson": false,
-      "considerForPassing": true,
-      "ordering": 1,
-      "createdAt": "2024-01-01T00:00:00Z",
-      "createdBy": "789e0123-e89b-12d3-a456-426614174000",
-      "updatedAt": "2024-01-01T00:00:00Z",
-      "updatedBy": "789e0123-e89b-12d3-a456-426614174000"
-    }
-  ]
+  "result": {
+    "totalElements": 13,
+    "offset": 5,
+    "limit": 5,
+    "lessons": [
+      {
+        "lessonId": "789e0123-e89b-12d3-a456-426614174000",
+        "tenantId": "123e4567-e89b-12d3-a456-426614174000",
+        "organisationId": "456e7890-e89b-12d3-a456-426614174000",
+        "checkedOut": null,
+        "checkedOutTime": null,
+        "title": "Introduction to HTML",
+        "alias": "intro-html",
+        "status": "published",
+        "description": "Learn HTML basics",
+        "image": "/uploads/lessons/lesson-thumb.jpg",
+        "startDatetime": "2024-01-01T00:00:00Z",
+        "endDatetime": "2024-12-31T23:59:59Z",
+        "storage": "local",
+        "noOfAttempts": 1,
+        "attemptsGrade": "highest",
+        "format": "video",
+        "mediaId": "abc12345-e89b-12d3-a456-426614174000",
+        "prerequisites": [],
+        "idealTime": 30,
+        "resume": false,
+        "totalMarks": 100,
+        "passingMarks": 60,
+        "params": null,
+        "courseId": "123e4567-e89b-12d3-a456-426614174000",
+        "moduleId": "456e7890-e89b-12d3-a456-426614174000",
+        "sampleLesson": false,
+        "considerForPassing": true,
+        "ordering": 1,
+        "createdAt": "2024-01-01T00:00:00Z",
+        "createdBy": "789e0123-e89b-12d3-a456-426614174000",
+        "updatedAt": "2024-01-01T00:00:00Z",
+        "updatedBy": "789e0123-e89b-12d3-a456-426614174000"
+      }
+    ]
+  }
 }
 ```
+
+**Validations and Conditions**:
+
+**Input Validation Rules**:
+- `tenantid` header must be present and valid UUID format
+- `organisationid` header must be present and valid UUID format
+- `status` must be one of: 'published', 'unpublished', 'archived' (if provided)
+- `format` must be one of: 'video', 'document', 'test', 'event', 'text_and_media' (if provided)
+- `subFormat` must be one of the supported sub-formats (if provided)
+- `query` must be string and max 100 characters (if provided)
+- `cohortId` must be valid string (if provided)
+- `courseId` must be valid UUID format (if provided)
+- `moduleId` must be valid UUID format (if provided)
+- `offset` must be non-negative integer (default: 0)
+- `limit` must be positive integer between 1-100 (default: 10)
+
+**Business Logic Conditions**:
+- Search results must be filtered by tenant and organization
+- If query is provided, search must be performed on title and description using ILIKE (case-insensitive)
+- Date range filters must be applied correctly
+- Pagination must work correctly with offset and limit
+- Sorting must be applied before pagination (default: createdAt DESC)
+- Only published courses and modules should be included in results
+- Cohort filtering searches in course.params.cohortId field
+- Course and module filtering ensures proper hierarchy relationships
+- Results must be ordered by relevance when query is provided
+- Performance is optimized for small to medium lesson catalogs
+- Caching is implemented with filter-specific cache keys
 
 #### Get Lesson by ID
 
@@ -2482,7 +2644,7 @@ organisationid: <organisation-id>
 
 **HTTP Method**: DELETE
 
-**Description**: Delete a lesson
+**Description**: Archive/delete a lesson. Cannot delete lessons if the parent course has active enrollments.
 
 **Headers**:
 ```
@@ -2498,6 +2660,8 @@ organisationid: <organisation-id>
 - `userId` (UUID, required): User ID deleting the lesson
 
 **Response Structure**:
+
+**Success Response**:
 ```json
 {
   "id": "api.lesson.delete",
@@ -2516,6 +2680,38 @@ organisationid: <organisation-id>
   }
 }
 ```
+
+**Error Response - Active Enrollments**:
+```json
+{
+  "success": false,
+  "message": "Cannot delete lesson. The course has 5 active enrollment(s). Please cancel all enrollments first."
+}
+```
+
+**Validations and Conditions**:
+
+**Input Validation Rules**:
+- `lessonId` path parameter must be present and valid UUID format
+- `tenantid` header must be present and valid UUID format
+- `organisationid` header must be present and valid UUID format
+- `userId` query parameter must be present and valid UUID
+
+**Business Logic Conditions**:
+- Lesson must exist and be accessible for deletion
+- Lesson must belong to the specified tenant and organization
+- If lesson's course has active enrollments, deletion should be prevented
+- Active enrollments are defined as enrollments with 'published' status
+- Lesson deletion is implemented as soft delete (status changed to 'archived')
+- Audit trail must be maintained for lesson deletion
+- Related caches must be invalidated after successful deletion
+
+**Authorization Conditions**:
+- User must have delete permissions for lessons in the tenant
+- User must have access to the specified organization
+- Lesson creator can delete their own lessons
+- Admin users can delete any lesson
+- If lesson's course has active enrollments, only admin users can delete
 
 #### Clone Lesson
 
@@ -2606,6 +2802,102 @@ organisationid: <organisation-id>
 **Authorization Conditions**:
 - User must have read permissions for the source lesson
 - User must have create permissions for lessons in the tenant
+- User must have access to the specified organization
+
+#### Bulk Archive Lessons by Module
+
+**Endpoint**: `POST /lessons/archive/module/{moduleId}`
+
+**HTTP Method**: POST
+
+**Description**: Archive all lessons for a specific module (internal use for cascading soft deletes)
+
+**Headers**:
+```
+Content-Type: application/json
+tenantid: <tenant-id>
+organisationid: <organisation-id>
+```
+
+**Path Parameters**:
+- `moduleId` (UUID, required): Module ID whose lessons should be archived
+
+**Query Parameters**:
+- `userId` (UUID, required): User ID performing the archive operation
+
+**Response Structure**:
+```json
+{
+  "success": true,
+  "message": "Successfully archived 5 lessons",
+  "archivedCount": 5
+}
+```
+
+**Validations and Conditions**:
+
+**Input Validation Rules**:
+- `moduleId` must be present and valid UUID format
+- `userId` query parameter must be present and valid UUID
+
+**Business Logic Conditions**:
+- Module must exist and be accessible
+- Module must belong to the specified tenant and organization
+- All non-archived lessons for the module will be archived
+- Bulk update operation is used for performance
+- Related caches are invalidated after archiving
+- Operation is logged for audit purposes
+
+**Authorization Conditions**:
+- User must have delete permissions for lessons in the tenant
+- User must have access to the specified organization
+
+#### Bulk Archive Lessons by Course
+
+**Endpoint**: `POST /lessons/archive/course/{courseId}`
+
+**HTTP Method**: POST
+
+**Description**: Archive all lessons for a specific course (internal use for cascading soft deletes)
+
+**Headers**:
+```
+Content-Type: application/json
+tenantid: <tenant-id>
+organisationid: <organisation-id>
+```
+
+**Path Parameters**:
+- `courseId` (UUID, required): Course ID whose lessons should be archived
+
+**Query Parameters**:
+- `userId` (UUID, required): User ID performing the archive operation
+
+**Response Structure**:
+```json
+{
+  "success": true,
+  "message": "Successfully archived 25 lessons",
+  "archivedCount": 25
+}
+```
+
+**Validations and Conditions**:
+
+**Input Validation Rules**:
+- `courseId` must be present and valid UUID format
+- `userId` query parameter must be present and valid UUID
+
+**Business Logic Conditions**:
+- Course must exist and be accessible
+- Course must belong to the specified tenant and organization
+- All non-archived lessons for the course will be archived
+- Bulk update operation is used for performance
+- Related caches are invalidated after archiving
+- Operation is logged for audit purposes
+
+**Authorization Conditions**:
+- User must have delete permissions for lessons in the tenant
 - User must have access to the specified organization
 
 ---

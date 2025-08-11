@@ -13,6 +13,8 @@ import { Course, CourseStatus } from '../courses/entities/course.entity';
 import { Lesson, LessonStatus } from '../lessons/entities/lesson.entity';
 import { CourseTrack } from '../tracking/entities/course-track.entity';
 import { LessonTrack } from '../tracking/entities/lesson-track.entity';
+import { ModuleTrack } from '../tracking/entities/module-track.entity';
+import { UserEnrollment, EnrollmentStatus } from '../enrollments/entities/user-enrollment.entity';
 import { RESPONSE_MESSAGES } from '../common/constants/response-messages.constant';
 import { CreateModuleDto } from './dto/create-module.dto';
 import { UpdateModuleDto } from './dto/update-module.dto';
@@ -37,6 +39,10 @@ export class ModulesService {
     private readonly courseTrackRepository: Repository<CourseTrack>,
     @InjectRepository(LessonTrack)
     private readonly lessonTrackRepository: Repository<LessonTrack>,
+    @InjectRepository(ModuleTrack)
+    private readonly moduleTrackRepository: Repository<ModuleTrack>,
+    @InjectRepository(UserEnrollment)
+    private readonly userEnrollmentRepository: Repository<UserEnrollment>,
     private readonly cacheService: CacheService,
     private readonly configService: ConfigService,
     private readonly cacheConfig: CacheConfigService,
@@ -333,6 +339,22 @@ export class ModulesService {
   ): Promise<{ success: boolean; message: string }> {
     try {
       const module = await this.findOne(moduleId, tenantId, organisationId);
+      
+      // Check if module's course has active enrollments
+      const activeEnrollments = await this.userEnrollmentRepository.count({
+        where: {
+          courseId: module.courseId,
+          tenantId,
+          organisationId,
+          status: EnrollmentStatus.PUBLISHED
+        }
+      });
+
+      if (activeEnrollments > 0) {
+        throw new BadRequestException(
+          `Cannot delete module. The course has ${activeEnrollments} active enrollment(s). Please delete all enrollments first.`
+        );
+      }
       
       // Use a database transaction to ensure data consistency
       const result = await this.moduleRepository.manager.transaction(async (transactionalEntityManager) => {

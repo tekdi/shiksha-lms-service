@@ -207,6 +207,16 @@ export class LessonsController {
   @ApiOperation({ summary: 'Delete a lesson' })
   @ApiResponse({ status: 200, description: 'Lesson deleted successfully' })
   @ApiResponse({ status: 404, description: 'Lesson not found' })
+  @ApiResponse({ 
+    status: 400, 
+    description: 'Cannot delete lesson with active enrollments',
+    schema: {
+      properties: {
+        success: { type: 'boolean' },
+        message: { type: 'string' }
+      }
+    }
+  })
   @ApiParam({ name: 'lessonId', type: String, format: 'uuid' })
   async deleteLesson(
     @Param('lessonId', ParseUUIDPipe) lessonId: string,

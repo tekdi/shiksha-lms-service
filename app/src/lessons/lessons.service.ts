@@ -13,6 +13,7 @@ import { Course, CourseStatus } from '../courses/entities/course.entity';
 import { Module, ModuleStatus } from '../modules/entities/module.entity';
 import { Media, MediaStatus } from '../media/entities/media.entity';
 import { LessonTrack } from '../tracking/entities/lesson-track.entity';
+import { UserEnrollment, EnrollmentStatus } from '../enrollments/entities/user-enrollment.entity';
 import { CreateLessonDto } from './dto/create-lesson.dto';
 import { UpdateLessonDto } from './dto/update-lesson.dto';
 import { PaginationDto } from '../common/dto/pagination.dto';
@@ -39,6 +40,8 @@ export class LessonsService {
     private readonly mediaRepository: Repository<Media>,
     @InjectRepository(LessonTrack)
     private readonly lessonTrackRepository: Repository<LessonTrack>,
+    @InjectRepository(UserEnrollment)
+    private readonly userEnrollmentRepository: Repository<UserEnrollment>,
     private readonly cacheService: CacheService,
     private readonly configService: ConfigService,
     private readonly cacheConfig: CacheConfigService,
@@ -762,6 +765,24 @@ export class LessonsService {
       
       if (!lesson) {
         throw new NotFoundException(RESPONSE_MESSAGES.ERROR.LESSON_NOT_FOUND);
+      }
+
+      // Check if lesson's course has active enrollments
+      if (lesson.courseId) {
+        const activeEnrollments = await this.userEnrollmentRepository.count({
+          where: {
+            courseId: lesson.courseId,
+            tenantId,
+            organisationId,
+            status: EnrollmentStatus.PUBLISHED
+          }
+        });
+
+        if (activeEnrollments > 0) {
+          throw new BadRequestException(
+            `Cannot delete lesson. The course has ${activeEnrollments} active enrollment(s). Please cancel all enrollments first.`
+          );
+        }
       }
 
       // Soft delete by updating status
