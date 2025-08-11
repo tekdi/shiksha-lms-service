@@ -25,7 +25,6 @@ import {
 import { CoursesService } from './courses.service';
 import { CreateCourseDto } from './dto/create-course.dto';
 import { UpdateCourseDto } from './dto/update-course.dto';
-import { PaginationDto } from '../common/dto/pagination.dto';
 import { API_IDS } from '../common/constants/api-ids.constant';
 import { Course } from './entities/course.entity';
 import { FileInterceptor } from '@nestjs/platform-express';
