@@ -1080,12 +1080,53 @@ export class CoursesService {
   ): Promise<{ success: boolean; message: string }> {
     try {
       const course = await this.findOne(courseId, tenantId, organisationId);
-      course.status = CourseStatus.ARCHIVED;
-      course.updatedBy = userId;
-      course.updatedAt = new Date();
-      const savedCourse = await this.courseRepository.save(course);
+      
+      // Use a database transaction to ensure data consistency
+      const result = await this.courseRepository.manager.transaction(async (transactionalEntityManager) => {
+        // Archive all modules for this course in bulk
+        const moduleArchiveResult = await transactionalEntityManager.update(
+          Module,
+          { 
+            courseId,
+            tenantId,
+            organisationId,
+            status: Not(ModuleStatus.ARCHIVED)
+          },
+          { 
+            status: ModuleStatus.ARCHIVED,
+            updatedBy: userId,
+            updatedAt: new Date()
+          }
+        );
 
-       // Cache the new course and invalidate related caches
+        // Archive all lessons for this course in bulk
+        const lessonArchiveResult = await transactionalEntityManager.update(
+          Lesson,
+          { 
+            courseId,
+            tenantId,
+            organisationId,
+            status: Not(LessonStatus.ARCHIVED)
+          },
+          { 
+            status: LessonStatus.ARCHIVED,
+            updatedBy: userId,
+            updatedAt: new Date()
+          }
+        );
+
+        this.logger.log(`Archived ${moduleArchiveResult.affected || 0} modules and ${lessonArchiveResult.affected || 0} lessons for course ${courseId}`);
+
+        // Archive the course
+        course.status = CourseStatus.ARCHIVED;
+        course.updatedBy = userId;
+        course.updatedAt = new Date();
+        await transactionalEntityManager.save(Course, course);
+
+        return { moduleArchiveResult, lessonArchiveResult };
+      });
+
+      // Invalidate all related caches after successful transaction
       await this.cacheService.invalidateCourse(courseId, tenantId, organisationId);
 
       return { 

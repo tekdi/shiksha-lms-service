@@ -7,10 +7,10 @@ import {
   InternalServerErrorException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, FindOptionsWhere, Not, IsNull } from 'typeorm';
+import { Repository, FindOptionsWhere, Not, IsNull, In } from 'typeorm';
 import { Module, ModuleStatus } from './entities/module.entity';
 import { Course, CourseStatus } from '../courses/entities/course.entity';
-import { Lesson } from '../lessons/entities/lesson.entity';
+import { Lesson, LessonStatus } from '../lessons/entities/lesson.entity';
 import { CourseTrack } from '../tracking/entities/course-track.entity';
 import { LessonTrack } from '../tracking/entities/lesson-track.entity';
 import { RESPONSE_MESSAGES } from '../common/constants/response-messages.constant';
@@ -325,7 +325,7 @@ export class ModulesService {
    * @param tenantId The tenant ID for data isolation
    * @param organisationId The organization ID for data isolation
    */
-  async remove(
+    async remove(
     moduleId: string,
     userId: string,
     tenantId: string,
@@ -333,27 +333,52 @@ export class ModulesService {
   ): Promise<{ success: boolean; message: string }> {
     try {
       const module = await this.findOne(moduleId, tenantId, organisationId);
-      module.status = ModuleStatus.ARCHIVED;
-      module.updatedBy = userId;
-      module.updatedAt = new Date();
-      const savedModule = await this.moduleRepository.save(module);
+      
+      // Use a database transaction to ensure data consistency
+      const result = await this.moduleRepository.manager.transaction(async (transactionalEntityManager) => {
+        // Archive all lessons using bulk update
+        const lessonArchiveResult = await transactionalEntityManager.update(
+          Lesson,
+          { 
+            moduleId,
+            tenantId,
+            organisationId,
+            status: Not(LessonStatus.ARCHIVED)
+          },
+          { 
+            status: LessonStatus.ARCHIVED,
+            updatedBy: userId,
+            updatedAt: new Date()
+          }
+        );
 
-    // Invalidate all related caches
-    const moduleKey = this.cacheConfig.getModuleKey(moduleId, tenantId, organisationId);
-    await Promise.all([
-      this.cacheService.del(moduleKey),
-      this.cacheService.invalidateModule(moduleId, module.courseId, tenantId, organisationId),
-    ]);
+        this.logger.log(`Archived ${lessonArchiveResult.affected || 0} lessons for module ${moduleId}`);
 
-    return {
-      success: true,
-      message: RESPONSE_MESSAGES.MODULE_DELETED || 'Module deleted successfully',
-    };
-  }catch (error) {
-    this.logger.error(`Error removing module: ${error.message}`, error.stack);
-    throw error;
+        // Archive the module
+        module.status = ModuleStatus.ARCHIVED;
+        module.updatedBy = userId;
+        module.updatedAt = new Date();
+        await transactionalEntityManager.save(Module, module);
+
+        return { lessonArchiveResult };
+      });
+
+      // Invalidate all related caches after successful transaction
+      const moduleKey = this.cacheConfig.getModuleKey(moduleId, tenantId, organisationId);
+      await Promise.all([
+        this.cacheService.del(moduleKey),
+        this.cacheService.invalidateModule(moduleId, module.courseId, tenantId, organisationId),
+      ]);
+
+      return {
+        success: true,
+        message: RESPONSE_MESSAGES.MODULE_DELETED || 'Module deleted successfully',
+      };
+    } catch (error) {
+      this.logger.error(`Error removing module: ${error.message}`, error.stack);
+      throw error;
+    }
   }
-}
 
 
   /**
