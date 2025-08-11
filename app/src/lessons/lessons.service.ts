@@ -8,7 +8,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Not, FindOneOptions, FindOptionsWhere } from 'typeorm';
 import axios from 'axios';
-import { Lesson, LessonStatus, AttemptsGradeMethod, LessonFormat } from './entities/lesson.entity';
+import { Lesson, LessonStatus, AttemptsGradeMethod, LessonFormat, LessonSubFormat } from './entities/lesson.entity';
 import { Course, CourseStatus } from '../courses/entities/course.entity';
 import { Module, ModuleStatus } from '../modules/entities/module.entity';
 import { Media, MediaStatus } from '../media/entities/media.entity';
@@ -23,6 +23,7 @@ import { ConfigService } from '@nestjs/config';
 import { CacheConfigService } from '../cache/cache-config.service';
 import { OrderingService } from '../common/services/ordering.service';
 import { AssociatedFile } from '../media/entities/associated-file.entity';
+import { SearchLessonDto } from './dto/search-lesson.dto';
 
 @Injectable()
 export class LessonsService {
@@ -221,6 +222,7 @@ export class LessonsService {
     }
   }
 
+  
   /**
    * Find all lessons with pagination and filters
    * @param tenantId The tenant ID for data isolation
@@ -228,55 +230,98 @@ export class LessonsService {
    * @param paginationDto Pagination parameters
    * @param status Optional status filter
    * @param format Optional format filter
+   * @param subFormat Optional sub-format filter
+   * @param query Optional search query for title and description
+   * @param cohort Optional cohort filter from course params
+   * @param courseId Optional course ID filter
+   * @param moduleId Optional module ID filter
    */
-  async findAll(
+  async getLessons(
     tenantId: string,
     organisationId: string,
     paginationDto: PaginationDto,
-    status?: LessonStatus,
-    format?: LessonFormat,
-  ): Promise<{ count: number; lessons: Lesson[] }> {
+    searchDto: SearchLessonDto,
+  ): Promise<{ totalElements: number; offset: number; limit: number; lessons: Lesson[] }> {
     try {
-      const { page = 1, limit = 10 } = paginationDto;
-      // Generate cache key using standardized pattern
-      const cacheKey = this.cacheConfig.getLessonPattern(tenantId, organisationId);
+      const { limit = 10 } = paginationDto;
+      const offset = paginationDto.skip || 0;
+      
+      // Generate cache key using standardized pattern - include all filters for proper caching
+      const cacheKey = this.cacheConfig.getLessonPattern(tenantId, organisationId) +
+        (searchDto.cohortId ? `:cohortId:${searchDto.cohortId}` : '') +
+        (searchDto.courseId ? `:courseId:${searchDto.courseId}` : '') +
+        (searchDto.moduleId ? `:moduleId:${searchDto.moduleId}` : '') +
+        (searchDto.format ? `:format:${searchDto.format}` : '') +
+        (searchDto.subFormat ? `:subFormat:${searchDto.subFormat}` : '') +
+        (searchDto.status ? `:status:${searchDto.status}` : '') +       
+        (searchDto.query ? `:query:${searchDto.query}` : '') +
+        `:offset:${offset}:limit:${limit}`;
 
       // Try to get from cache first
-      const cachedResult = await this.cacheService.get<{ count: number; lessons: Lesson[] }>(cacheKey);
+      const cachedResult = await this.cacheService.get<{ totalElements: number; offset: number; limit: number; lessons: Lesson[] }>(cacheKey);
       if (cachedResult) {
         return cachedResult;
-      }
+      } 
 
-      const skip = (page - 1) * limit;
-
-      // Build query with filters
-      const whereConditions: any = {
-        status: Not(LessonStatus.ARCHIVED), // Exclude archived lessons by default
-        tenantId: tenantId,
-        organisationId: organisationId
-      };
-
+      // Execute query with pagination and joins to ensure only published courses and modules
+      let queryBuilder = this.lessonRepository.createQueryBuilder('lesson')
+        .leftJoinAndSelect('lesson.media', 'media')
+        .where('lesson.status != :archivedStatus', { archivedStatus: LessonStatus.ARCHIVED })
+        .andWhere('lesson.tenantId = :tenantId', { tenantId })
+        .andWhere('lesson.organisationId = :organisationId', { organisationId })
+        
       // Add optional filters
-      if (status) {
-        whereConditions.status = status;
+      if (searchDto.status) {
+        queryBuilder = queryBuilder.andWhere('lesson.status = :status', { status: searchDto.status });
       }
 
-      if (format) {
-        whereConditions.format = format;
+      if (searchDto.format) {
+        queryBuilder = queryBuilder.andWhere('lesson.format = :format', { format: searchDto.format });
       }
 
-      // Execute query with pagination
-      const [lessons, count] = await this.lessonRepository.findAndCount({
-        where: whereConditions,
-        skip,
-        take: limit,
-        order: {
-          createdAt: 'DESC',
-        },
-        relations: ['media'],
-      });
+      if (searchDto.subFormat) {
+        queryBuilder = queryBuilder.andWhere('media.subFormat = :subFormat', { subFormat: searchDto.subFormat });
+      }
 
-      const result = { count, lessons };
+      // Add search query filter for title and description
+      if (searchDto.query) {
+        queryBuilder = queryBuilder.andWhere(
+          '(lesson.title ILIKE :query OR lesson.description ILIKE :query)',
+          { query: `%${searchDto.query}%` }
+        );
+      }
+
+      // Add course ID filter
+      if (searchDto.courseId || searchDto.cohortId) {
+        queryBuilder = queryBuilder.leftJoin('lesson.course', 'course')
+        queryBuilder = queryBuilder.andWhere('course.status != :courseStatus', { courseStatus: CourseStatus.ARCHIVED })
+        // Add cohort filter (search in course.params.cohort)
+        if (searchDto.cohortId) {
+          console.log('cohortId', searchDto.cohortId);
+          queryBuilder = queryBuilder.andWhere(
+            "course.params->>'cohortId' = :cohortId",
+            { cohortId: searchDto.cohortId }
+          );
+        }
+        if (searchDto.courseId) {
+          queryBuilder = queryBuilder.andWhere('lesson.courseId = :courseId', { courseId: searchDto.courseId });
+        }
+      }
+
+      // Add module ID filter
+      if (searchDto.moduleId) {
+        queryBuilder = queryBuilder.leftJoin('lesson.module', 'module')
+        queryBuilder = queryBuilder.andWhere('(module.status != :moduleStatus OR module.status IS NULL)', { moduleStatus: ModuleStatus.ARCHIVED });
+        queryBuilder = queryBuilder.andWhere('lesson.moduleId = :moduleId', { moduleId: searchDto.moduleId });
+      }
+
+      const [lessons, totalElements] = await queryBuilder
+        .skip(offset)
+        .take(limit)
+        .orderBy('lesson.createdAt', 'DESC')
+        .getManyAndCount();
+
+      const result = { totalElements, offset, limit, lessons };
 
       // Cache the result
       await this.cacheService.set(cacheKey, result, this.cacheConfig.LESSON_TTL);
