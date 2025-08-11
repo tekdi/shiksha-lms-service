@@ -275,7 +275,7 @@ export class CoursesController {
     return result;
   }
 
-  @Post('/clone/:courseId')
+  @Post(':courseId/clone')
   @ApiId(API_IDS.COPY_COURSE)
   @ApiOperation({ 
     summary: 'Copy a course with all its modules, lessons, and media',
