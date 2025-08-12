@@ -25,6 +25,9 @@ import { ModuleTrack, ModuleTrackStatus } from '../tracking/entities/module-trac
 import { LessonTrack } from '../tracking/entities/lesson-track.entity';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { CacheConfigService } from '../cache/cache-config.service';
+import { CoursesService } from '../courses/courses.service';
+import { LMSElasticsearchService } from '../elasticsearch/lms-elasticsearch.service';
+import axios from 'axios';
 
 
 @Injectable()
@@ -51,6 +54,8 @@ export class EnrollmentsService {
     @InjectDataSource()
     private readonly dataSource: DataSource,
     private readonly cacheConfig: CacheConfigService,
+    private readonly coursesService: CoursesService,
+    private readonly lmsElasticsearchService: LMSElasticsearchService,
   ) {}
 
   /**
@@ -251,6 +256,94 @@ export class EnrollmentsService {
         this.cacheService.invalidateEnrollment(savedEnrollment.userId, savedEnrollment.courseId, tenantId, organisationId),
         this.cacheService.set(enrollmentKey, savedEnrollment, this.cacheConfig.ENROLLMENT_TTL),
       ]);
+
+      // --- Webhook call to user-microservice for enrollment sync ---
+      // COMMENTED OUT: Using new handleEnrollmentWithCourseFormat instead to avoid conflicts
+      // The new function provides better course format and prevents duplicate applications
+      // Both operations were trying to update the same Elasticsearch document, causing conflicts
+      /*
+      try {
+        const userMicroserviceUrl = process.env.USER_MICROSERVICE_URL || 'http://localhost:3002';
+        
+        // Fetch course hierarchy to include in webhook data
+        let courseHierarchy = null;
+        try {
+          courseHierarchy = await this.coursesService.findCourseHierarchy(
+            courseId,
+            tenantId,
+            organisationId
+          );
+        } catch (hierarchyError) {
+          this.logger.warn(`Failed to fetch course hierarchy for course ${courseId}:`, hierarchyError);
+          // Continue without course hierarchy if it fails
+        }
+        
+        // Call user-microservice sync endpoint to populate profile and application data
+        const webhookData = {
+          userId: createEnrollmentDto.learnerId,
+          courseId: courseId,
+          courseHierarchy: courseHierarchy,
+          enrollmentData: {
+            enrollmentId: savedEnrollment.enrollmentId,
+            status: savedEnrollment.status,
+            enrolledAt: savedEnrollment.enrolledAt,
+            endTime: savedEnrollment.endTime,
+            unlimitedPlan: savedEnrollment.unlimitedPlan,
+            params: savedEnrollment.params
+          },
+          // Include lesson tracking information for proper mapping
+          lessonTrackingInfo: {
+            courseId: courseId,
+            userId: createEnrollmentDto.learnerId,
+            tenantId: tenantId,
+            organisationId: organisationId,
+            // This will help establish the mapping between lessons and their tracking IDs
+            lessonMapping: (courseHierarchy as any)?.modules?.map((module: any) => ({
+              moduleId: module.moduleId,
+              moduleName: module.name,
+              lessons: module.lessons?.map((lesson: any) => ({
+                lessonId: lesson.lessonId,
+                lessonName: lesson.name,
+                format: lesson.format,
+                // lessonTrackId will be created when user starts the lesson
+                // but we can prepare the structure here
+                expectedLessonTrackId: `${lesson.lessonId}-${createEnrollmentDto.learnerId}-1` // Format: lessonId-userId-attempt
+              })) || []
+            })) || []
+          }
+        };
+        
+        await axios.post(`${userMicroserviceUrl}/user/v1/elasticsearch/users/${createEnrollmentDto.learnerId}/sync`, webhookData, {
+          headers: {
+            'Content-Type': 'application/json',
+            'tenantId': tenantId,
+            'organisationId': organisationId,
+            'userId': createEnrollmentDto.learnerId
+          }
+        });
+        
+        this.logger.log(`Webhook sent to user-microservice for enrollment sync: userId ${createEnrollmentDto.learnerId}, courseId ${courseId}`);
+      } catch (webhookError) {
+        this.logger.error('Failed to send webhook to user-microservice for enrollment sync:', webhookError);
+        // Don't fail the main operation if webhook fails
+      }
+      */
+      // --- End webhook call ---
+
+      // --- NEW: Handle enrollment success in Elasticsearch ---
+      try {
+        await this.lmsElasticsearchService.handleEnrollmentWithCourseFormat(
+          createEnrollmentDto.learnerId,
+          courseId,
+          tenantId,
+          organisationId
+        );
+        this.logger.log(`Elasticsearch enrollment success handled for userId: ${createEnrollmentDto.learnerId}, courseId: ${courseId}`);
+      } catch (elasticsearchError) {
+        this.logger.error('Failed to handle enrollment success in Elasticsearch:', elasticsearchError);
+        // Don't fail the main operation if Elasticsearch fails
+      }
+      // --- End Elasticsearch handling ---
       
       return completeEnrollment;
     } catch (error) {

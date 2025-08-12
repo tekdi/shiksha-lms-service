@@ -11,6 +11,8 @@ import { ModuleTrack } from '../tracking/entities/module-track.entity';
 import { LessonTrack } from '../tracking/entities/lesson-track.entity';
 import { CacheModule } from '../cache/cache.module';
 import { Lesson } from '../lessons/entities/lesson.entity';
+import { CoursesModule } from '../courses/courses.module';
+import { ElasticsearchModule } from '../elasticsearch/elasticsearch.module';
 
 @Module({
   imports: [
@@ -25,6 +27,8 @@ import { Lesson } from '../lessons/entities/lesson.entity';
     ]),
     ConfigModule,
     CacheModule,
+    CoursesModule, // Import CoursesModule to make CoursesService available
+    ElasticsearchModule,
   ],
   controllers: [EnrollmentsController],
   providers: [EnrollmentsService],

@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { LessonsController } from './lessons.controller';
 import { LessonsService } from './lessons.service';
@@ -11,6 +11,7 @@ import { LessonTrack } from '../tracking/entities/lesson-track.entity';
 import { UserEnrollment } from '../enrollments/entities/user-enrollment.entity';
 import { CommonModule } from '../common/common.module';
 import { CacheModule } from '../cache/cache.module';
+import { ElasticsearchModule } from '../elasticsearch/elasticsearch.module';
 
 @Module({
   imports: [
@@ -25,6 +26,7 @@ import { CacheModule } from '../cache/cache.module';
     ]),
     CommonModule,
     CacheModule,
+    forwardRef(() => ElasticsearchModule),
   ],
   controllers: [LessonsController],
   providers: [LessonsService],
