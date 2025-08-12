@@ -8,8 +8,10 @@ import { Module as CourseModule } from '../modules/entities/module.entity';
 import { Media } from '../media/entities/media.entity';
 import { AssociatedFile } from '../media/entities/associated-file.entity';
 import { LessonTrack } from '../tracking/entities/lesson-track.entity';
+import { UserEnrollment } from '../enrollments/entities/user-enrollment.entity';
 import { CommonModule } from '../common/common.module';
 import { CacheModule } from '../cache/cache.module';
+
 @Module({
   imports: [
     TypeOrmModule.forFeature([
@@ -19,6 +21,7 @@ import { CacheModule } from '../cache/cache.module';
       Media,
       AssociatedFile,
       LessonTrack,
+      UserEnrollment,
     ]),
     CommonModule,
     CacheModule,
