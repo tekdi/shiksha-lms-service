@@ -15,6 +15,7 @@ import { TrackingModule } from './tracking/tracking.module';
 import { CloudStorageModule } from '@vinayak-patil/cloud-storage';
 import { ConfigurationModule } from './configuration/configuration.module';
 import { AspireLeaderModule } from './aspire-leader/aspire-leader.module';
+import { ElasticsearchModule } from './elasticsearch/elasticsearch.module';
 
 @Module({
   imports: [
@@ -27,7 +28,10 @@ import { AspireLeaderModule } from './aspire-leader/aspire-leader.module';
     ...(process.env.CLOUD_STORAGE_PROVIDER
       ? [
           CloudStorageModule.register({
-            provider: process.env.CLOUD_STORAGE_PROVIDER as 'aws' | 'azure' | 'gcp',
+            provider: process.env.CLOUD_STORAGE_PROVIDER as
+              | 'aws'
+              | 'azure'
+              | 'gcp',
             region: process.env.CLOUD_STORAGE_REGION,
             credentials: {
               accessKeyId: process.env.CLOUD_STORAGE_ACCESS_KEY_ID,
@@ -49,6 +53,7 @@ import { AspireLeaderModule } from './aspire-leader/aspire-leader.module';
     HealthModule,
     TrackingModule,
     AspireLeaderModule,
+    ElasticsearchModule,
   ],
   controllers: [AppController],
   providers: [AppService],

@@ -29,7 +29,12 @@ import { PaginationDto } from '../common/dto/pagination.dto';
 import { API_IDS } from '../common/constants/api-ids.constant';
 import { CommonQueryDto } from '../common/dto/common-query.dto';
 import { ApiId } from '../common/decorators/api-id.decorator';
-import { Lesson, LessonFormat, LessonStatus, LessonSubFormat } from './entities/lesson.entity';
+import {
+  Lesson,
+  LessonFormat,
+  LessonStatus,
+  LessonSubFormat,
+} from './entities/lesson.entity';
 import { getUploadPath } from '../common/utils/upload.util';
 import { uploadConfigs } from '../config/file-validation.config';
 import { TenantOrg } from '../common/decorators/tenant-org.decorator';
@@ -40,18 +45,16 @@ import { SearchLessonDto } from './dto/search-lesson.dto';
 @ApiTags('Lessons')
 @Controller('lessons')
 export class LessonsController {
-  constructor(
-    private readonly lessonsService: LessonsService,
-  ) {}
+  constructor(private readonly lessonsService: LessonsService) {}
 
   @Post()
   @ApiId(API_IDS.CREATE_LESSON)
   @ApiOperation({ summary: 'Create a new lesson' })
   @ApiBody({ type: CreateLessonDto })
-  @ApiResponse({ 
-    status: 201, 
-    description: 'Lesson created successfully', 
-    type: Lesson 
+  @ApiResponse({
+    status: 201,
+    description: 'Lesson created successfully',
+    type: Lesson,
   })
   @ApiResponse({ status: 400, description: 'Bad request' })
   @ApiConsumes('multipart/form-data')
@@ -75,12 +78,11 @@ export class LessonsController {
     return lesson;
   }
 
-
   @Get()
   @ApiId(API_IDS.GET_ALL_LESSONS)
   @ApiOperation({ summary: 'Get all lessons' })
-  @ApiResponse({ 
-    status: 200, 
+  @ApiResponse({
+    status: 200,
     description: 'Lessons retrieved successfully',
     schema: {
       type: 'object',
@@ -88,25 +90,55 @@ export class LessonsController {
         totalElements: { type: 'number', example: 13 },
         offset: { type: 'number', example: 5 },
         limit: { type: 'number', example: 5 },
-        lessons: { 
+        lessons: {
           type: 'array',
-          items: { $ref: '#/components/schemas/Lesson' }
-        }
-      }
-    }
+          items: { $ref: '#/components/schemas/Lesson' },
+        },
+      },
+    },
   })
   @ApiQuery({ name: 'status', required: false, enum: LessonStatus })
   @ApiQuery({ name: 'format', required: false, enum: LessonFormat })
   @ApiQuery({ name: 'subFormat', required: false, enum: LessonSubFormat })
-  @ApiQuery({ name: 'query', required: false, type: String, description: 'Search query for lesson title and description' })
-  @ApiQuery({ name: 'cohort', required: false, type: String, description: 'Filter by course cohort parameter' })
-  @ApiQuery({ name: 'courseId', required: false, type: String, description: 'Filter by specific course ID' })
-  @ApiQuery({ name: 'moduleId', required: false, type: String, description: 'Filter by specific module ID' })
-  @ApiQuery({ name: 'offset', required: false, type: Number, description: 'Number of items to skip for pagination (default: 0)' })
-  @ApiQuery({ name: 'limit', required: false, type: Number, description: 'Number of items to return (default: 10)' })
+  @ApiQuery({
+    name: 'query',
+    required: false,
+    type: String,
+    description: 'Search query for lesson title and description',
+  })
+  @ApiQuery({
+    name: 'cohort',
+    required: false,
+    type: String,
+    description: 'Filter by course cohort parameter',
+  })
+  @ApiQuery({
+    name: 'courseId',
+    required: false,
+    type: String,
+    description: 'Filter by specific course ID',
+  })
+  @ApiQuery({
+    name: 'moduleId',
+    required: false,
+    type: String,
+    description: 'Filter by specific module ID',
+  })
+  @ApiQuery({
+    name: 'offset',
+    required: false,
+    type: Number,
+    description: 'Number of items to skip for pagination (default: 0)',
+  })
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    type: Number,
+    description: 'Number of items to return (default: 10)',
+  })
   async getAllLessons(
     @TenantOrg() tenantOrg: { tenantId: string; organisationId: string },
-    @Query() paginationDto: PaginationDto, 
+    @Query() paginationDto: PaginationDto,
     @Query() searchDto: SearchLessonDto,
   ) {
     return this.lessonsService.getLessons(
@@ -116,7 +148,7 @@ export class LessonsController {
       searchDto,
     );
   }
-  
+
   @Get(':lessonId')
   @ApiId(API_IDS.GET_LESSON_BY_ID)
   @ApiOperation({ summary: 'Get lesson by ID' })
@@ -130,7 +162,7 @@ export class LessonsController {
     return this.lessonsService.findOne(
       lessonId,
       tenantOrg.tenantId,
-      tenantOrg.organisationId
+      tenantOrg.organisationId,
     );
   }
 
@@ -147,24 +179,50 @@ export class LessonsController {
     return this.lessonsService.findByModule(
       moduleId,
       tenantOrg.tenantId,
-      tenantOrg.organisationId
+      tenantOrg.organisationId,
     );
   }
 
   @Get('test/:testId')
   @ApiId(API_IDS.GET_LESSON_BY_TEST_ID)
-  @ApiOperation({ summary: 'Get lesson details by test ID' })
+  @ApiOperation({
+    summary: 'Get lesson details by test ID',
+    description:
+      'Get lesson details by test ID. If userId is provided, returns user-specific data to prevent multiple user syncing.',
+  })
   @ApiResponse({ status: 200, description: 'Lesson retrieved successfully' })
   @ApiResponse({ status: 404, description: 'Lesson not found' })
   @ApiQuery({ name: 'testId', required: true, type: String })
+  @ApiQuery({
+    name: 'userId',
+    required: false,
+    type: String,
+    description:
+      'User ID for user-specific data (prevents multiple user syncing)',
+  })
   async getLessonByTestId(
     @Param('testId', ParseUUIDPipe) testId: string,
     @TenantOrg() tenantOrg: { tenantId: string; organisationId: string },
+    @Query('userId') userId?: string,
   ) {
+    // If userId is provided, use user-specific method to prevent multiple user syncing
+    if (userId) {
+      console.log(
+        `Using user-specific method for userId: ${userId} to prevent multiple user syncing`,
+      );
+      return this.lessonsService.findUserLessonByTestId(
+        userId,
+        testId,
+        tenantOrg.tenantId,
+        tenantOrg.organisationId,
+      );
+    }
+
+    // Fallback to original method (may trigger multiple user syncing)
     return this.lessonsService.findByTestId(
       testId,
       tenantOrg.tenantId,
-      tenantOrg.organisationId
+      tenantOrg.organisationId,
     );
   }
 
@@ -172,10 +230,10 @@ export class LessonsController {
   @ApiId(API_IDS.UPDATE_LESSON)
   @ApiOperation({ summary: 'Update a lesson' })
   @ApiBody({ type: UpdateLessonDto })
-  @ApiResponse({ 
-    status: 200, 
-    description: 'Lesson updated successfully', 
-    type: Lesson 
+  @ApiResponse({
+    status: 200,
+    description: 'Lesson updated successfully',
+    type: Lesson,
   })
   @ApiResponse({ status: 400, description: 'Bad request' })
   @ApiResponse({ status: 404, description: 'Lesson not found' })
@@ -185,7 +243,7 @@ export class LessonsController {
     @Param('lessonId') lessonId: string,
     @Body() updateLessonDto: UpdateLessonDto,
     @Query() query: CommonQueryDto,
-    @TenantOrg() tenantOrg: { tenantId: string; organisationId: string }, 
+    @TenantOrg() tenantOrg: { tenantId: string; organisationId: string },
     @UploadedFile() file?: Express.Multer.File,
   ) {
     if (file) {
@@ -207,15 +265,15 @@ export class LessonsController {
   @ApiOperation({ summary: 'Delete a lesson' })
   @ApiResponse({ status: 200, description: 'Lesson deleted successfully' })
   @ApiResponse({ status: 404, description: 'Lesson not found' })
-  @ApiResponse({ 
-    status: 400, 
+  @ApiResponse({
+    status: 400,
     description: 'Cannot delete lesson with active enrollments',
     schema: {
       properties: {
         success: { type: 'boolean' },
-        message: { type: 'string' }
-      }
-    }
+        message: { type: 'string' },
+      },
+    },
   })
   @ApiParam({ name: 'lessonId', type: String, format: 'uuid' })
   async deleteLesson(
@@ -227,17 +285,19 @@ export class LessonsController {
       lessonId,
       query.userId,
       tenantOrg.tenantId,
-      tenantOrg.organisationId
+      tenantOrg.organisationId,
     );
   }
 
   @Post(':lessonId/clone')
   @ApiId(API_IDS.CLONE_LESSON)
-  @ApiOperation({ summary: 'Clone a lesson with all its media and associated files' })
-  @ApiResponse({ 
-    status: 201, 
-    description: 'Lesson cloned successfully', 
-    type: Lesson 
+  @ApiOperation({
+    summary: 'Clone a lesson with all its media and associated files',
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'Lesson cloned successfully',
+    type: Lesson,
   })
   @ApiResponse({ status: 400, description: 'Bad request' })
   @ApiResponse({ status: 404, description: 'Lesson not found' })
@@ -247,10 +307,10 @@ export class LessonsController {
     @Query() query: CommonQueryDto,
     @Body() requestBody: CloneLessonDto,
     @TenantOrg() tenantOrg: { tenantId: string; organisationId: string },
-    @Headers('authorization') authorization: string
+    @Headers('authorization') authorization: string,
   ) {
     return this.lessonsService.cloneLesson(
-      lessonId,     
+      lessonId,
       query.userId,
       tenantOrg.tenantId,
       tenantOrg.organisationId,
@@ -259,5 +319,4 @@ export class LessonsController {
       requestBody.newModuleId,
     );
   }
-
 }

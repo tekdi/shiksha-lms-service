@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ModulesController } from './modules.controller';
 import { ModulesService } from './modules.service';
@@ -26,7 +26,7 @@ import { UserEnrollment } from '../enrollments/entities/user-enrollment.entity';
     ]),
     CommonModule,
     CacheModule,
-    LessonsModule,
+    forwardRef(() => LessonsModule),
   ],
   controllers: [ModulesController],
   providers: [ModulesService],
