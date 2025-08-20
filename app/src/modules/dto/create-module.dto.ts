@@ -21,15 +21,6 @@ export class CreateModuleDto {
   title: string;
 
   @ApiProperty({ 
-    description: 'Module alias/slug',
-    example: 'intro-html',
-    required: false
-  })
-  @IsOptional()
-  @IsString({ message: VALIDATION_MESSAGES.COMMON.STRING('Alias') })
-  alias?: string;
-
-  @ApiProperty({ 
     description: VALIDATION_MESSAGES.MODULE.COURSE_ID,
     required: true
   })
@@ -77,6 +68,7 @@ export class CreateModuleDto {
     description: VALIDATION_MESSAGES.COURSE.START_DATE,
     example: '2024-01-01T00:00:00Z'
   })
+  @IsOptional()
   @IsDateString({}, { message: VALIDATION_MESSAGES.COMMON.DATE('Start date') })
   startDatetime?: string;
 
