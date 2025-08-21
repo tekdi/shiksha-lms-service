@@ -23,6 +23,7 @@ import { CacheService } from '../cache/cache.service';
 import { CourseStructureDto } from '../courses/dto/course-structure.dto';
 import { CacheConfigService } from '../cache/cache-config.service';
 import { ModulesService } from 'src/modules/modules.service';
+import { OrderingService } from '../common/services/ordering.service';
 
 @Injectable()
 export class CoursesService {
@@ -50,6 +51,7 @@ export class CoursesService {
     private readonly cacheService: CacheService,
     private readonly cacheConfig: CacheConfigService,
     private readonly modulesService: ModulesService,
+    private readonly orderingService: OrderingService,
   ) {}
 
   /**
@@ -94,6 +96,9 @@ export class CoursesService {
       }
     }
     
+    // Get the next ordering number for the course
+    const nextOrdering = await this.orderingService.getNextCourseOrder(tenantId, organisationId);
+    
     // Create courseData with only fields that exist in the entity
     const courseData = {
       title: createCourseDto.title,
@@ -113,6 +118,7 @@ export class CoursesService {
       rewardType: createCourseDto.rewardType,
       templateId: createCourseDto.templateId,
       prerequisites: createCourseDto.prerequisites,
+      ordering: nextOrdering,
       tenantId,
       organisationId,
       createdBy: userId,
@@ -1486,5 +1492,213 @@ export class CoursesService {
         throw new BadRequestException(`${RESPONSE_MESSAGES.ERROR.INVALID_STRUCTURE_DATA}: ${error.message}`);
       }
     }
+  }
+
+  /**
+   * Get next course, module or lesson based on ordering fields
+   */
+  async getNextCourseModuleLesson(
+    nextIdFor: string,
+    currentId: string,
+    userId: string,
+    tenantId: string,
+    organisationId: string,
+  ): Promise<{ success: boolean; data: { nextId: string; nextIdFor: string; hasNext: boolean } }> {
+    try {
+      this.logger.log(`Getting next ${nextIdFor} for ID: ${currentId}`);
+
+      let nextId: string | null = null;
+      let hasNext = false;
+
+      switch (nextIdFor) {
+        case 'course':
+          const nextCourse = await this.getNextCourse(currentId, tenantId, organisationId);
+          if (nextCourse) {
+            nextId = nextCourse.courseId;
+            hasNext = true;
+          }
+          break;
+
+        case 'module':
+          const nextModule = await this.getNextModule(currentId, tenantId, organisationId);
+          if (nextModule) {
+            nextId = nextModule.moduleId;
+            hasNext = true;
+          } else {
+            // If no next module exists, try to get the next course from the current module's course
+            const currentModule = await this.moduleRepository.findOne({
+              where: { moduleId: currentId, tenantId, organisationId },
+              select: ['courseId']
+            });
+            
+            if (currentModule?.courseId) {
+              const nextCourse = await this.getNextCourse(currentModule.courseId, tenantId, organisationId);
+              if (nextCourse) {
+                nextId = nextCourse.courseId;
+                hasNext = true;
+                // Update nextIdFor to indicate we're returning a course instead of module
+                nextIdFor = 'course';
+              }
+            }
+          }
+          break;
+
+        case 'lesson':
+          const nextLesson = await this.getNextLesson(currentId, tenantId, organisationId);
+          if (nextLesson) {
+            nextId = nextLesson.lessonId;
+            hasNext = true;
+          } else {
+            // If no next lesson exists, try to get the next module from the current lesson's module
+            const currentLesson = await this.lessonRepository.findOne({
+              where: { lessonId: currentId, tenantId, organisationId },
+              select: ['moduleId', 'courseId']
+            });
+            
+            if (currentLesson?.moduleId) {
+              const nextModule = await this.getNextModule(currentLesson.moduleId, tenantId, organisationId);
+              if (nextModule) {
+                nextId = nextModule.moduleId;
+                hasNext = true;
+                // Update nextIdFor to indicate we're returning a module instead of lesson
+                nextIdFor = 'module';
+              } else {
+                // If no next module exists, try to get the next course
+                if (currentLesson.courseId) {
+                  const nextCourse = await this.getNextCourse(currentLesson.courseId, tenantId, organisationId);
+                  if (nextCourse) {
+                    nextId = nextCourse.courseId;
+                    hasNext = true;
+                    // Update nextIdFor to indicate we're returning a course instead of lesson
+                    nextIdFor = 'course';
+                  }
+                }
+              }
+            }
+          }
+          break;
+
+        default:
+          throw new BadRequestException(`Invalid nextIdFor: ${nextIdFor}`);
+      }
+
+      return {
+        success: true,
+        data: {
+          nextId: nextId || '',
+          nextIdFor,
+          hasNext
+        }
+      };
+
+    } catch (error) {
+      this.logger.error(`Error getting next ${nextIdFor} for ID ${currentId}: ${error.message}`, error.stack);
+      throw error;
+    }
+  }
+
+  /**
+   * Get next course based on ordering and cohortId
+   */
+  private async getNextCourse(
+    currentCourseId: string,
+    tenantId: string,
+    organisationId: string,
+  ): Promise<Course | null> {
+    // First get the current course to extract cohortId
+    const currentCourse = await this.courseRepository.findOne({
+      where: { courseId: currentCourseId, tenantId, organisationId },
+      select: ['courseId', 'params', 'ordering']
+    });
+
+    if (!currentCourse) {
+      throw new NotFoundException(`Course with ID ${currentCourseId} not found`);
+    }
+
+    const currentCohortId = currentCourse.params?.cohortId;
+    const currentOrdering = currentCourse.ordering || 0;
+
+    // Build query to find next course
+    let query = this.courseRepository
+      .createQueryBuilder('course')
+      .select(['course.courseId', 'course.ordering'])
+      .where('course.tenantId = :tenantId', { tenantId })
+      .andWhere('course.organisationId = :organisationId', { organisationId })
+      .andWhere('course.status = :status', { status: CourseStatus.PUBLISHED })
+      .andWhere('course.ordering > :currentOrdering', { currentOrdering })
+      .orderBy('course.ordering', 'ASC')
+      .limit(1);
+
+    // If cohortId exists, filter by it
+    if (currentCohortId) {
+      query = query.andWhere("course.params->>'cohortId' = :cohortId", { cohortId: currentCohortId });
+    }
+
+    return query.getOne();
+  }
+
+  /**
+   * Get next module based on ordering within the same course
+   * If no next module exists, returns null (caller should handle fallback to next course)
+   */
+  private async getNextModule(
+    currentModuleId: string,
+    tenantId: string,
+    organisationId: string,
+  ): Promise<Module | null> {
+    // First get the current module to find its course and ordering
+    const currentModule = await this.moduleRepository.findOne({
+      where: { moduleId: currentModuleId, tenantId, organisationId },
+      select: ['moduleId', 'courseId', 'ordering']
+    });
+
+    if (!currentModule) {
+      throw new NotFoundException(`Module with ID ${currentModuleId} not found`);
+    }
+
+    // Find next module in the same course
+    return this.moduleRepository
+      .createQueryBuilder('module')
+      .select(['module.moduleId', 'module.ordering'])
+      .where('module.courseId = :courseId', { courseId: currentModule.courseId })
+      .andWhere('module.tenantId = :tenantId', { tenantId })
+      .andWhere('module.organisationId = :organisationId', { organisationId })
+      .andWhere('module.status = :status', { status: ModuleStatus.PUBLISHED })
+      .andWhere('module.ordering > :currentOrdering', { currentOrdering: currentModule.ordering || 0 })
+      .orderBy('module.ordering', 'ASC')
+      .limit(1)
+      .getOne();
+  }
+
+  /**
+   * Get next lesson based on ordering within the same module
+   */
+  private async getNextLesson(
+    currentLessonId: string,
+    tenantId: string,
+    organisationId: string,
+  ): Promise<Lesson | null> {
+    // First get the current lesson to find its module and ordering
+    const currentLesson = await this.lessonRepository.findOne({
+      where: { lessonId: currentLessonId, tenantId, organisationId },
+      select: ['lessonId', 'moduleId', 'ordering']
+    });
+
+    if (!currentLesson) {
+      throw new NotFoundException(`Lesson with ID ${currentLessonId} not found`);
+    }
+    
+    // Find next lesson in the same module
+    return this.lessonRepository
+      .createQueryBuilder('lesson')
+      .select(['lesson.lessonId', 'lesson.ordering'])
+      .where('lesson.moduleId = :moduleId', { moduleId: currentLesson.moduleId })
+      .andWhere('lesson.tenantId = :tenantId', { tenantId })
+      .andWhere('lesson.organisationId = :organisationId', { organisationId })
+      .andWhere('lesson.status = :status', { status: LessonStatus.PUBLISHED })
+      .andWhere('lesson.ordering > :currentOrdering', { currentOrdering: currentLesson.ordering || 0 })
+      .orderBy('lesson.ordering', 'ASC')
+      .limit(1)
+      .getOne();
   }
 }

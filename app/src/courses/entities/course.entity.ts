@@ -120,6 +120,14 @@ export class Course {
   @Column({ type: 'jsonb', nullable: true })
   params: Record<string, any>;
 
+  @ApiProperty({ 
+    description: 'Course order within organization/tenant', 
+    example: 1,
+    default: 0
+  })
+  @Column({ type: 'integer', default: 0 })
+  ordering: number;
+
   @ApiProperty({ description: 'User who created the course', example: '123e4567-e89b-12d3-a456-426614174000' })
   @Column({ type: 'uuid' })
   createdBy: string;

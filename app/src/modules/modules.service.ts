@@ -145,7 +145,11 @@ export class ModulesService {
       image: createModuleDto.image, 
       ordering, 
       status: createModuleDto.status || ModuleStatus.UNPUBLISHED,
-      badgeTerm: createModuleDto.badgeTerm ? { term: createModuleDto.badgeTerm } : undefined,
+      startDatetime: createModuleDto.startDatetime,
+      endDatetime: createModuleDto.endDatetime,
+      prerequisites: createModuleDto.prerequisites,
+      badgeId: createModuleDto.badgeId,
+      badgeTerm: createModuleDto.badgeTerm,
       params: createModuleDto.params || {}, // Map meta to params
       // Required fields
       tenantId,

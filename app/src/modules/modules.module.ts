@@ -11,6 +11,7 @@ import { CacheModule } from '../cache/cache.module';
 import { CourseTrack } from '../tracking/entities/course-track.entity';
 import { LessonTrack } from '../tracking/entities/lesson-track.entity';
 import { LessonsModule } from '../lessons/lessons.module';
+import { UserEnrollment } from '../enrollments/entities/user-enrollment.entity';
 
 @Module({
   imports: [
@@ -21,6 +22,7 @@ import { LessonsModule } from '../lessons/lessons.module';
       ModuleTrack,
       CourseTrack,
       LessonTrack,
+      UserEnrollment,
     ]),
     CommonModule,
     CacheModule,
