@@ -34,6 +34,7 @@ import { getUploadPath } from '../common/utils/upload.util';
 import { uploadConfigs } from '../config/file-validation.config';
 import { TenantOrg } from '../common/decorators/tenant-org.decorator';
 import { CloneModuleDto } from './dto/clone-module.dto';
+import { SearchModuleDto, SearchModuleResponseDto } from './dto/search-module.dto';
 
 @ApiTags('Modules')
 @Controller('modules')
@@ -94,47 +95,23 @@ export class ModulesController {
     );
   }
 
-  @Get('course/:courseId')
-  @ApiId(API_IDS.GET_MODULES_BY_COURSE)
-  @ApiOperation({ summary: 'Get modules by course ID' })
-  @ApiParam({ name: 'courseId', type: 'string', format: 'uuid', description: 'Course ID' })
+  @Get('search')
+  @ApiId(API_IDS.SEARCH_MODULES)
+  @ApiOperation({ 
+    summary: 'Search and filter modules',
+    description: 'Search and filter modules with various criteria including keyword search and multiple filters. Returns modules with course, parent, submodules, and lessons information.'
+  })
   @ApiResponse({ 
     status: 200, 
-    description: 'Modules retrieved successfully',
-    schema: {
-      type: 'array',
-      items: { $ref: '#/components/schemas/Module' }
-    }
+    description: 'Search results retrieved successfully',
+    type: SearchModuleResponseDto
   })
-  async getModulesByCourse(
-    @Param('courseId', ParseUUIDPipe) courseId: string,
-    @TenantOrg() tenantOrg: { tenantId: string; organisationId: string }
+  async searchModules(
+    @Query() searchDto: SearchModuleDto,
+    @TenantOrg() tenantOrg: { tenantId: string; organisationId: string },
   ) {
-    return this.modulesService.findByCourse(
-      courseId,
-      tenantOrg.tenantId,
-      tenantOrg.organisationId
-    );
-  }
-
-  @Get('parent/:parentId')
-  @ApiId(API_IDS.GET_SUBMODULES_BY_PARENT)
-  @ApiOperation({ summary: 'Get submodules by parent module ID' })
-  @ApiParam({ name: 'parentId', type: 'string', format: 'uuid', description: 'Parent module ID' })
-  @ApiResponse({ 
-    status: 200, 
-    description: 'Submodules retrieved successfully',
-    schema: {
-      type: 'array',
-      items: { $ref: '#/components/schemas/Module' }
-    }
-  })
-  async getSubmodulesByParent(
-    @Param('parentId', ParseUUIDPipe) parentId: string,
-    @TenantOrg() tenantOrg: { tenantId: string; organisationId: string }
-  ) {
-    return this.modulesService.findByParent(
-      parentId,
+    return this.modulesService.search(
+      searchDto,
       tenantOrg.tenantId,
       tenantOrg.organisationId
     );
