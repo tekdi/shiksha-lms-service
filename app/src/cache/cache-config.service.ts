@@ -45,7 +45,7 @@ export class CacheConfigService {
     tenantId: string, 
     organisationId: string, 
     filters: Record<string, any>,
-    page?: number, 
+    offset?: number, 
     limit?: number
   ): string {
     // Create a deterministic string representation of filters
@@ -54,7 +54,7 @@ export class CacheConfigService {
       .map(([key, value]) => {
         if (value instanceof Date) {
           return `${key}:${value.toISOString()}`;
-        }
+          }
         if (typeof value === 'object' && value !== null) {
           return `${key}:${JSON.stringify(value)}`;
         }
@@ -62,7 +62,7 @@ export class CacheConfigService {
       })
       .join('|');
 
-    return `${this.COURSE_PREFIX}search:${tenantId}:${organisationId}:${filterString}:${page || 1}:${limit || 10}`;
+    return `${this.COURSE_PREFIX}search:${tenantId}:${organisationId}:${filterString}:${offset || 0}:${limit || 10}`;
   }
 
   getCourseModulesPattern(courseId: string, tenantId: string, organisationId: string): string {
@@ -88,6 +88,30 @@ export class CacheConfigService {
 
   getModuleHierarchyKey(moduleId: string, tenantId: string, organisationId: string): string {
     return `${this.MODULE_PREFIX}hierarchy:${moduleId}:${tenantId}:${organisationId}`;
+  }
+
+  getModuleSearchKey(
+    tenantId: string, 
+    organisationId: string, 
+    filters: Record<string, any>,
+    offset?: number, 
+    limit?: number
+  ): string {
+    // Create a deterministic string representation of filters
+    const filterString = Object.entries(filters || {})
+      .sort(([keyA], [keyB]) => keyA.localeCompare(keyB)) // Sort keys for consistency
+      .map(([key, value]) => {
+        if (value instanceof Date) {
+          return `${key}:${value.toISOString()}`;
+        }
+        if (typeof value === 'object' && value !== null) {
+          return `${key}:${JSON.stringify(value)}`;
+        }
+        return `${key}:${value}`;
+      })
+      .join('|');
+
+    return `${this.MODULE_PREFIX}search:${tenantId}:${organisationId}:${filterString}:${offset || 0}:${limit || 10}`;
   }
 
   // Lesson-related methods

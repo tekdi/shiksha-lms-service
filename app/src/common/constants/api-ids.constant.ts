@@ -17,6 +17,7 @@ export const API_IDS = {
   GET_MODULE_BY_ID: 'api.module.read',
   GET_MODULES_BY_COURSE: 'api.module.list',
   GET_SUBMODULES_BY_PARENT: 'api.module.list',
+  SEARCH_MODULES: 'api.module.search',
   UPDATE_MODULE: 'api.module.update',
   DELETE_MODULE: 'api.module.delete',
   CLONE_MODULE: 'api.module.clone',
