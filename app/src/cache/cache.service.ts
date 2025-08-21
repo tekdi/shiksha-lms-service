@@ -207,6 +207,9 @@ export class CacheService {
 
     // Invalidate related enrollment caches
     await this.invalidateCourseEnrollments(courseId, tenantId, organisationId);
+
+    // Invalidate module search caches since they might filter by courseId
+    await this.invalidateModuleSearchCaches(tenantId, organisationId);
   }
 
   async invalidateCourseModules(courseId: string, tenantId: string, organisationId: string): Promise<void> {
@@ -260,8 +263,23 @@ export class CacheService {
       this.delByPattern(this.cacheConfig.getModuleLessonsPattern(moduleId, tenantId, organisationId)),
     ]);
 
+    // Invalidate module search caches for this tenant/organization
+    await this.invalidateModuleSearchCaches(tenantId, organisationId);
+
     // Invalidate parent course caches
     await this.invalidateCourse(courseId, tenantId, organisationId);
+  }
+
+  /**
+   * Invalidate all module search caches for a specific tenant/organization
+   */
+  private async invalidateModuleSearchCaches(tenantId: string, organisationId: string): Promise<void> {
+    if (!this.cacheEnabled) {
+      return;
+    }
+    // Invalidate all module search caches for this tenant/organization
+    const searchPattern = `${this.cacheConfig.MODULE_PREFIX}search:${tenantId}:${organisationId}:*`;
+    await this.delByPattern(searchPattern);
   }
 
   // Lesson-specific cache methods

@@ -26,7 +26,7 @@
 
 5. [Modules](#modules)
    - [Create Module](#create-module)
-   - [Get All Modules](#get-all-modules)
+   - [Search Modules](#search-modules)
    - [Get Module by ID](#get-module-by-id)
    - [Update Module](#update-module)
    - [Delete Module](#delete-module)
@@ -1855,13 +1855,14 @@ organisationid: <organisation-id>
 }
 ```
 
-#### Get Modules by Course
 
-**Endpoint**: `GET /modules/course/{courseId}`
+#### Search Modules
+
+**Endpoint**: `GET /modules/search`
 
 **HTTP Method**: GET
 
-**Description**: Get all modules for a specific course
+**Description**: Search and filter modules with various criteria including keyword search and multiple filters. Returns modules with optional course, parent, submodules, and lessons information.
 
 **Headers**:
 ```
@@ -1870,13 +1871,20 @@ tenantid: <tenant-id>
 organisationid: <organisation-id>
 ```
 
-**Path Parameters**:
-- `courseId` (UUID, required): Course ID
+**Query Parameters**:
+- `query` (string, optional): Search keyword to match in title or description
+- `courseId` (UUID, optional): Filter by course ID
+- `parentId` (UUID, optional): Filter by parent module ID
+- `status` (enum, optional): Filter by module status - 'published', 'unpublished', 'archived'
+- `offset` (number, optional): Number of items to skip (default: 0)
+- `limit` (number, optional): Number of items to return (default: 10)
+- `sortBy` (enum, optional): Field to sort by - 'createdAt', 'updatedAt', 'title', 'startDatetime', 'endDatetime', 'ordering' (default: 'ordering')
+- `orderBy` (enum, optional): Sort order - 'ASC', 'DESC' (default: 'ASC')
 
 **Response Structure**:
 ```json
 {
-  "id": "api.module.list",
+  "id": "api.module.search",
   "ver": "1.0",
   "ts": "2024-01-01T00:00:00Z",
   "params": {
@@ -1886,88 +1894,71 @@ organisationid: <organisation-id>
     "errmsg": null
   },
   "responseCode": 200,
-  "result": [
-    {
-      "moduleId": "456e7890-e89b-12d3-a456-426614174000",
-      "parentId": null,
-      "courseId": "123e4567-e89b-12d3-a456-426614174000",
-      "tenantId": "123e4567-e89b-12d3-a456-426614174000",
-      "organisationId": "456e7890-e89b-12d3-a456-426614174000",
-      "title": "Module 1: HTML Basics",
-      "description": "Learn HTML fundamentals",
-      "image": "/uploads/modules/module-thumb.jpg",
-      "startDatetime": "2024-01-01T00:00:00Z",
-      "endDatetime": "2024-12-31T23:59:59Z",
-      "prerequisites": [],
-      "badgeTerm": null,
-      "badgeId": null,
-      "ordering": 1,
-      "status": "published",
-      "createdAt": "2024-01-01T00:00:00Z",
-      "createdBy": "789e0123-e89b-12d3-a456-426614174000",
-      "updatedAt": "2024-01-01T00:00:00Z",
-      "updatedBy": "789e0123-e89b-12d3-a456-426614174000"
-    }
-  ]
+  "result": {
+    "modules": [
+      {
+        "moduleId": "456e7890-e89b-12d3-a456-426614174000",
+        "parentId": null,
+        "courseId": "123e4567-e89b-12d3-a456-426614174000",
+        "tenantId": "123e4567-e89b-12d3-a456-426614174000",
+        "organisationId": "456e7890-e89b-12d3-a456-426614174000",
+        "title": "Module 1: HTML Basics",
+        "description": "Learn HTML fundamentals",
+        "image": "/uploads/modules/module-thumb.jpg",
+        "startDatetime": "2024-01-01T00:00:00Z",
+        "endDatetime": "2024-12-31T23:59:59Z",
+        "prerequisites": [],
+        "badgeTerm": null,
+        "badgeId": null,
+        "ordering": 1,
+        "status": "published",
+        "createdAt": "2024-01-01T00:00:00Z",
+        "createdBy": "789e0123-e89b-12d3-a456-426614174000",
+        "updatedAt": "2024-01-01T00:00:00Z",
+        "updatedBy": "789e0123-e89b-12d3-a456-426614174000"
+      }
+    ],
+    "totalElements": 25,
+    "offset": 0,
+    "limit": 10
+  }
 }
 ```
 
-#### Get Submodules by Parent
+**Validations and Conditions**:
 
-**Endpoint**: `GET /modules/parent/{parentId}`
+**Input Validation Rules**:
+- `tenantid` header must be present and valid UUID format
+- `organisationid` header must be present and valid UUID format
+- `query` must be string and max 100 characters (if provided)
+- `courseId` must be valid UUID format (if provided)
+- `parentId` must be valid UUID format (if provided)
+- `status` must be one of: 'published', 'unpublished', 'archived' (if provided)
+- `offset` must be non-negative integer (default: 0)
+- `limit` must be positive integer between 1-100 (default: 10)
+- `sortBy` must be one of: 'createdAt', 'updatedAt', 'title', 'startDatetime', 'endDatetime', 'ordering' (default: 'ordering')
+- `orderBy` must be one of: 'ASC', 'DESC' (default: 'ASC')
 
-**HTTP Method**: GET
+**Business Logic Conditions**:
+- Search results must be filtered by tenant and organization
+- If query is provided, search must be performed on title and description using case-insensitive matching
+- Course and parent module filtering must be applied correctly
+- Status filtering must exclude archived modules by default
+- Pagination must work correctly with offset and limit
+- Sorting must be applied before pagination
+- Only non-archived modules should be returned by default
+- Search results are cached for performance optimization
+- Search must be case-insensitive for text queries
+- Results must be ordered by relevance when query is provided
+- Performance is optimized using database indexes and caching
 
-**Description**: Get submodules for a parent module
+**Authorization Conditions**:
+- User must have read permissions for modules in the tenant
+- User must have access to the specified organization
+- Admin users can see all modules regardless of status
+- Non-admin users can only see published modules
+- Course-specific filtering respects course access permissions
 
-**Headers**:
-```
-Content-Type: application/json
-tenantid: <tenant-id>
-organisationid: <organisation-id>
-```
-
-**Path Parameters**:
-- `parentId` (UUID, required): Parent module ID
-
-**Response Structure**:
-```json
-{
-  "id": "api.module.list",
-  "ver": "1.0",
-  "ts": "2024-01-01T00:00:00Z",
-  "params": {
-    "resmsgid": "msg-1234567890",
-    "status": "successful",
-    "err": null,
-    "errmsg": null
-  },
-  "responseCode": 200,
-  "result": [
-    {
-      "moduleId": "789e0123-e89b-12d3-a456-426614174000",
-      "parentId": "456e7890-e89b-12d3-a456-426614174000",
-      "courseId": "123e4567-e89b-12d3-a456-426614174000",
-      "tenantId": "123e4567-e89b-12d3-a456-426614174000",
-      "organisationId": "456e7890-e89b-12d3-a456-426614174000",
-      "title": "Submodule 1.1",
-      "description": "Advanced HTML concepts",
-      "image": "/uploads/modules/submodule-thumb.jpg",
-      "startDatetime": "2024-01-01T00:00:00Z",
-      "endDatetime": "2024-12-31T23:59:59Z",
-      "prerequisites": [],
-      "badgeTerm": null,
-      "badgeId": null,
-      "ordering": 1,
-      "status": "published",
-      "createdAt": "2024-01-01T00:00:00Z",
-      "createdBy": "789e0123-e89b-12d3-a456-426614174000",
-      "updatedAt": "2024-01-01T00:00:00Z",
-      "updatedBy": "789e0123-e89b-12d3-a456-426614174000"
-    }
-  ]
-}
-```
 
 #### Update Module
 

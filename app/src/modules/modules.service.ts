@@ -7,7 +7,7 @@ import {
   InternalServerErrorException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, FindOptionsWhere, Not, IsNull, In } from 'typeorm';
+import { Repository, FindOptionsWhere, Not, IsNull, In, MoreThanOrEqual, LessThanOrEqual, Between } from 'typeorm';
 import { Module, ModuleStatus } from './entities/module.entity';
 import { Course, CourseStatus } from '../courses/entities/course.entity';
 import { Lesson, LessonStatus } from '../lessons/entities/lesson.entity';
@@ -18,6 +18,7 @@ import { UserEnrollment, EnrollmentStatus } from '../enrollments/entities/user-e
 import { RESPONSE_MESSAGES } from '../common/constants/response-messages.constant';
 import { CreateModuleDto } from './dto/create-module.dto';
 import { UpdateModuleDto } from './dto/update-module.dto';
+import { SearchModuleDto, SearchModuleResponseDto } from './dto/search-module.dto';
 import { CacheService } from '../cache/cache.service';
 import { ConfigService } from '@nestjs/config';
 import { CacheConfigService } from '../cache/cache-config.service';
@@ -212,88 +213,6 @@ export class ModulesService {
     // Cache the module with TTL
     await this.cacheService.set(cacheKey, module, this.cacheConfig.MODULE_TTL);
     return module;
-  }
-
-  /**
-   * Find modules by course ID
-   * @param courseId The course ID to filter by
-   * @param tenantId The tenant ID for data isolation
-   * @param organisationId The organization ID for data isolation
-   */
-  async findByCourse(
-    courseId: string,
-    tenantId: string,
-    organisationId: string
-  ): Promise<Module[]> {
-    // Check cache first
-    const cacheKey = this.cacheConfig.getCourseModulesKey(courseId, tenantId, organisationId);
-    const cachedModules = await this.cacheService.get<Module[]>(cacheKey);
-    if (cachedModules) {
-      return cachedModules;
-    }
-
-    // Build where clause with required filters
-    const whereClause: FindOptionsWhere<Module> = { 
-      courseId, 
-      parentId: IsNull(),
-      status: Not(ModuleStatus.ARCHIVED),
-    };
-    
-    // Add tenant and org filters if provided
-    if (tenantId) {
-      whereClause.tenantId = tenantId;
-    }
-    
-    if (organisationId) {
-      whereClause.organisationId = organisationId;
-    }
-    
-    const modules = await this.moduleRepository.find({
-      where: whereClause,
-      order: { ordering: 'ASC' },
-    });
-
-    // Cache the modules
-    await this.cacheService.set(cacheKey, modules, this.cacheConfig.MODULE_TTL);
-
-    return modules;
-  }
-
-  /**
-   * Find modules by parent module ID
-   * @param parentId The parent module ID to filter by
-   * @param tenantId The tenant ID for data isolation
-   * @param organisationId The organization ID for data isolation
-   */
-  async findByParent(
-    parentId: string,
-    tenantId: string,
-    organisationId: string
-  ): Promise<Module[]> {
-    // Check cache first
-    const cacheKey = this.cacheConfig.getModuleParentKey(parentId, tenantId, organisationId);
-    const cachedModules = await this.cacheService.get<Module[]>(cacheKey);
-    if (cachedModules) {
-      return cachedModules;
-    }
-
-    // Build where clause with required filters
-    const whereClause: FindOptionsWhere<Module> = { 
-      parentId,
-      tenantId,
-      organisationId,
-      status: Not(ModuleStatus.ARCHIVED),
-    };
-    
-    const modules = await this.moduleRepository.find({
-      where: whereClause,
-      order: { ordering: 'ASC' },
-    });
-
-    // Cache the modules
-    await this.cacheService.set(cacheKey, modules, this.cacheConfig.MODULE_TTL);
-
-    return modules;
   }
 
   /**
@@ -543,6 +462,105 @@ export class ModulesService {
       this.logger.error(`Error in cloneModule: ${error.message}`);
       throw error;
     }
+  }
+
+  /**
+   * Search and filter modules with various criteria
+   * @param searchDto The search criteria and filters
+   * @param tenantId The tenant ID for data isolation
+   * @param organisationId The organization ID for data isolation
+   */
+  async search(
+    searchDto: SearchModuleDto,
+    tenantId: string,
+    organisationId: string
+  ): Promise<SearchModuleResponseDto> {
+    this.logger.log(`Searching modules with criteria: ${JSON.stringify(searchDto)}`);
+
+    // Check cache first
+    const cacheKey = this.cacheConfig.getModuleSearchKey(
+      tenantId, 
+      organisationId, 
+      searchDto,
+      searchDto.offset,
+      searchDto.limit
+    );
+    
+    const cachedResult = await this.cacheService.get<SearchModuleResponseDto>(cacheKey);
+    if (cachedResult) {
+      this.logger.log(`Cache hit for module search: ${cacheKey}`);
+      return cachedResult;
+    }
+
+    // Build where clause with required filters
+    const whereClause: FindOptionsWhere<Module> = { 
+      tenantId,
+      status: Not(ModuleStatus.ARCHIVED),
+    };
+    
+    // Add organisation filter if provided
+    if (organisationId) {
+      whereClause.organisationId = organisationId;
+    }
+
+    // Add course filter if provided
+    if (searchDto.courseId) {
+      whereClause.courseId = searchDto.courseId;
+    }
+
+    // Add parent filter if provided
+    if (searchDto.parentId) {
+      whereClause.parentId = searchDto.parentId;
+    } else if (searchDto.parentId === null) {
+      // If parentId is explicitly set to null, search for root modules
+      whereClause.parentId = IsNull();
+    }
+
+    // Add status filter if provided
+    if (searchDto.status) {
+      whereClause.status = searchDto.status;
+    }
+
+    // Build query builder for complex search
+    const queryBuilder = this.moduleRepository.createQueryBuilder('module')
+      .where(whereClause);
+
+    // Add text search if query is provided
+    if (searchDto.query) {
+      queryBuilder.andWhere(
+        '(module.title ILIKE :query OR module.description ILIKE :query)',
+        { query: `%${searchDto.query}%` }
+      );
+    }
+
+    // Get total count for pagination
+    const totalElements = await queryBuilder.getCount();
+
+    // Add pagination
+    const offset = searchDto.offset || 0;
+    const limit = searchDto.limit || 10;
+    queryBuilder.skip(offset).take(limit);
+
+    // Add sorting
+    const sortBy = searchDto.sortBy || 'ordering';
+    const orderBy = searchDto.orderBy || 'ASC';
+    queryBuilder.orderBy(`module.${sortBy}`, orderBy);
+
+    // Execute query
+    const modules = await queryBuilder.getMany();
+
+    const result = {
+      modules,
+      totalElements,
+      offset,
+      limit
+    };
+
+    // Cache the result
+    await this.cacheService.set(cacheKey, result, this.cacheConfig.MODULE_TTL);
+    this.logger.log(`Cached module search result: ${cacheKey}`);
+
+    return result;
   }
 
 }
