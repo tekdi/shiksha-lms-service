@@ -22,6 +22,7 @@
    - [Update Course](#update-course)
    - [Delete Course](#delete-course)
    - [Get Course Hierarchy with Tracking](#get-course-hierarchy-with-tracking)
+   - [Get Next Course, Module, or Lesson](#get-next-course-module-or-lesson)
 
 5. [Modules](#modules)
    - [Create Module](#create-module)
@@ -1267,6 +1268,120 @@ The response structure varies based on the query parameters:
       "isEligible": true
     }
   }
+}
+```
+
+#### Get Next Course, Module, or Lesson
+
+**Endpoint**: `POST /courses/next-id`
+
+**HTTP Method**: POST
+
+**Description**: Get the next entity (course, module, or lesson) based on ordering fields. This endpoint intelligently navigates through the course hierarchy to find the next logical entity for the user to progress to.
+
+**Headers**:
+```
+Content-Type: application/json
+tenantid: <tenant-id>
+organisationid: <organisation-id>
+```
+
+**Request Body**:
+```json
+{
+  "nextIdFor": "lesson",
+  "id": "123e4567-e89b-12d3-a456-426614174000"
+}
+```
+
+**Request Body Parameters**:
+- `nextIdFor` (enum, required): Type of entity to find next for
+  - `course`: Find next course in sequence
+  - `module`: Find next module in sequence  
+  - `lesson`: Find next lesson in sequence
+- `id` (UUID, required): Current entity ID to find next for
+
+**Query Parameters**:
+- `userId` (UUID, required): User ID for context
+
+**Response Structure**:
+```json
+{
+  "id": "api.course.next",
+  "ver": "1.0",
+  "ts": "2024-01-01T00:00:00Z",
+  "params": {
+    "resmsgid": "msg-1234567890",
+    "status": "successful",
+    "err": null,
+    "errmsg": null
+  },
+  "responseCode": 200,
+  "result": {
+    "nextId": "456e7890-e89b-12d3-a456-426614174000",
+    "nextIdFor": "lesson",
+    "hasNext": true
+  }
+}
+```
+
+**Response Fields**:
+- `nextId` (string): ID of the next entity found, or empty string if none
+- `nextIdFor` (string): Type of the next entity returned (may differ from requested type)
+- `hasNext` (boolean): Whether there is a next entity available
+
+**Navigation Logic**:
+
+**For Lessons**:
+1. First tries to find the next lesson within the same module
+2. If no next lesson exists, finds the next module in the same course
+3. If no next module exists, finds the next course
+
+**For Modules**:
+1. First tries to find the next module within the same course
+2. If no next module exists, finds the next course
+
+**For Courses**:
+1. Finds the next course based on ordering
+
+**Validations and Conditions**:
+
+**Input Validation Rules**:
+- `nextIdFor` must be one of: 'course', 'module', 'lesson'
+- `id` must be valid UUID format
+- `userId` must be valid UUID format
+
+**Business Logic Conditions**:
+- Current entity must exist and be accessible
+- Navigation follows the established ordering hierarchy
+- If no next entity exists at the requested level, automatically finds next at higher level
+- Returns appropriate entity type even if different from requested type
+- Maintains proper course progression flow
+
+**Error Responses**:
+
+**400 Bad Request**:
+```json
+{
+  "success": false,
+  "message": "Invalid nextIdFor: invalid_type",
+  "error_type": "ValidationError",
+  "errors": [
+    {
+      "field": "nextIdFor",
+      "message": "nextIdFor must be one of: course, module, lesson",
+      "code": "INVALID_ENUM_VALUE"
+    }
+  ]
+}
+```
+
+**404 Not Found**:
+```json
+{
+  "success": false,
+  "message": "Entity not found or no next entity available",
+  "error_type": "NotFoundError"
 }
 ```
 

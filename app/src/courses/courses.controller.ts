@@ -13,6 +13,7 @@ import {
   UseInterceptors,
   UploadedFile,
   Put,
+  BadRequestException,
 } from '@nestjs/common';
 import { 
   ApiTags, 
@@ -21,6 +22,7 @@ import {
   ApiParam, 
   ApiBody, 
   ApiConsumes,
+  ApiQuery,
 } from '@nestjs/swagger';
 import { CoursesService } from './courses.service';
 import { CreateCourseDto } from './dto/create-course.dto';
@@ -39,6 +41,7 @@ import { SearchCourseResponseDto } from './dto/search-course.dto';
 import { CourseHierarchyFilterDto } from './dto/course-hierarchy-filter.dto';
 import { Headers } from '@nestjs/common';
 import { CloneCourseDto } from './dto/clone-course.dto';
+import { GetNextDto } from './dto/get-next.dto';
 
 
 @ApiTags('Courses')
@@ -346,6 +349,54 @@ export class CoursesController {
       const result = await this.coursesService.updateCourseStructure(
         courseId,
         courseStructureDto,
+        query.userId,
+        tenantOrg.tenantId,
+        tenantOrg.organisationId
+      );
+      
+      return result;
+    } catch (error) {
+      // Re-throw the error to let the global exception filter handle it
+      throw error;
+    }
+  }
+
+  @Post('next-id')
+  @ApiId(API_IDS.GET_NEXT_COURSE_MODULE_LESSON)
+  @ApiOperation({ 
+    summary: 'Get next course, module or lesson',
+    description: 'Get the next entity based on ordering fields, filtered by cohortId if applicable'
+  })
+  @ApiBody({ type: GetNextDto })
+  @ApiResponse({ 
+    status: 200, 
+    description: 'Next entity found successfully',
+    schema: {
+      type: 'object',
+      properties: {
+        success: { type: 'boolean' },
+        data: {
+          type: 'object',
+          properties: {
+            nextId: { type: 'string', description: 'ID of the next entity' },
+            nextIdFor: { type: 'string', description: 'Type of the next entity' },
+            hasNext: { type: 'boolean', description: 'Whether there is a next entity' }
+          }
+        }
+      }
+    }
+  })
+  @ApiResponse({ status: 400, description: 'Bad request - Invalid parameters' })
+  @ApiResponse({ status: 404, description: 'Entity not found or no next entity available' })
+  async getNextCourseModuleLesson(
+    @Body() getNextDto: GetNextDto,
+    @Query() query: CommonQueryDto,
+    @TenantOrg() tenantOrg: { tenantId: string; organisationId: string }
+  ) {
+    try {
+      const result = await this.coursesService.getNextCourseModuleLesson(
+        getNextDto.nextIdFor,
+        getNextDto.id,
         query.userId,
         tenantOrg.tenantId,
         tenantOrg.organisationId
