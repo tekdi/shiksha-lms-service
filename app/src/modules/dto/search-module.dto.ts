@@ -22,7 +22,7 @@ export class SearchModuleDto {
   @ApiPropertyOptional({ description: 'Search keyword to match in title or description' })
   @IsOptional()
   @IsString()
-  query?: string;
+  query?: string; 
 
   @ApiPropertyOptional({ description: 'Filter by course ID' })
   @IsOptional()

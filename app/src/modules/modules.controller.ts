@@ -73,6 +73,29 @@ export class ModulesController {
     );
     return module;
   }
+  
+  @Get('search')
+  @ApiId(API_IDS.SEARCH_MODULES)
+  @ApiOperation({ 
+    summary: 'Search and filter modules',
+    description: 'Search and filter modules with various criteria including keyword search and multiple filters. Returns modules with course, parent, submodules, and lessons information.'
+  })
+  @ApiResponse({ 
+    status: 200, 
+    description: 'Search results retrieved successfully',
+    type: SearchModuleResponseDto
+  })
+  async searchModules(
+    @Query() searchDto: SearchModuleDto,
+    @TenantOrg() tenantOrg: { tenantId: string; organisationId: string },
+  ) {
+    console.log('searchDto', searchDto);
+    return this.modulesService.search(
+      searchDto,
+      tenantOrg.tenantId,
+      tenantOrg.organisationId
+    );
+  }
 
   @Get(':moduleId')
   @ApiId(API_IDS.GET_MODULE_BY_ID)
@@ -95,27 +118,7 @@ export class ModulesController {
     );
   }
 
-  @Get('search')
-  @ApiId(API_IDS.SEARCH_MODULES)
-  @ApiOperation({ 
-    summary: 'Search and filter modules',
-    description: 'Search and filter modules with various criteria including keyword search and multiple filters. Returns modules with course, parent, submodules, and lessons information.'
-  })
-  @ApiResponse({ 
-    status: 200, 
-    description: 'Search results retrieved successfully',
-    type: SearchModuleResponseDto
-  })
-  async searchModules(
-    @Query() searchDto: SearchModuleDto,
-    @TenantOrg() tenantOrg: { tenantId: string; organisationId: string },
-  ) {
-    return this.modulesService.search(
-      searchDto,
-      tenantOrg.tenantId,
-      tenantOrg.organisationId
-    );
-  }
+  
 
   @Patch(':moduleId')
   @ApiId(API_IDS.UPDATE_MODULE)
