@@ -104,6 +104,52 @@ export class CoursesController {
     );
   }
 
+  @Get('next-id')
+  @ApiId(API_IDS.GET_NEXT_COURSE_MODULE_LESSON)
+  @ApiOperation({ 
+    summary: 'Get next course, module or lesson',
+    description: 'Get the next entity based on ordering fields, filtered by cohortId if applicable'
+  })
+  @ApiQuery({ type: GetNextDto })
+  @ApiResponse({ 
+    status: 200, 
+    description: 'Next entity found successfully',
+    schema: {
+      type: 'object',
+      properties: {
+        success: { type: 'boolean' },
+        data: {
+          type: 'object',
+          properties: {
+            nextId: { type: 'string', description: 'ID of the next entity' },
+            nextIdFor: { type: 'string', description: 'Type of the next entity' },
+            hasNext: { type: 'boolean', description: 'Whether there is a next entity' }
+          }
+        }
+      }
+    }
+  })
+  @ApiResponse({ status: 400, description: 'Bad request - Invalid parameters' })
+  @ApiResponse({ status: 404, description: 'Entity not found or no next entity available' })
+  async getNextCourseModuleLesson(
+    @Query() getNextDto: GetNextDto,
+    @TenantOrg() tenantOrg: { tenantId: string; organisationId: string }
+  ) {
+    try {
+      const result = await this.coursesService.getNextCourseModuleLesson(
+        getNextDto.nextIdFor,
+        getNextDto.id,
+        tenantOrg.tenantId,
+        tenantOrg.organisationId
+      );
+      
+      return result;
+    } catch (error) {
+      // Re-throw the error to let the global exception filter handle it
+      throw error;
+    }
+  }
+
   @Get(':courseId')
   @ApiId(API_IDS.GET_COURSE_BY_ID)
   @ApiOperation({ summary: 'Get a course by ID' })
@@ -361,51 +407,4 @@ export class CoursesController {
     }
   }
 
-  @Post('next-id')
-  @ApiId(API_IDS.GET_NEXT_COURSE_MODULE_LESSON)
-  @ApiOperation({ 
-    summary: 'Get next course, module or lesson',
-    description: 'Get the next entity based on ordering fields, filtered by cohortId if applicable'
-  })
-  @ApiBody({ type: GetNextDto })
-  @ApiResponse({ 
-    status: 200, 
-    description: 'Next entity found successfully',
-    schema: {
-      type: 'object',
-      properties: {
-        success: { type: 'boolean' },
-        data: {
-          type: 'object',
-          properties: {
-            nextId: { type: 'string', description: 'ID of the next entity' },
-            nextIdFor: { type: 'string', description: 'Type of the next entity' },
-            hasNext: { type: 'boolean', description: 'Whether there is a next entity' }
-          }
-        }
-      }
-    }
-  })
-  @ApiResponse({ status: 400, description: 'Bad request - Invalid parameters' })
-  @ApiResponse({ status: 404, description: 'Entity not found or no next entity available' })
-  async getNextCourseModuleLesson(
-    @Body() getNextDto: GetNextDto,
-    @Query() query: CommonQueryDto,
-    @TenantOrg() tenantOrg: { tenantId: string; organisationId: string }
-  ) {
-    try {
-      const result = await this.coursesService.getNextCourseModuleLesson(
-        getNextDto.nextIdFor,
-        getNextDto.id,
-        query.userId,
-        tenantOrg.tenantId,
-        tenantOrg.organisationId
-      );
-      
-      return result;
-    } catch (error) {
-      // Re-throw the error to let the global exception filter handle it
-      throw error;
-    }
-  }
 }
