@@ -83,7 +83,6 @@ export class UpdateLessonDto extends PartialType(
   })
   @IsOptional()
   @IsString({ message: VALIDATION_MESSAGES.COMMON.STRING('Title') })
-  @MinLength(3, { message: VALIDATION_MESSAGES.COMMON.MIN_LENGTH('Title', 3) })
   @MaxLength(255, { message: VALIDATION_MESSAGES.COMMON.MAX_LENGTH('Title', 255) })  
   title?: string;
 

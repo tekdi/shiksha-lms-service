@@ -1930,6 +1930,7 @@ organisationid: <organisation-id>
 **Input Validation Rules**:
 - `tenantid` header must be present and valid UUID format
 - `organisationid` header must be present and valid UUID format
+- `userId` query parameter must be present and valid UUID format
 - `query` must be string and max 100 characters (if provided)
 - `courseId` must be valid UUID format (if provided)
 - `parentId` must be valid UUID format (if provided)
