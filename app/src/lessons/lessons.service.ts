@@ -189,10 +189,10 @@ export class LessonsService {
         endDatetime: createLessonDto.endDatetime ? new Date(createLessonDto.endDatetime) : undefined,
         storage: storage,
         noOfAttempts: createLessonDto.noOfAttempts || 0,
-        attemptsGrade: createLessonDto.attemptsGrade || AttemptsGradeMethod.HIGHEST,
+        attemptsGrade: createLessonDto.attemptsGrade || AttemptsGradeMethod.LAST_ATTEMPT,
         prerequisites: createLessonDto.prerequisites,
         idealTime: createLessonDto.idealTime,
-        resume: createLessonDto.resume || false,
+        resume: createLessonDto.resume || true,
         totalMarks: createLessonDto.totalMarks,
         passingMarks: createLessonDto.passingMarks,
         params: createLessonDto.params || {},
@@ -206,6 +206,7 @@ export class LessonsService {
         moduleId: createLessonDto.moduleId,
         sampleLesson: createLessonDto.sampleLesson || false,
         considerForPassing: createLessonDto.considerForPassing || true,
+        allowResubmission: createLessonDto.allowResubmission || false,
       };
 
       // Create and save the lesson
