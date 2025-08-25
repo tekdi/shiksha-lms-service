@@ -549,8 +549,15 @@ export class ModulesService {
     // Execute query
     const modules = await queryBuilder.getMany();
 
-    const result = {
+    // Fetch lesson counts for each module
+    const modulesWithLessonCounts = await this.enrichModulesWithLessonCounts(
       modules,
+      tenantId,
+      organisationId
+    );
+
+    const result = {
+      modules: modulesWithLessonCounts,
       totalElements,
       offset,
       limit
@@ -563,4 +570,47 @@ export class ModulesService {
     return result;
   }
 
+  /**
+   * Enrich modules with lesson counts
+   * @param modules List of modules to enrich
+   * @param tenantId Tenant ID for data isolation
+   * @param organisationId Organization ID for data isolation
+   * @returns Modules with lesson counts
+   */
+  private async enrichModulesWithLessonCounts(
+    modules: Module[],
+    tenantId: string,
+    organisationId: string
+  ): Promise<any[]> {
+    if (!modules.length) {
+      return [];
+    }
+
+    // Get module IDs
+    const moduleIds = modules.map(module => module.moduleId);
+
+    // Fetch lesson counts for all modules in a single query
+    const lessonCounts = await this.lessonRepository
+      .createQueryBuilder('lesson')
+      .select('lesson.moduleId', 'moduleId')
+      .addSelect('COUNT(*)', 'count')
+      .where('lesson.moduleId IN (:...moduleIds)', { moduleIds })
+      .andWhere('lesson.tenantId = :tenantId', { tenantId })
+      .andWhere('lesson.organisationId = :organisationId', { organisationId })
+      .andWhere('lesson.status != :archivedStatus', { archivedStatus: LessonStatus.ARCHIVED })
+      .groupBy('lesson.moduleId')
+      .getRawMany();
+
+    // Create a map of moduleId to lesson count
+    const lessonCountMap = new Map<string, number>();
+    lessonCounts.forEach(item => {
+      lessonCountMap.set(item.moduleId, parseInt(item.count));
+    });
+
+    // Enrich modules with lesson counts
+    return modules.map(module => ({
+      ...module,
+      lessonCount: lessonCountMap.get(module.moduleId) || 0
+    }));
+  }
 }

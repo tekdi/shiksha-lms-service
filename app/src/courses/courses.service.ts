@@ -1500,7 +1500,6 @@ export class CoursesService {
   async getNextCourseModuleLesson(
     nextIdFor: string,
     currentId: string,
-    userId: string,
     tenantId: string,
     organisationId: string,
   ): Promise<{ success: boolean; data: { nextId: string; nextIdFor: string; hasNext: boolean } }> {
