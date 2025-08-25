@@ -24,7 +24,6 @@ import { ConfigService } from '@nestjs/config';
 import { CacheConfigService } from '../cache/cache-config.service';
 import { OrderingService } from '../common/services/ordering.service';
 import { LessonsService } from 'src/lessons/lessons.service';
-import { ModuleWithLessonCountDto } from './dto/search-module.dto';
 
 @Injectable()
 export class ModulesService {
@@ -582,7 +581,7 @@ export class ModulesService {
     modules: Module[],
     tenantId: string,
     organisationId: string
-  ): Promise<ModuleWithLessonCountDto[]> {
+  ): Promise<any[]> {
     if (!modules.length) {
       return [];
     }
