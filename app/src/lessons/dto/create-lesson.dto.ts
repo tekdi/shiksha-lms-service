@@ -264,7 +264,7 @@ export class CreateLessonDto {
   @IsOptional()
   @IsBoolean({ message: VALIDATION_MESSAGES.COMMON.BOOLEAN('Free lesson') })
   @Type(() => Boolean)
-  sampleLesson?: boolean = false;
+  sampleLesson?: boolean;
 
   @ApiProperty({
     description: 'Lesson order within module',
@@ -285,7 +285,7 @@ export class CreateLessonDto {
   @IsOptional()
   @IsBoolean({ message: VALIDATION_MESSAGES.COMMON.BOOLEAN('Consider for passing') })
   @Type(() => Boolean)
-  considerForPassing?: boolean = true;
+  considerForPassing?: boolean;
 
   @ApiProperty({ 
     description: 'Allow users to resubmit the same attempt multiple times. When true, users can only have one attempt and can submit it multiple times. This configuration will override resume and noOfAttempts',
@@ -294,5 +294,5 @@ export class CreateLessonDto {
   @IsOptional()
   @IsBoolean({ message: VALIDATION_MESSAGES.COMMON.BOOLEAN('Allow resubmission') })
   @Type(() => Boolean)
-  allowResubmission?: boolean = false;
+  allowResubmission?: boolean;
 }
