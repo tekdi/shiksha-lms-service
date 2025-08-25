@@ -1862,7 +1862,7 @@ organisationid: <organisation-id>
 
 **HTTP Method**: GET
 
-**Description**: Search and filter modules with various criteria including keyword search and multiple filters. Returns modules with optional course, parent, submodules, and lessons information.
+**Description**: Search and filter modules with various criteria including keyword search and multiple filters. Returns modules with lesson counts and optional course, parent, submodules, and lessons information.
 
 **Headers**:
 ```
@@ -1915,7 +1915,8 @@ organisationid: <organisation-id>
         "createdAt": "2024-01-01T00:00:00Z",
         "createdBy": "789e0123-e89b-12d3-a456-426614174000",
         "updatedAt": "2024-01-01T00:00:00Z",
-        "updatedBy": "789e0123-e89b-12d3-a456-426614174000"
+        "updatedBy": "789e0123-e89b-12d3-a456-426614174000",
+        "lessonCount": 5
       }
     ],
     "totalElements": 25,

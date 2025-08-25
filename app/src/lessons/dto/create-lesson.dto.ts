@@ -152,54 +152,25 @@ export class CreateLessonDto {
     description: 'Number of attempts allowed (0 for unlimited)',
     example: 3,
     required: false,
-    default: 1
+    default: 0
   })
   @IsOptional()
   @IsInt({ message: VALIDATION_MESSAGES.COMMON.NUMBER('Number of attempts') })
   @Min(0, { message: VALIDATION_MESSAGES.COMMON.POSITIVE('Number of attempts') })
   @Type(() => Number)
-  noOfAttempts?: number = 1;
+  noOfAttempts?: number = 0;
 
   @ApiProperty({
     description: 'Grade calculation method',
     example: AttemptsGradeMethod.HIGHEST,
     required: false,
     enum: AttemptsGradeMethod,
-    default: AttemptsGradeMethod.HIGHEST
+    default: AttemptsGradeMethod.LAST_ATTEMPT
   })
   @IsOptional()
   @IsEnum(AttemptsGradeMethod, { message: VALIDATION_MESSAGES.COMMON.ENUM('Grade calculation method') })
-  @Transform(({ value, obj }) => {
-    // If attemptsGrade is explicitly provided, use it
-    if (value !== undefined) {
-      return value;
-    }
-    
-    // Set default based on format and mediaContentSubFormat
-    const format = obj.format;
-    const mediaContentSubFormat = obj.mediaContentSubFormat;
-    
-    // For video, document, text_and_media, or event formats, use FIRST_ATTEMPT
-    if ([LessonFormat.VIDEO, LessonFormat.DOCUMENT, LessonFormat.TEXT_AND_MEDIA, LessonFormat.EVENT].includes(format)) {
-      return AttemptsGradeMethod.FIRST_ATTEMPT;
-    }
-    
-    // For test format, check the sub-format
-    if (format === LessonFormat.ASSESSMENT) {
-      // For quiz, use LAST_ATTEMPT
-      if (mediaContentSubFormat === LessonSubFormat.QUIZ) {
-        return AttemptsGradeMethod.LAST_ATTEMPT;
-      }
-      // For reflection.prompt, feedback, or assessment, use FIRST_ATTEMPT
-      if ([LessonSubFormat.REFLECTION_PROMPT, LessonSubFormat.FEEDBACK, LessonSubFormat.ASSESSMENT].includes(mediaContentSubFormat)) {
-        return AttemptsGradeMethod.FIRST_ATTEMPT;
-      }
-    }
-    
-    // Default fallback
-    return AttemptsGradeMethod.HIGHEST;
-  })
-  attemptsGrade?: AttemptsGradeMethod;
+ 
+  attemptsGrade?: AttemptsGradeMethod = AttemptsGradeMethod.LAST_ATTEMPT;
 
   @ApiProperty({
     description: 'Prerequisites for the lesson - array of prerequisite lesson IDs',
