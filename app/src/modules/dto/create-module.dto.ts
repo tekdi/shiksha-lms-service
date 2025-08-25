@@ -54,7 +54,7 @@ export class CreateModuleDto {
   })
   @IsOptional()
   @IsEnum(ModuleStatus, { message: VALIDATION_MESSAGES.COMMON.ENUM('Status') })
-  status?: ModuleStatus = ModuleStatus.UNPUBLISHED;
+  status?: ModuleStatus
 
   @ApiPropertyOptional({ 
     description: VALIDATION_MESSAGES.COURSE.IMAGE,

@@ -74,7 +74,7 @@ export class CreateCourseDto {
   @IsOptional()
   @IsBoolean({ message: VALIDATION_MESSAGES.COMMON.BOOLEAN('Featured') })
   @Type(() => Boolean)
-  featured?: boolean = false;
+  featured?: boolean;
 
   @ApiPropertyOptional({ 
     description: VALIDATION_MESSAGES.COURSE.FREE,
@@ -84,7 +84,7 @@ export class CreateCourseDto {
   @IsOptional()
   @IsBoolean({ message: VALIDATION_MESSAGES.COMMON.BOOLEAN('Free') })
   @Type(() => Boolean)
-  free?: boolean = false;
+  free?: boolean
 
   @ApiPropertyOptional({ 
     description: VALIDATION_MESSAGES.COURSE.STATUS,
@@ -104,7 +104,7 @@ export class CreateCourseDto {
   @IsOptional()
   @IsBoolean({ message: VALIDATION_MESSAGES.COMMON.BOOLEAN('Admin approval') })
   @Type(() => Boolean)
-  adminApproval?: boolean = false;
+  adminApproval?: boolean;
 
   @ApiPropertyOptional({ 
     description: VALIDATION_MESSAGES.COURSE.AUTO_ENROLL,
@@ -114,7 +114,7 @@ export class CreateCourseDto {
   @IsOptional()
   @IsBoolean({ message: VALIDATION_MESSAGES.COMMON.BOOLEAN('Auto enroll') })
   @Type(() => Boolean)
-  autoEnroll?: boolean = false;
+  autoEnroll?: boolean
 
   @ApiPropertyOptional({ 
     description: VALIDATION_MESSAGES.COURSE.CERTIFICATE_TERM,

@@ -145,7 +145,7 @@ export class ModulesService {
       parentId: createModuleDto.parentId || undefined,
       image: createModuleDto.image, 
       ordering, 
-      status: createModuleDto.status || ModuleStatus.UNPUBLISHED,
+      status: createModuleDto.status || ModuleStatus.PUBLISHED,
       startDatetime: createModuleDto.startDatetime,
       endDatetime: createModuleDto.endDatetime,
       prerequisites: createModuleDto.prerequisites,

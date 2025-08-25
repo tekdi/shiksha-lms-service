@@ -108,7 +108,7 @@ export class CoursesService {
       image: createCourseDto.image,
       startDatetime: createCourseDto.startDatetime,
       endDatetime: createCourseDto.endDatetime,
-      status: createCourseDto.status,
+      status: createCourseDto.status || CourseStatus.PUBLISHED,
       params: createCourseDto.params || {},
       featured: createCourseDto.featured !== undefined ? createCourseDto.featured : false,
       free: createCourseDto.free !== undefined ? createCourseDto.free : false,
