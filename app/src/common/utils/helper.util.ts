@@ -1,6 +1,63 @@
 import path from 'path';
 import { v4 as uuidv4, validate as uuidValidate } from 'uuid';
 import { Not } from 'typeorm';
+import { ValidatorConstraint, ValidatorConstraintInterface } from 'class-validator';
+import { ValidationArguments } from 'class-validator';
+
+@ValidatorConstraint({ name: 'validateDatetimeConstraints', async: false })
+export class ValidateDatetimeConstraints implements ValidatorConstraintInterface {
+  validate(value: string, args: ValidationArguments): boolean {
+    const object = args.object as any;
+    const startDateStr = object.startDate;
+    const endDateStr = object.endDate;
+    
+    // If this field is not provided, validation passes (handled by other validators)
+    if (!value) return true;
+    
+    // Validate date format
+    const currentDate = new Date(value);
+    if (isNaN(currentDate.getTime())) {
+      return false;
+    }
+    
+    // If only startDate is provided, it's valid
+    if (args.property === 'startDate' && !endDateStr) {
+      return true;
+    }
+    
+    // If only endDate is provided, it's valid
+    if (args.property === 'endDate' && !startDateStr) {
+      return true;
+    }
+    
+    // If both dates are provided, validate the relationship
+    if (startDateStr && endDateStr) {
+      const startDate = new Date(startDateStr);
+      const endDate = new Date(endDateStr);
+      
+      if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+        return false;
+      }
+      
+      // endDate must be greater than startDate
+      if (endDate <= startDate) {
+        return false;
+      }
+    }
+    
+    return true;
+  }
+
+  defaultMessage(args: ValidationArguments) {
+    if (args.property === 'startDate') {
+      return 'Start date is invalid or conflicts with end date';
+    }
+    if (args.property === 'endDate') {
+      return 'End date is invalid or must be greater than start date';
+    }
+    return 'Invalid datetime constraints';
+  }
+}
 
 export class HelperUtil {
   /**
@@ -132,35 +189,7 @@ export class HelperUtil {
     }
   }
 
-  // Custom validator for datetime constraints
-  static validateDatetimeConstraints(value: string, args: any) {
-    const startDate = new Date(args.object.startDatetime);
-  const endDate = new Date(value);
-  const now = new Date();
+  
 
-  // Check if start date is in the future
-  if (startDate <= now) {
-    return false;
-  }
-
-  // Check if end date follows start date
-  if (endDate <= startDate) {
-    return false;
-  }
-
-  // Check minimum duration (1 day)
-  const minDuration = 24 * 60 * 60 * 1000; // 1 day in milliseconds
-  if (endDate.getTime() - startDate.getTime() < minDuration) {
-    return false;
-  }
-
-  // Check maximum duration (1 year)
-  const maxDuration = 365 * 24 * 60 * 60 * 1000; // 1 year in milliseconds
-  if (endDate.getTime() - startDate.getTime() > maxDuration) {
-    return false;
-  }
-
-  return true;  
-}
 
 }

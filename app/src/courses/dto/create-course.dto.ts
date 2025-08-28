@@ -2,7 +2,7 @@ import { IsNotEmpty, IsString, IsOptional, IsBoolean, IsEnum, IsNumber, IsUUID, 
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { CourseStatus, RewardType } from '../entities/course.entity';
-import { HelperUtil } from '../../common/utils/helper.util';
+import { HelperUtil, ValidateDatetimeConstraints } from '../../common/utils/helper.util';
 import { VALIDATION_MESSAGES } from '../../common/constants/response-messages.constant';
 
 export class CreateCourseDto {
@@ -23,22 +23,16 @@ export class CreateCourseDto {
   @IsOptional()
   alias: string;
 
-  @ApiProperty({ 
-    description: VALIDATION_MESSAGES.COURSE.START_DATE,
-    example: '2024-01-01T00:00:00Z'
-  })
+  @ApiPropertyOptional()
   @IsOptional()
+  @IsDateString()
+  @Validate(ValidateDatetimeConstraints)
   startDatetime: string;
-
-  @ApiProperty({ 
-    description: VALIDATION_MESSAGES.COURSE.END_DATE,
-    example: '2024-12-31T23:59:59Z',
-    required: true
-  })
-  @ValidateIf((o) => o.startDatetime)
-  @Validate(HelperUtil.validateDatetimeConstraints, {
-    message: 'Invalid datetime constraints. Start date must be in the future, end date must follow start date, and duration must be between 1 day and 1 year.'
-  })
+ 
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsDateString()
+  @Validate(ValidateDatetimeConstraints)
   endDatetime: string;
 
   @ApiProperty({ 

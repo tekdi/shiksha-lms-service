@@ -15,12 +15,14 @@ import {
   IsNotEmpty,
   IsUrl,
   IsArray,
+  Validate,
 } from 'class-validator';
 import { Type, Transform } from 'class-transformer';
 import { VALIDATION_MESSAGES } from '../../common/constants/response-messages.constant';
 import { LessonFormat, LessonSubFormat, AttemptsGradeMethod } from '../entities/lesson.entity';
 import { LessonStatus } from '../entities/lesson.entity';
 import { CreateLessonDto } from './create-lesson.dto';
+import { ValidateDatetimeConstraints } from 'src/common/utils/helper.util';
 
 // Inherits all fields from CreateLessonDto as optional, except for format which shouldn't be updatable
 export class UpdateLessonDto extends PartialType(
@@ -123,23 +125,16 @@ export class UpdateLessonDto extends PartialType(
   @Matches(/\.(jpg|jpeg|png)$/i, { message: VALIDATION_MESSAGES.COMMON.IMAGE_FORMAT })
   image?: string;
 
-  @ApiProperty({
-    description: VALIDATION_MESSAGES.COURSE.START_DATE,
-    example: '2024-06-01T00:00:00Z',
-    required: false,
-  })
+  @ApiPropertyOptional()
   @IsOptional()
-  @IsDateString({}, { message: VALIDATION_MESSAGES.COMMON.DATE('Start datetime') })
+  @IsDateString()
+  @Validate(ValidateDatetimeConstraints)
   startDatetime?: string;
 
-  @ApiProperty({
-    description: VALIDATION_MESSAGES.COURSE.END_DATE,
-    example: '2024-12-31T23:59:59Z',
-    required: false,
-  })
+  @ApiPropertyOptional()
   @IsOptional()
-  @ValidateIf(o => o.startDatetime != null)
-  @IsDateString({}, { message: VALIDATION_MESSAGES.COMMON.DATE('End datetime') })
+  @IsDateString()
+  @Validate(ValidateDatetimeConstraints)
   endDatetime?: string;
 
   @ApiProperty({
@@ -170,37 +165,7 @@ export class UpdateLessonDto extends PartialType(
   })
   @IsOptional()
   @IsEnum(AttemptsGradeMethod, { message: VALIDATION_MESSAGES.COMMON.ENUM('Grade calculation method') })
-  @Transform(({ value, obj }) => {
-    // If attemptsGrade is explicitly provided, use it
-    if (value !== undefined) {
-      return value;
-    }
-    
-    // Set default based on format and mediaContentSubFormat
-    const format = obj.format;
-    const mediaContentSubFormat = obj.mediaContentSubFormat;
-    
-    // For video, document, text_and_media, or event formats, use FIRST_ATTEMPT
-    if ([LessonFormat.VIDEO, LessonFormat.DOCUMENT, LessonFormat.TEXT_AND_MEDIA, LessonFormat.EVENT].includes(format)) {
-      return AttemptsGradeMethod.FIRST_ATTEMPT;
-    }
-    
-    // For test format, check the sub-format
-    if (format === LessonFormat.ASSESSMENT) {
-      // For quiz, use LAST_ATTEMPT
-      if (mediaContentSubFormat === LessonSubFormat.QUIZ) {
-        return AttemptsGradeMethod.LAST_ATTEMPT;
-      }
-      // For reflection.prompt, feedback, or assessment, use FIRST_ATTEMPT
-      if ([LessonSubFormat.REFLECTION_PROMPT, LessonSubFormat.FEEDBACK, LessonSubFormat.ASSESSMENT].includes(mediaContentSubFormat)) {
-        return AttemptsGradeMethod.FIRST_ATTEMPT;
-      }
-    }
-    
-    // Default fallback
-    return AttemptsGradeMethod.LAST_ATTEMPT;
-  })
-  attemptsGrade?: AttemptsGradeMethod;
+  attemptsGrade?: AttemptsGradeMethod = AttemptsGradeMethod.LAST_ATTEMPT;
 
   @ApiProperty({
     description: 'Prerequisites for the lesson - array of prerequisite lesson IDs',
