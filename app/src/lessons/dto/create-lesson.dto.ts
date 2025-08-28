@@ -21,7 +21,7 @@ import { Type, Transform } from 'class-transformer';
 import { VALIDATION_MESSAGES } from '../../common/constants/response-messages.constant';
 import { LessonStatus, LessonSubFormat } from '../entities/lesson.entity';
 import { LessonFormat, AttemptsGradeMethod } from '../entities/lesson.entity';
-import { HelperUtil } from '../../common/utils/helper.util';
+import { HelperUtil, ValidateDatetimeConstraints } from '../../common/utils/helper.util';
 
 
 export class CreateLessonDto {
@@ -117,26 +117,16 @@ export class CreateLessonDto {
   @IsString({ message: VALIDATION_MESSAGES.COMMON.STRING('Description') })
   description?: string;
 
-  @ApiProperty({
-    description: VALIDATION_MESSAGES.COURSE.START_DATE,
-    example: '2024-06-01T00:00:00Z',
-    required: false
-  })
+  @ApiPropertyOptional()
   @IsOptional()
-  @IsDateString({}, { message: VALIDATION_MESSAGES.COMMON.DATE('Start datetime') })
+  @IsDateString()
+  @Validate(ValidateDatetimeConstraints)
   startDatetime?: string;
 
-  @ApiProperty({
-    description: VALIDATION_MESSAGES.COURSE.END_DATE,
-    example: '2024-12-31T23:59:59Z',
-    required: false
-  })
+  @ApiPropertyOptional()
   @IsOptional()
-  @IsDateString({}, { message: VALIDATION_MESSAGES.COMMON.DATE('End datetime') })
-  @ValidateIf((o) => o.startDatetime)
-  @Validate(HelperUtil.validateDatetimeConstraints, {
-    message: 'Invalid datetime constraints. Start date must be in the future, end date must follow start date, and duration must be between 1 day and 1 year.'
-  })
+  @IsDateString()
+  @Validate(ValidateDatetimeConstraints)
   endDatetime?: string;
 
   @ApiProperty({

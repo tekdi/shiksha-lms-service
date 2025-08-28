@@ -2,7 +2,7 @@ import { IsNotEmpty, IsString, IsOptional, IsEnum, IsNumber, IsUUID, IsObject, M
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { ModuleStatus } from '../entities/module.entity';
-import { HelperUtil } from '../../common/utils/helper.util';
+import { HelperUtil, ValidateDatetimeConstraints } from '../../common/utils/helper.util';
 import { VALIDATION_MESSAGES } from '../../common/constants/response-messages.constant';
 
 /**
@@ -64,24 +64,16 @@ export class CreateModuleDto {
   @IsString({ message: VALIDATION_MESSAGES.COMMON.STRING('Image') })
   image?: string;
 
-  @ApiPropertyOptional({ 
-    description: VALIDATION_MESSAGES.COURSE.START_DATE,
-    example: '2024-01-01T00:00:00Z'
-  })
+  @ApiPropertyOptional()
   @IsOptional()
-  @IsDateString({}, { message: VALIDATION_MESSAGES.COMMON.DATE('Start date') })
+  @IsDateString()
+  @Validate(ValidateDatetimeConstraints)
   startDatetime?: string;
 
-  @ApiPropertyOptional({ 
-    description: VALIDATION_MESSAGES.COURSE.END_DATE,
-    example: '2024-12-31T23:59:59Z'
-  })
+  @ApiPropertyOptional()
   @IsOptional()
-  @IsDateString({}, { message: VALIDATION_MESSAGES.COMMON.DATE('End date') })
-  @ValidateIf((o) => o.startDatetime)
-  @Validate(HelperUtil.validateDatetimeConstraints, {
-    message: VALIDATION_MESSAGES.COMMON.DATETIME_CONSTRAINTS
-  })
+  @IsDateString()
+  @Validate(ValidateDatetimeConstraints)
   endDatetime?: string;
 
   @ApiPropertyOptional({ 
