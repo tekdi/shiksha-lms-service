@@ -28,6 +28,7 @@ import { UserEnrollment, EnrollmentStatus } from './entities/user-enrollment.ent
 import { CommonQueryDto } from '../common/dto/common-query.dto';
 import { ApiId } from '../common/decorators/api-id.decorator';
 import { TenantOrg } from '../common/decorators/tenant-org.decorator';
+import { UsersEnrolledCoursesDto, UsersEnrolledCoursesResponseDto } from './dto/search-enrolled-courses.dto';
 
 @ApiTags('Enrollments')
 @ApiBearerAuth()
@@ -99,6 +100,28 @@ export class EnrollmentsController {
       learnerId,
       courseId,
       status,
+    );
+  }
+
+  @Get('users-courses')
+  @ApiId(API_IDS.GET_ENROLLED_COURSES)  
+  @ApiOperation({ 
+    summary: 'Get enrolled courses by user ID',
+    description: 'Get enrolled courses by user ID.'
+  })
+  @ApiResponse({ 
+    status: 200, 
+    description: 'Search results retrieved successfully',
+    type: UsersEnrolledCoursesResponseDto
+  }) 
+  async usersEnrolledCourses(
+    @Query() usersEnrolledCoursesDto: UsersEnrolledCoursesDto,
+    @TenantOrg() tenantOrg: { tenantId: string; organisationId: string },
+  ) {
+    return this.enrollmentsService.usersEnrolledCourses(
+      usersEnrolledCoursesDto,
+      tenantOrg.tenantId,
+      tenantOrg.organisationId
     );
   }
 

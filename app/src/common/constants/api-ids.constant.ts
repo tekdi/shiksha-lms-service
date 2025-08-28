@@ -47,6 +47,7 @@ export const API_IDS = {
   UPDATE_ENROLLMENT: 'api.enrollment.update',
   CANCEL_ENROLLMENT: 'api.enrollment.cancel',
   DELETE_ENROLLMENT: 'api.enrollment.delete',
+  GET_ENROLLED_COURSES: 'api.enrollment.courses',
 
   
   // Tracking APIs
