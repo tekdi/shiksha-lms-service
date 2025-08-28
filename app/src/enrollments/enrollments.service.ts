@@ -25,6 +25,7 @@ import { ModuleTrack, ModuleTrackStatus } from '../tracking/entities/module-trac
 import { LessonTrack } from '../tracking/entities/lesson-track.entity';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { CacheConfigService } from '../cache/cache-config.service';
+import { UsersEnrolledCoursesDto, UsersEnrolledCoursesResponseDto } from './dto/search-enrolled-courses.dto';
 
 
 @Injectable()
@@ -375,6 +376,72 @@ export class EnrollmentsService {
       if (error instanceof NotFoundException) {
         throw error;
       }
+      throw new InternalServerErrorException(RESPONSE_MESSAGES.FETCH_ERROR);
+    }
+  }
+
+  /**
+   * Search and filter enrolled courses
+   */
+  async usersEnrolledCourses(
+    filters: UsersEnrolledCoursesDto,
+    tenantId: string,
+    organisationId: string,
+  ): Promise<UsersEnrolledCoursesResponseDto> {
+    try {
+      // Validate and sanitize inputs
+      const offset = Math.max(0, filters.offset || 0);
+      const limit = Math.min(100, Math.max(1, filters.limit || 10));
+
+      // Generate cache key
+      const cacheKey = `enrolled_courses_search:${tenantId}:${organisationId}:${JSON.stringify(filters)}:${offset}:${limit}`;
+      
+      // Check cache
+      const cachedResult = await this.cacheService.get<UsersEnrolledCoursesResponseDto>(cacheKey);
+      if (cachedResult) {
+        return cachedResult;
+      }
+
+      // Build base query for enrolled courses
+      const queryBuilder = this.courseRepository
+        .createQueryBuilder('course')
+        .innerJoin('course.enrollments', 'enrollment')
+        .where('enrollment.tenantId = :tenantId', { tenantId })
+        .andWhere('enrollment.organisationId = :organisationId', { organisationId })
+        .andWhere('enrollment.status = :enrollmentStatus', { enrollmentStatus: EnrollmentStatus.PUBLISHED })
+        .andWhere('course.status != :archivedStatus', { archivedStatus: CourseStatus.ARCHIVED });
+
+     // Cohort filter
+      if (filters?.cohortId) {
+        queryBuilder.andWhere("course.params->>'cohortId' = :cohortId", { cohortId: filters.cohortId });
+      }
+
+      if (filters?.userId) {
+        queryBuilder.andWhere('enrollment.userId = :userId', { userId: filters.userId });
+      }
+
+      // Apply default sorting by course creation date
+      queryBuilder.orderBy('course.ordering', 'ASC');
+
+      // Apply pagination
+      queryBuilder.skip(offset).take(limit);
+
+      // Execute query
+      const [courses, total] = await queryBuilder.getManyAndCount();
+
+      const result: UsersEnrolledCoursesResponseDto = { 
+        courses, 
+        totalElements: total,
+        offset,
+        limit
+      };
+
+      // Cache result
+      await this.cacheService.set(cacheKey, result, this.cacheConfig.COURSE_TTL);
+
+      return result;
+    } catch (error) {
+      this.logger.error(`Error searching enrolled courses: ${error.message}`);
       throw new InternalServerErrorException(RESPONSE_MESSAGES.FETCH_ERROR);
     }
   }

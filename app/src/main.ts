@@ -6,6 +6,7 @@ import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { ResponseTransformerInterceptor } from './common/interceptors/response-transformer.interceptor';
 import { ConfigService } from '@nestjs/config';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { ConfigurationService } from './configuration/configuration.service';
 
 async function bootstrap() {
   try {
@@ -50,6 +51,9 @@ async function bootstrap() {
     const document = SwaggerModule.createDocument(app, swaggerConfig);
     SwaggerModule.setup('docs', app, document);
     // --- End Swagger setup ---
+
+    const configurationService = app.get(ConfigurationService);
+    await configurationService.syncTenantConfig(configService.get("TENANT_ID") || "");
 
     // Start the application
     await app.listen(port, '0.0.0.0');
