@@ -238,4 +238,25 @@ export class UpdateLessonDto extends PartialType(
   @IsOptional()
   @IsString({ message: VALIDATION_MESSAGES.COMMON.STRING('Updated by') })
   updatedBy?: string;
+
+  @ApiProperty({
+    description: 'Allows resubmission',
+    example: true,
+    required: false,
+  })
+  @IsOptional()
+  @IsBoolean({ message: VALIDATION_MESSAGES.COMMON.BOOLEAN('Allow resubmission') })
+  @Type(() => Boolean)
+  allowResubmission?: boolean;
+
+  @ApiProperty({
+    description: 'Whether to consider this lesson for passing',
+    example: true,
+    required: false,
+    default: true,
+  })
+  @IsOptional()
+  @IsBoolean({ message: VALIDATION_MESSAGES.COMMON.BOOLEAN('Consider for passing') })
+  @Type(() => Boolean)
+  considerForPassing?: boolean;
 }
