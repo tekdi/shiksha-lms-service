@@ -723,7 +723,14 @@ export class LessonsService {
       if (updateLessonDto.moduleId !== undefined) {
         updateData.moduleId = updateLessonDto.moduleId;
       }
-            
+
+      if (updateLessonDto.considerForPassing !== undefined) {
+        updateData.considerForPassing = updateLessonDto.considerForPassing;
+      }
+
+      if (updateLessonDto.allowResubmission !== undefined) {
+        updateData.allowResubmission = updateLessonDto.allowResubmission;
+      }
       // Update the lesson
       const updatedLesson = this.lessonRepository.merge(lesson, updateData);
       const savedLesson = await this.lessonRepository.save(updatedLesson);
