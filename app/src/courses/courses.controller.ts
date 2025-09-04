@@ -123,7 +123,7 @@ export class CoursesController {
           properties: {
             nextId: { type: 'string', description: 'ID of the next entity' },
             nextIdFor: { type: 'string', description: 'Type of the next entity' },
-            hasNext: { type: 'boolean', description: 'Whether there is a next entity' }
+            isLast: { type: 'boolean', description: 'Whether the next entity is the last in its sequence' }
           }
         }
       }
