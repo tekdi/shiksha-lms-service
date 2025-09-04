@@ -1502,19 +1502,20 @@ export class CoursesService {
     currentId: string,
     tenantId: string,
     organisationId: string,
-  ): Promise<{ success: boolean; data: { nextId: string; nextIdFor: string; hasNext: boolean } }> {
+  ): Promise<{ success: boolean; data: { nextId: string; nextIdFor: string; isLast: boolean } }> {
     try {
       this.logger.log(`Getting next ${nextIdFor} for ID: ${currentId}`);
 
       let nextId: string | null = null;
-      let hasNext = false;
+      let isLast = false;
 
       switch (nextIdFor) {
         case 'course':
           const nextCourse = await this.getNextCourse(currentId, tenantId, organisationId);
           if (nextCourse) {
             nextId = nextCourse.courseId;
-            hasNext = true;
+            // Check if the next course is the last course
+            isLast = await this.isLastCourse(nextCourse.courseId, tenantId, organisationId);
           }
           break;
 
@@ -1522,7 +1523,8 @@ export class CoursesService {
           const nextModule = await this.getNextModule(currentId, tenantId, organisationId);
           if (nextModule) {
             nextId = nextModule.moduleId;
-            hasNext = true;
+            // Check if the next module is the last module in the course
+            isLast = await this.isLastModule(nextModule.moduleId, tenantId, organisationId);
           } else {
             // If no next module exists, try to get the next course from the current module's course
             const currentModule = await this.moduleRepository.findOne({
@@ -1534,9 +1536,10 @@ export class CoursesService {
               const nextCourse = await this.getNextCourse(currentModule.courseId, tenantId, organisationId);
               if (nextCourse) {
                 nextId = nextCourse.courseId;
-                hasNext = true;
                 // Update nextIdFor to indicate we're returning a course instead of module
                 nextIdFor = 'course';
+                // Check if the next course is the last course
+                isLast = await this.isLastCourse(nextCourse.courseId, tenantId, organisationId);
               }
             }
           }
@@ -1546,7 +1549,8 @@ export class CoursesService {
           const nextLesson = await this.getNextLesson(currentId, tenantId, organisationId);
           if (nextLesson) {
             nextId = nextLesson.lessonId;
-            hasNext = true;
+            // Check if the next lesson is the last lesson in the module
+            isLast = await this.isLastLesson(nextLesson.lessonId, tenantId, organisationId);
           } else {
             // If no next lesson exists, try to get the next module from the current lesson's module
             const currentLesson = await this.lessonRepository.findOne({
@@ -1558,18 +1562,20 @@ export class CoursesService {
               const nextModule = await this.getNextModule(currentLesson.moduleId, tenantId, organisationId);
               if (nextModule) {
                 nextId = nextModule.moduleId;
-                hasNext = true;
                 // Update nextIdFor to indicate we're returning a module instead of lesson
                 nextIdFor = 'module';
+                // Check if the next module is the last module
+                isLast = await this.isLastModule(nextModule.moduleId, tenantId, organisationId);
               } else {
                 // If no next module exists, try to get the next course
                 if (currentLesson.courseId) {
                   const nextCourse = await this.getNextCourse(currentLesson.courseId, tenantId, organisationId);
                   if (nextCourse) {
                     nextId = nextCourse.courseId;
-                    hasNext = true;
                     // Update nextIdFor to indicate we're returning a course instead of lesson
                     nextIdFor = 'course';
+                    // Check if the next course is the last course
+                    isLast = await this.isLastCourse(nextCourse.courseId, tenantId, organisationId);
                   }
                 }
               }
@@ -1586,7 +1592,7 @@ export class CoursesService {
         data: {
           nextId: nextId || '',
           nextIdFor,
-          hasNext
+          isLast
         }
       };
 
@@ -1699,5 +1705,111 @@ export class CoursesService {
       .orderBy('lesson.ordering', 'ASC')
       .limit(1)
       .getOne();
+  }
+
+  /**
+   * Check if a course is the last course in the sequence
+   */
+  private async isLastCourse(
+    currentCourseId: string,
+    tenantId: string,
+    organisationId: string,
+  ): Promise<boolean> {
+    // First get the current course to extract cohortId and ordering
+    const currentCourse = await this.courseRepository.findOne({
+      where: { courseId: currentCourseId, tenantId, organisationId },
+      select: ['courseId', 'params', 'ordering']
+    });
+
+    if (!currentCourse) {
+      return false;
+    }
+
+    const currentCohortId = currentCourse.params?.cohortId;
+    const currentOrdering = currentCourse.ordering || 0;
+
+    // Build query to find if there are any courses after this one
+    let query = this.courseRepository
+      .createQueryBuilder('course')
+      .select(['course.courseId'])
+      .where('course.tenantId = :tenantId', { tenantId })
+      .andWhere('course.organisationId = :organisationId', { organisationId })
+      .andWhere('course.status = :status', { status: CourseStatus.PUBLISHED })
+      .andWhere('course.ordering > :currentOrdering', { currentOrdering })
+      .limit(1);
+
+    // If cohortId exists, filter by it
+    if (currentCohortId) {
+      query = query.andWhere("course.params->>'cohortId' = :cohortId", { cohortId: currentCohortId });
+    }
+
+    const nextCourse = await query.getOne();
+    return !nextCourse; // If no next course exists, this is the last one
+  }
+
+  /**
+   * Check if a module is the last module in its course
+   */
+  private async isLastModule(
+    currentModuleId: string,
+    tenantId: string,
+    organisationId: string,
+  ): Promise<boolean> {
+    // First get the current module to find its course and ordering
+    const currentModule = await this.moduleRepository.findOne({
+      where: { moduleId: currentModuleId, tenantId, organisationId },
+      select: ['moduleId', 'courseId', 'ordering']
+    });
+
+    if (!currentModule) {
+      return false;
+    }
+
+    // Check if there are any modules after this one in the same course
+    const nextModule = await this.moduleRepository
+      .createQueryBuilder('module')
+      .select(['module.moduleId'])
+      .where('module.courseId = :courseId', { courseId: currentModule.courseId })
+      .andWhere('module.tenantId = :tenantId', { tenantId })
+      .andWhere('module.organisationId = :organisationId', { organisationId })
+      .andWhere('module.status = :status', { status: ModuleStatus.PUBLISHED })
+      .andWhere('module.ordering > :currentOrdering', { currentOrdering: currentModule.ordering || 0 })
+      .limit(1)
+      .getOne();
+
+    return !nextModule; // If no next module exists, this is the last one
+  }
+
+  /**
+   * Check if a lesson is the last lesson in its module
+   */
+  private async isLastLesson(
+    currentLessonId: string,
+    tenantId: string,
+    organisationId: string,
+  ): Promise<boolean> {
+    // First get the current lesson to find its module and ordering
+    const currentLesson = await this.lessonRepository.findOne({
+      where: { lessonId: currentLessonId, tenantId, organisationId },
+      select: ['lessonId', 'moduleId', 'ordering']
+    });
+
+    if (!currentLesson) {
+      return false;
+    }
+
+    // Check if there are any lessons after this one in the same module
+    const nextLesson = await this.lessonRepository
+      .createQueryBuilder('lesson')
+      .select(['lesson.lessonId'])
+      .where('lesson.moduleId = :moduleId', { moduleId: currentLesson.moduleId })
+      .andWhere('lesson.tenantId = :tenantId', { tenantId })
+      .andWhere('lesson.organisationId = :organisationId', { organisationId })
+      .andWhere('lesson.status = :status', { status: LessonStatus.PUBLISHED })
+      .andWhere('lesson.ordering > :currentOrdering', { currentOrdering: currentLesson.ordering || 0 })
+      .limit(1)
+      .getOne();
+
+    return !nextLesson; // If no next lesson exists, this is the last one
   }
 }
