@@ -49,10 +49,7 @@ export class MediaController {
     @Query() query: CommonQueryDto,
     @TenantOrg() tenantOrg: { tenantId: string; organisationId: string },
   ) {
-    // Check if file is required based on format
-    if (createMediaDto.format === LessonFormat.DOCUMENT && !file) {
-      throw new BadRequestException(RESPONSE_MESSAGES.ERROR.FILE_REQUIRED_DOCUMENT);
-    }
+   // TODO: Check if file is required based on format - need to test file upload
     if (file) {
       const filePath = getUploadPath('lessonMedia', file.filename);
       createMediaDto.path = filePath;
