@@ -158,6 +158,94 @@ export class AppModule {}
 
 ## Feature Modules
 
+### What is a Module in NestJS?
+
+A module is a class decorated with `@Module()` that groups together related controllers, providers, and other modules. Every NestJS app has at least one root module (AppModule).
+
+### Key Properties in @Module()
+
+#### 1. **imports**
+Used to bring in other modules so you can use their providers (services, repositories, etc.) inside the current module. Think of it as importing functionality from another module.
+
+```typescript
+@Module({
+  imports: [UsersModule], // bring in UsersModule so we can use its providers
+})
+export class AuthModule {}
+```
+
+#### 2. **providers**
+Classes that NestJS will create and manage in the dependency injection (DI) container. These are usually services, repositories, helpers. Providers can be injected into controllers or other providers.
+
+```typescript
+@Injectable()
+export class UsersService {
+  findAll() {
+    return ['user1', 'user2'];
+  }
+}
+
+@Module({
+  providers: [UsersService], // DI container registers UsersService
+})
+export class UsersModule {}
+```
+
+#### 3. **exports**
+Makes certain providers available to other modules that import this module. Without exports, providers are private to the module.
+
+```typescript
+@Module({
+  providers: [UsersService],
+  exports: [UsersService], // make it available outside
+})
+export class UsersModule {}
+```
+
+Now another module can use UsersService:
+
+```typescript
+@Module({
+  imports: [UsersModule], // get access to UsersService
+  providers: [AuthService],
+})
+export class AuthModule {}
+```
+
+### Real Example: UsersModule and AuthModule
+
+```typescript
+// users.service.ts
+@Injectable()
+export class UsersService {
+  getUser(id: string) {
+    return { id, name: 'John Doe' };
+  }
+}
+
+// users.module.ts
+@Module({
+  providers: [UsersService],
+  exports: [UsersService], // so AuthModule can use it
+})
+export class UsersModule {}
+
+// auth.service.ts
+@Injectable()
+export class AuthService {
+  constructor(private usersService: UsersService) {} // DI works because of exports
+}
+
+// auth.module.ts
+@Module({
+  imports: [UsersModule], // brings in UsersService
+  providers: [AuthService],
+})
+export class AuthModule {}
+```
+
+### LMS Example: Courses Module
+
 **File: `src/courses/courses.module.ts`**
 
 ```typescript
@@ -186,11 +274,16 @@ import { CoursesService } from './courses.service';
 export class CoursesModule {}
 ```
 
-### Module Responsibilities:
-- **Encapsulation** - Groups related functionality
-- **Dependency Management** - Declares what it needs and provides
-- **Reusability** - Can be imported by other modules
-- **TypeORM Integration** - Registers database entities
+### Why do we need them?
+
+- **imports** → to reuse other modules' functionality (like TypeOrmModule, ConfigModule)
+- **providers** → to register classes (services, repositories, utils) into NestJS's DI container
+- **exports** → to share your providers with other modules
+
+### ✅ In short:
+- **imports** → pull in other modules
+- **providers** → register services/classes inside your module
+- **exports** → allow other modules to use your providers
 
 ---
 
