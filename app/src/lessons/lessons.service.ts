@@ -192,7 +192,7 @@ export class LessonsService {
         attemptsGrade: createLessonDto.attemptsGrade || AttemptsGradeMethod.LAST_ATTEMPT,
         prerequisites: createLessonDto.prerequisites,
         idealTime: createLessonDto.idealTime,
-        resume: createLessonDto.resume || true,
+        resume: createLessonDto.resume,
         totalMarks: createLessonDto.totalMarks,
         passingMarks: createLessonDto.passingMarks,
         params: createLessonDto.params || {},
@@ -204,9 +204,9 @@ export class LessonsService {
         // Course-specific fields
         courseId: createLessonDto.courseId,
         moduleId: createLessonDto.moduleId,
-        sampleLesson: createLessonDto.sampleLesson || false,
-        considerForPassing: createLessonDto.considerForPassing || true,
-        allowResubmission: createLessonDto.allowResubmission || false,
+        sampleLesson: createLessonDto.sampleLesson,
+        considerForPassing: createLessonDto.considerForPassing,
+        allowResubmission: createLessonDto.allowResubmission
       };
 
       // Create and save the lesson

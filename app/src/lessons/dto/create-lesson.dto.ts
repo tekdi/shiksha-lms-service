@@ -151,6 +151,25 @@ export class CreateLessonDto {
   noOfAttempts?: number = 0;
 
   @ApiProperty({
+    description: 'Whether to consider this lesson for passing',
+    example: true,
+    required: false,
+  })
+  @IsOptional()
+  @IsBoolean({ message: VALIDATION_MESSAGES.COMMON.BOOLEAN('Consider for passing') })
+  @Type(() => Boolean)
+  considerForPassing?: boolean;
+
+  @ApiProperty({ 
+    description: 'Allow users to resubmit the same attempt multiple times. When true, users can only have one attempt and can submit it multiple times. This configuration will override resume and noOfAttempts',
+    default: false 
+  })
+  @IsOptional()
+  @IsBoolean({ message: VALIDATION_MESSAGES.COMMON.BOOLEAN('Allow resubmission') })
+  @Type(() => Boolean)
+  allowResubmission?: boolean;
+
+  @ApiProperty({
     description: 'Grade calculation method',
     example: AttemptsGradeMethod.HIGHEST,
     required: false,
@@ -224,8 +243,6 @@ export class CreateLessonDto {
   })
   @IsOptional()
   params?: Record<string, any>;
-
-  /* Course Association Fields */
   
   @ApiProperty({
     description: VALIDATION_MESSAGES.LESSON.COURSE_ID,
@@ -265,24 +282,4 @@ export class CreateLessonDto {
   @IsNumber({}, { message: VALIDATION_MESSAGES.COMMON.NUMBER('Ordering') })
   @Type(() => Number)
   ordering?: number;
-
-  @ApiProperty({
-    description: 'Whether to consider this lesson for passing',
-    example: true,
-    required: false,
-    default: true,
-  })
-  @IsOptional()
-  @IsBoolean({ message: VALIDATION_MESSAGES.COMMON.BOOLEAN('Consider for passing') })
-  @Type(() => Boolean)
-  considerForPassing?: boolean;
-
-  @ApiProperty({ 
-    description: 'Allow users to resubmit the same attempt multiple times. When true, users can only have one attempt and can submit it multiple times. This configuration will override resume and noOfAttempts',
-    default: false 
-  })
-  @IsOptional()
-  @IsBoolean({ message: VALIDATION_MESSAGES.COMMON.BOOLEAN('Allow resubmission') })
-  @Type(() => Boolean)
-  allowResubmission?: boolean;
 }
