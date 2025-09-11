@@ -57,6 +57,9 @@ export class Lesson {
   lessonId: string;
 
   @Column({ type: 'uuid', nullable: true })
+  parentId: string;
+
+  @Column({ type: 'uuid', nullable: true })
   @Index()
   tenantId: string;
   
@@ -201,4 +204,12 @@ export class Lesson {
 
   @OneToMany(() => AssociatedFile, associatedFile => associatedFile.lesson)
   associatedFiles: AssociatedFile[];
+
+  // Self-referencing relationships for parent-child lessons
+  @ManyToOne(() => Lesson, lesson => lesson.associatedLesson, { nullable: true })
+  @JoinColumn({ name: 'parentId' })
+  parentLesson: Lesson;
+
+  @OneToMany(() => Lesson, lesson => lesson.parentLesson)
+  associatedLesson: Lesson[];
 }

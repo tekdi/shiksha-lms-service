@@ -151,6 +151,25 @@ export class CreateLessonDto {
   noOfAttempts?: number = 0;
 
   @ApiProperty({
+    description: 'Whether to consider this lesson for passing',
+    example: true,
+    required: false,
+  })
+  @IsOptional()
+  @IsBoolean({ message: VALIDATION_MESSAGES.COMMON.BOOLEAN('Consider for passing') })
+  @Type(() => Boolean)
+  considerForPassing?: boolean;
+
+  @ApiProperty({ 
+    description: 'Allow users to resubmit the same attempt multiple times. When true, users can only have one attempt and can submit it multiple times. This configuration will override resume and noOfAttempts',
+    default: false 
+  })
+  @IsOptional()
+  @IsBoolean({ message: VALIDATION_MESSAGES.COMMON.BOOLEAN('Allow resubmission') })
+  @Type(() => Boolean)
+  allowResubmission?: boolean;
+
+  @ApiProperty({
     description: 'Grade calculation method',
     example: AttemptsGradeMethod.HIGHEST,
     required: false,
@@ -224,8 +243,6 @@ export class CreateLessonDto {
   })
   @IsOptional()
   params?: Record<string, any>;
-
-  /* Course Association Fields */
   
   @ApiProperty({
     description: VALIDATION_MESSAGES.LESSON.COURSE_ID,
@@ -267,22 +284,20 @@ export class CreateLessonDto {
   ordering?: number;
 
   @ApiProperty({
-    description: 'Whether to consider this lesson for passing',
-    example: true,
+    description: 'Associated lesson ID',
+    example: '123e4567-e89b-12d3-a456-426614174000',
     required: false,
-    default: true,
   })
   @IsOptional()
-  @IsBoolean({ message: VALIDATION_MESSAGES.COMMON.BOOLEAN('Consider for passing') })
-  @Type(() => Boolean)
-  considerForPassing?: boolean;
+  @IsUUID('4', { message: VALIDATION_MESSAGES.COMMON.UUID('Associated lesson ID') })
+  associatedLesson?: string;
 
-  @ApiProperty({ 
-    description: 'Allow users to resubmit the same attempt multiple times. When true, users can only have one attempt and can submit it multiple times. This configuration will override resume and noOfAttempts',
-    default: false 
+  @ApiProperty({
+    description: 'Parent lesson ID',
+    example: '123e4567-e89b-12d3-a456-426614174000',
+    required: false,
   })
   @IsOptional()
-  @IsBoolean({ message: VALIDATION_MESSAGES.COMMON.BOOLEAN('Allow resubmission') })
-  @Type(() => Boolean)
-  allowResubmission?: boolean;
+  @IsUUID('4', { message: VALIDATION_MESSAGES.COMMON.UUID('Parent lesson ID') })
+  parentId?: string;
 }

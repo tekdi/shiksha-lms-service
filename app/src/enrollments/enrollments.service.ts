@@ -163,7 +163,7 @@ export class EnrollmentsService {
         }
       });
 
-      // Count total lessons for the course (only published lessons in published modules with considerForPassing = true)
+      // Count total lessons for the course (only published parent lessons in published modules with considerForPassing = true)
       const courseLessons = await queryRunner.manager
         .createQueryBuilder(Lesson, 'lesson')
         .innerJoin('lesson.module', 'module')
@@ -173,6 +173,7 @@ export class EnrollmentsService {
         .andWhere('lesson.tenantId = :tenantId', { tenantId })
         .andWhere('lesson.organisationId = :organisationId', { organisationId })
         .andWhere('lesson.considerForPassing = :considerForPassing', { considerForPassing: true })
+        .andWhere('lesson.parentId IS NULL') // Only count parent lessons, exclude child lessons
         .getCount();
 
       // Create course tracking record
@@ -204,6 +205,7 @@ export class EnrollmentsService {
           .andWhere('lesson.tenantId = :tenantId', { tenantId })
           .andWhere('lesson.organisationId = :organisationId', { organisationId })
           .andWhere('lesson.considerForPassing = :considerForPassing', { considerForPassing: true })
+          .andWhere('lesson.parentId IS NULL') // Only count parent lessons, exclude child lessons
           .groupBy('lesson.moduleId')
           .getRawMany();
 
