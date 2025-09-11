@@ -411,7 +411,7 @@ export class CoursesService {
             ...(tenantId && { tenantId }),
             ...(organisationId && { organisationId }),
           },
-          relations: ['media'],
+          relations: ['media','associatedFiles.media','associatedLesson'],
           order: { ordering: 'ASC' },
         });
 
@@ -590,16 +590,20 @@ export class CoursesService {
       } else {
         lessonWhere.moduleId = In(moduleIds);
       }
+      // Fetch both parent and child lessons for display
       lessons = await this.lessonRepository.find({
         where: lessonWhere,
         order: { ordering: 'ASC', createdAt: 'ASC' },
-        relations: ['media']
+        relations: ['media', 'associatedLesson', 'associatedFiles.media']
       });
       lessons.forEach(lesson => {
         if (!lessonsByModule.has(lesson.moduleId)) {
           lessonsByModule.set(lesson.moduleId, []);
         }
-        lessonsByModule.get(lesson.moduleId).push(lesson);
+        // Only add parent lessons to the module list, not associated lessons
+        if (!lesson.parentId) {
+          lessonsByModule.get(lesson.moduleId).push(lesson);
+        }
       });
     }
 
@@ -665,8 +669,47 @@ export class CoursesService {
           const bestAttempt = this.calculateBestAttempt(lessonAttempts, lesson.attemptsGrade);
           const lastAttempt = this.getLastAttempt(lessonAttempts);
           
+          // Process associated lessons if they exist
+          let associatedLessonsWithTracking: any[] = [];
+          if (lesson.associatedLesson && lesson.associatedLesson.length > 0) {
+            associatedLessonsWithTracking = lesson.associatedLesson.map(associatedLesson => {
+              const associatedAttempts = lessonAttemptsByLesson.get(associatedLesson.lessonId) || [];
+              const associatedBestAttempt = this.calculateBestAttempt(associatedAttempts, associatedLesson.attemptsGrade);
+              const associatedLastAttempt = this.getLastAttempt(associatedAttempts);
+              
+              return {
+                ...associatedLesson,
+                tracking: associatedBestAttempt ? {
+                  status: associatedBestAttempt.status,
+                  canResume: associatedLesson.allowResubmission ? true : (associatedLesson.resume ?? true) && (associatedLastAttempt && (associatedLastAttempt.status === TrackingStatus.STARTED || associatedLastAttempt.status === TrackingStatus.INCOMPLETE)),
+                  canReattempt: associatedLesson.allowResubmission ? true : (associatedLesson.noOfAttempts === 0 || (associatedLastAttempt && associatedLastAttempt.attempt < associatedLesson.noOfAttempts)) && (associatedLastAttempt && associatedLastAttempt.status === TrackingStatus.COMPLETED),              
+                  completionPercentage: associatedBestAttempt.completionPercentage || 0,
+                  lastAccessed: associatedBestAttempt.updatedAt,
+                  timeSpent: associatedBestAttempt.timeSpent || 0,
+                  score: associatedBestAttempt.score,
+                  attempt: associatedLastAttempt ? {
+                    attemptId: associatedLastAttempt.lessonTrackId,
+                    attemptNumber: associatedLastAttempt.attempt,
+                    startDatetime: associatedLastAttempt.startDatetime,
+                    endDatetime: associatedLastAttempt.endDatetime,
+                    totalContent: associatedLastAttempt.totalContent || 0,
+                    currentPosition: associatedLastAttempt.currentPosition || 0
+                  } : null
+                } : {
+                  status: TrackingStatus.NOT_STARTED,
+                  progress: 0,
+                  lastAccessed: null,
+                  timeSpent: 0,
+                  score: null,
+                  attempt: null
+                }
+              };
+            });
+          }
+          
           return {
             ...lesson,
+            associatedLesson: associatedLessonsWithTracking,
             tracking: bestAttempt ? {
               status: bestAttempt.status,
               canResume: lesson.allowResubmission ? true : (lesson.resume ?? true) && (lastAttempt && (lastAttempt.status === TrackingStatus.STARTED || lastAttempt.status === TrackingStatus.INCOMPLETE)),
@@ -707,7 +750,7 @@ export class CoursesService {
           status: TrackingStatus.NOT_STARTED,
           progress: 0,
           completedLessons: 0,
-          totalLessons: (lessonsByModule.get(module.moduleId) || []).length,
+          totalLessons: (lessonsByModule.get(module.moduleId) || []).filter(lesson => !lesson.parentId).length,
         }
       };
     });
@@ -1359,6 +1402,7 @@ export class CoursesService {
         // Validate that request contains all existing modules
         const missingModuleIds = existingModuleIds.filter(id => !requestModuleIds.includes(id));
         if (missingModuleIds.length > 0) {
+          
           throw new BadRequestException(
             RESPONSE_MESSAGES.ERROR.MISSING_MODULES_IN_STRUCTURE(missingModuleIds.length, missingModuleIds.join(', '))
           );

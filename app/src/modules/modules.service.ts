@@ -589,7 +589,7 @@ export class ModulesService {
     // Get module IDs
     const moduleIds = modules.map(module => module.moduleId);
 
-    // Fetch lesson counts for all modules in a single query
+    // Fetch lesson counts for all modules in a single query (only parent lessons)
     const lessonCounts = await this.lessonRepository
       .createQueryBuilder('lesson')
       .select('lesson.moduleId', 'moduleId')
@@ -598,6 +598,7 @@ export class ModulesService {
       .andWhere('lesson.tenantId = :tenantId', { tenantId })
       .andWhere('lesson.organisationId = :organisationId', { organisationId })
       .andWhere('lesson.status != :archivedStatus', { archivedStatus: LessonStatus.ARCHIVED })
+      .andWhere('lesson.parentId IS NULL') // Only count parent lessons, exclude child lessons
       .groupBy('lesson.moduleId')
       .getRawMany();
 

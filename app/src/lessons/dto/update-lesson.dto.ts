@@ -259,4 +259,23 @@ export class UpdateLessonDto extends PartialType(
   @IsBoolean({ message: VALIDATION_MESSAGES.COMMON.BOOLEAN('Consider for passing') })
   @Type(() => Boolean)
   considerForPassing?: boolean;
+
+  @ApiProperty({
+    description: 'Associated lesson ID',
+    example: '123e4567-e89b-12d3-a456-426614174000',
+    required: false,
+  })
+  @IsOptional()
+  @IsUUID('4', { message: VALIDATION_MESSAGES.COMMON.UUID('Associated lesson ID') })
+  associatedLesson?: string;
+
+
+  @ApiProperty({
+    description: 'Parent lesson ID',
+    example: '123e4567-e89b-12d3-a456-426614174000',
+    required: false,
+  })
+  @IsOptional()
+  @IsUUID('4', { message: VALIDATION_MESSAGES.COMMON.UUID('Parent lesson ID') })
+  parentId?: string;
 }

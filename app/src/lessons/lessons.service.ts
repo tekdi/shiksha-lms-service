@@ -181,6 +181,7 @@ export class LessonsService {
         title: createLessonDto.title,
         alias: createLessonDto.alias,
         format: createLessonDto.format,
+        parentId: createLessonDto.parentId || undefined,
         mediaId,
         image: createLessonDto.image,
         description: createLessonDto.description,
@@ -192,7 +193,7 @@ export class LessonsService {
         attemptsGrade: createLessonDto.attemptsGrade || AttemptsGradeMethod.LAST_ATTEMPT,
         prerequisites: createLessonDto.prerequisites,
         idealTime: createLessonDto.idealTime,
-        resume: createLessonDto.resume || true,
+        resume: createLessonDto.resume,
         totalMarks: createLessonDto.totalMarks,
         passingMarks: createLessonDto.passingMarks,
         params: createLessonDto.params || {},
@@ -204,14 +205,34 @@ export class LessonsService {
         // Course-specific fields
         courseId: createLessonDto.courseId,
         moduleId: createLessonDto.moduleId,
-        sampleLesson: createLessonDto.sampleLesson || false,
-        considerForPassing: createLessonDto.considerForPassing || true,
-        allowResubmission: createLessonDto.allowResubmission || false,
+        sampleLesson: createLessonDto.sampleLesson,
+        considerForPassing: createLessonDto.considerForPassing,
+        allowResubmission: createLessonDto.allowResubmission
       };
 
       // Create and save the lesson
       const lesson = this.lessonRepository.create(lessonData);
       const savedLesson = await this.lessonRepository.save(lesson);
+
+      // If associatedLessonId is provided, update that lesson's parentId to point to this new lesson
+      if (createLessonDto.associatedLesson) {
+        await this.lessonRepository.update(
+          { 
+            lessonId: createLessonDto.associatedLesson,
+            tenantId,
+            organisationId 
+          },
+          { 
+            parentId: savedLesson.lessonId,
+            updatedBy: userId,
+            updatedAt: new Date()
+          }
+        );
+        
+        // Invalidate cache for the associated lesson
+        const associatedLessonKey = this.cacheConfig.getLessonKey(createLessonDto.associatedLesson, tenantId, organisationId);
+        await this.cacheService.del(associatedLessonKey);
+      }
 
       // Cache the new lesson with proper key and TTL
       const lessonKey = this.cacheConfig.getLessonKey(savedLesson.lessonId, tenantId, organisationId);
@@ -728,12 +749,55 @@ export class LessonsService {
         updateData.considerForPassing = updateLessonDto.considerForPassing;
       }
 
+      if (updateLessonDto.parentId !== undefined) {
+        updateData.parentId = updateLessonDto.parentId;
+      }
+
       if (updateLessonDto.allowResubmission !== undefined) {
         updateData.allowResubmission = updateLessonDto.allowResubmission;
-      }
+      } 
+      
       // Update the lesson
       const updatedLesson = this.lessonRepository.merge(lesson, updateData);
       const savedLesson = await this.lessonRepository.save(updatedLesson);
+
+      // If associatedLessonId is provided, update that lesson's parentId to point to this lesson
+      if (updateLessonDto.associatedLesson !== undefined) {
+        if (updateLessonDto.associatedLesson) {
+          // Set the associated lesson's parentId to this lesson
+          await this.lessonRepository.update(
+            { 
+              lessonId: updateLessonDto.associatedLesson,
+              tenantId,
+              organisationId 
+            },
+            { 
+              parentId: lessonId,
+              updatedBy: userId,
+              updatedAt: new Date()
+            }
+          );
+          
+          // Invalidate cache for the associated lesson
+          const associatedLessonKey = this.cacheConfig.getLessonKey(updateLessonDto.associatedLesson, tenantId, organisationId);
+          await this.cacheService.del(associatedLessonKey);
+        } else {
+          // If associatedLessonId is null/empty, remove any existing parent relationship
+          // Find lessons that have this lesson as parent and set their parentId to null
+          await this.lessonRepository.update(
+            { 
+              parentId: lessonId,
+              tenantId,
+              organisationId 
+            },
+            { 
+              parentId: undefined,
+              updatedBy: userId,
+              updatedAt: new Date()
+            }
+          );
+        }
+      }
 
       // Update cache and invalidate related caches
       const lessonKey = this.cacheConfig.getLessonKey(savedLesson.lessonId, tenantId, organisationId);
