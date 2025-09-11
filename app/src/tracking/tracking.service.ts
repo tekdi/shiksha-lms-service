@@ -592,14 +592,15 @@ export class TrackingService {
 
     // If the lesson is completed, update completed lessons count
     if (lessonTrack.status === TrackingStatus.COMPLETED || courseTrack.status === TrackingStatus.STARTED) {
-      // Get all lessons for this course that have considerForPassing = true
+      // Get all parent lessons for this course that have considerForPassing = true
       const courseLessons = await this.lessonRepository.find({
         where: { 
           courseId: lessonTrack.courseId,
           tenantId,
           organisationId,
           status: LessonStatus.PUBLISHED,
-          considerForPassing: true
+          considerForPassing: true,
+          parentId: IsNull() // Only consider parent lessons for completion tracking
         } as FindOptionsWhere<Lesson>,
       });
 
@@ -768,14 +769,15 @@ export class TrackingService {
       });
     }
 
-    // Get all lessons in this module with considerForPassing = true
+    // Get all parent lessons in this module with considerForPassing = true
     const moduleLessons = await this.lessonRepository.find({
       where: { 
         moduleId,
         tenantId,
         organisationId,
         status: LessonStatus.PUBLISHED,
-        considerForPassing: true
+        considerForPassing: true,
+        parentId: IsNull() // Only consider parent lessons for completion tracking
       } as FindOptionsWhere<Lesson>,
     });
 
