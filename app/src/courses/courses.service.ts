@@ -4,6 +4,8 @@ import {
   Logger,
   BadRequestException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import axios from 'axios';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, FindOptionsWhere, Not, Equal, ILike, IsNull, In } from 'typeorm';
 import { Course, CourseStatus } from './entities/course.entity';
@@ -52,6 +54,7 @@ export class CoursesService {
     private readonly cacheConfig: CacheConfigService,
     private readonly modulesService: ModulesService,
     private readonly orderingService: OrderingService,
+    private readonly configService: ConfigService,
   ) {}
 
   /**
@@ -480,7 +483,8 @@ export class CoursesService {
     organisationId: string,
     includeModules: boolean = false,
     includeLessons: boolean = false,
-    moduleId?: string
+    moduleId?: string,
+    authorizationToken?: string
   ): Promise<any> {
     // If includeLessons is true and moduleId is provided, only fetch that module and its lessons
     // If includeLessons is true and no moduleId, fetch all modules and all lessons
@@ -578,6 +582,7 @@ export class CoursesService {
     // Only fetch lessons when needed
     let lessons: any[] = [];
     let lessonsByModule = new Map();
+    let eventDataMap = new Map<string, any>(); // Initialize eventDataMap outside the if block
     if (includeLessons) {
       const lessonWhere: any = {
         courseId,
@@ -605,6 +610,22 @@ export class CoursesService {
           lessonsByModule.get(lesson.moduleId).push(lesson);
         }
       });
+
+      // Extract event media sources for event format lessons
+      const eventMediaSources: string[] = [];
+      const eventMediaMap = new Map<string, any>(); // Map mediaId to lesson for event data integration
+      
+      lessons.forEach(lesson => {
+        if (lesson.format === 'event' && lesson.media && lesson.media.source) {
+          eventMediaSources.push(lesson.media.source);
+          eventMediaMap.set(lesson.mediaId, lesson);
+        }
+      });
+
+      // Fetch event data if there are event lessons
+      if (eventMediaSources.length > 0) {
+        eventDataMap = await this.fetchEventData(eventMediaSources, userId, authorizationToken);
+      }
     }
 
     // Tracking - fetch lesson tracks only when lessons are fetched
@@ -707,9 +728,16 @@ export class CoursesService {
             });
           }
           
+          // Add event data for event format lessons
+          let eventData = null;
+          if (lesson.format === 'event' && lesson.media && lesson.media.source && eventDataMap.has(lesson.media.source)) {
+            eventData = eventDataMap.get(lesson.media.source);
+          }
+          
           return {
             ...lesson,
             associatedLesson: associatedLessonsWithTracking,
+            eventData,
             tracking: bestAttempt ? {
               status: bestAttempt.status,
               canResume: lesson.allowResubmission ? true : (lesson.resume ?? true) && (lastAttempt && (lastAttempt.status === TrackingStatus.STARTED || lastAttempt.status === TrackingStatus.INCOMPLETE)),
@@ -1771,5 +1799,91 @@ export class CoursesService {
     const isLast = results.length <= 1; // If we got 1 or 0 results, the next lesson is the last
 
     return { nextLesson, isLast };
+  }
+
+  /**
+   * Fetch event data from event service for lessons with event format
+   */
+  private async fetchEventData(
+    eventIds: string[],
+    userId: string,
+    authorizationToken?: string
+  ): Promise<Map<string, any>> {
+    if (!eventIds || eventIds.length === 0) {
+      return new Map();
+    }
+
+    try {
+      const eventServiceUrl = this.configService.get<string>('EVENT_SERVICE_URL');
+      if (!eventServiceUrl) {
+        this.logger.warn('EVENT_SERVICE_URL not configured, skipping event data fetch');
+        return new Map();
+      }
+
+      // Validate URL format
+      try {
+        new URL(eventServiceUrl);
+      } catch (urlError) {
+        this.logger.error(`Invalid EVENT_SERVICE_URL format: ${eventServiceUrl}`);
+        return new Map();
+      }
+
+      const url = `${eventServiceUrl}/event-service/attendees/v1/search`;
+      const params = new URLSearchParams();
+      
+      // Add userIds parameter
+      params.append('userIds[]', userId);
+      
+      // Add eventIds parameters
+      eventIds.forEach(eventId => {
+        params.append('eventIds[]', eventId);
+      });
+      
+      // Add pagination parameters
+      params.append('offset', '0');
+      params.append('limit', '100'); // Set a reasonable limit
+
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+
+      if (authorizationToken) {
+        headers['Authorization'] = `Bearer ${authorizationToken}`;
+      }
+
+      this.logger.log(`Fetching event data for ${eventIds.length} events`);
+      this.logger.debug(`Event service URL: ${url}?${params.toString()}`);
+      
+      const response = await axios.get(`${url}?${params.toString()}`, { 
+        headers,
+      });
+      
+      
+      if (response.data && response.data.result && response.data.result.attendees) {
+        const eventDataMap = new Map();
+        response.data.result.attendees.forEach((attendee: any) => {
+          if (attendee.eventId) {
+            eventDataMap.set(attendee.eventId, attendee);
+          }
+        });
+        return eventDataMap;
+      }
+      
+      return new Map();
+    } catch (error) {
+      if (axios.isAxiosError(error)) {
+        this.logger.error(`Event service API error: ${error.response?.status} - ${error.response?.statusText}`, {
+          url: error.config?.url,
+          method: error.config?.method,
+          status: error.response?.status,
+          statusText: error.response?.statusText,
+          data: error.response?.data
+        });
+      } else {
+        this.logger.error(`Failed to fetch event data: ${error.message}`, error.stack);
+      }
+      // Return empty map on error to not break the main flow
+      return new Map();
+    }
   }
 }
