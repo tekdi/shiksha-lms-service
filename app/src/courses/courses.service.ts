@@ -612,6 +612,7 @@ export class CoursesService {
       });
 
       // Extract event media sources for event format lessons
+      // HACK - Aspire-Leader Project
       const eventMediaSources: string[] = [];
       const eventMediaMap = new Map<string, any>(); // Map mediaId to lesson for event data integration
       
@@ -626,6 +627,7 @@ export class CoursesService {
       if (eventMediaSources.length > 0) {
         eventDataMap = await this.fetchEventData(eventMediaSources, userId, authorizationToken);
       }
+      // END HACK - Aspire-Leader Project
     }
 
     // Tracking - fetch lesson tracks only when lessons are fetched
@@ -1803,6 +1805,7 @@ export class CoursesService {
 
   /**
    * Fetch event data from event service for lessons with event format
+   * HACK - Aspire-Leader Project
    */
   private async fetchEventData(
     eventIds: string[],
@@ -1829,19 +1832,13 @@ export class CoursesService {
       }
 
       const url = `${eventServiceUrl}/event-service/attendees/v1/search`;
-      const params = new URLSearchParams();
-      
-      // Add userIds parameter
-      params.append('userIds[]', userId);
-      
-      // Add eventIds parameters
-      eventIds.forEach(eventId => {
-        params.append('eventIds[]', eventId);
-      });
-      
-      // Add pagination parameters
-      params.append('offset', '0');
-      params.append('limit', '100'); // Set a reasonable limit
+
+      const requestBody = {
+        userIds: [userId],
+        eventIds: eventIds,
+        offset: 0,
+        limit: 100
+      };
 
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
@@ -1850,11 +1847,8 @@ export class CoursesService {
       if (authorizationToken) {
         headers['Authorization'] = `Bearer ${authorizationToken}`;
       }
-
-      this.logger.log(`Fetching event data for ${eventIds.length} events`);
-      this.logger.debug(`Event service URL: ${url}?${params.toString()}`);
       
-      const response = await axios.get(`${url}?${params.toString()}`, { 
+      const response = await axios.post(url, requestBody, { 
         headers,
       });
       
