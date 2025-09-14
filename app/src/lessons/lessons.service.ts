@@ -386,7 +386,7 @@ export class LessonsService {
         
     const lesson = await this.lessonRepository.findOne({
       where: whereClause,
-      relations: ['media', 'associatedFiles.media'],
+      relations: ['media', 'associatedFiles.media', 'associatedLesson'],
     });
 
     if (!lesson) {

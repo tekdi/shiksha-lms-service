@@ -218,7 +218,7 @@ export class CoursesController {
   @ApiParam({ name: 'courseId', type: 'string', format: 'uuid', description: 'Course ID' })
   @ApiResponse({ 
     status: 200, 
-    description: 'Course tracking and eligibility retrieved successfully',
+    description: 'Course tracking and eligibility retrieved successfully. For lessons with format="event", eventData will be included if available.',
     schema: {
       properties: {
         courseId: { type: 'string', format: 'uuid' },
@@ -229,7 +229,54 @@ export class CoursesController {
             properties: {
               moduleId: { type: 'string', format: 'uuid' },
               title: { type: 'string' },
-              lessons: { type: 'array', items: { $ref: '#/components/schemas/Lesson' } },
+              lessons: { 
+                type: 'array', 
+                items: { 
+                  allOf: [
+                    { $ref: '#/components/schemas/Lesson' },
+                    {
+                      properties: {
+                        eventData: {
+                          type: 'object',
+                          description: 'Event attendee data from event service (only for lessons with format="event")',
+                          nullable: true,
+                          properties: {
+                            eventAttendeesId: { type: 'string', format: 'uuid' },
+                            userId: { type: 'string', format: 'uuid' },
+                            eventId: { type: 'string', format: 'uuid' },
+                            eventRepetitionId: { type: 'string', format: 'uuid' },
+                            isAttended: { type: 'boolean' },
+                            joinedLeftHistory: { type: 'array', items: { type: 'object' } },
+                            duration: { type: 'number' },
+                            status: { type: 'string' },
+                            enrolledAt: { type: 'string', format: 'date-time', nullable: true },
+                            enrolledBy: { type: 'string', format: 'uuid' },
+                            updatedAt: { type: 'string', format: 'date-time' },
+                            updatedBy: { type: 'string', format: 'uuid', nullable: true },
+                            params: { 
+                              type: 'object',
+                              properties: {
+                                zoom: {
+                                  type: 'object',
+                                  properties: {
+                                    join_url: { type: 'string' },
+                                    provider: { type: 'string' },
+                                    meeting_id: { type: 'number' },
+                                    registrant_id: { type: 'string' }
+                                  }
+                                }
+                              }
+                            },
+                            registrantId: { type: 'string' },
+                            pagination: { type: 'object' },
+                            searchInfo: { type: 'object' }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                } 
+              },
               tracking: { $ref: '#/components/schemas/ModuleTracking' }
             }
           }
@@ -246,6 +293,7 @@ export class CoursesController {
     @Param('userId', ParseUUIDPipe) userId: string,
     @Query() filterDto: CourseHierarchyFilterDto,
     @TenantOrg() tenantOrg: { tenantId: string; organisationId: string },
+    @Headers('authorization') authorization?: string,
   ) {
     const courseHierarchyWithTracking = await this.coursesService.findCourseHierarchyWithTracking(
       courseId, 
@@ -254,7 +302,8 @@ export class CoursesController {
       tenantOrg.organisationId,
       filterDto.includeModules,
       filterDto.includeLessons,
-      filterDto.moduleId
+      filterDto.moduleId,
+      authorization
     );
     return courseHierarchyWithTracking;
   }
