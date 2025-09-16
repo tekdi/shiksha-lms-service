@@ -21,6 +21,7 @@ import { API_IDS } from '../common/constants/api-ids.constant';
 import { ApiId } from '../common/decorators/api-id.decorator';
 import { CommonQueryDto } from '../common/dto/common-query.dto';
 import { UpdateLessonTrackingDto } from './dto/update-lesson-tracking.dto';
+import { UpdateCourseTrackingDto } from './dto/update-course-tracking.dto';
 import { TenantOrg } from '../common/decorators/tenant-org.decorator';
 import { LessonStatusDto } from './dto/lesson-status.dto';
 import { LessonTrack } from './entities/lesson-track.entity';
@@ -46,6 +47,30 @@ export class TrackingController {
     return this.trackingService.getCourseTracking(
       courseId, 
       userId,
+      tenant.tenantId,
+      tenant.organisationId
+    );
+  }
+
+  @Patch('course/:courseId/:userId')
+  @ApiId(API_IDS.UPDATE_COURSE_TRACKING)
+  @ApiOperation({ summary: 'Update course tracking status' })
+  @ApiParam({ name: 'courseId', description: 'The course ID', type: 'string', format: 'uuid' })
+  @ApiParam({ name: 'userId', description: 'The user ID', type: 'string', format: 'uuid' })
+  @ApiBody({ type: UpdateCourseTrackingDto })
+  @ApiResponse({ status: 200, description: 'Course tracking updated successfully' })
+  @ApiResponse({ status: 404, description: 'Course tracking not found' })
+  @ApiResponse({ status: 400, description: 'Invalid request data' })
+  async updateCourseTracking(
+    @Param('courseId', ParseUUIDPipe) courseId: string,
+    @Param('userId', ParseUUIDPipe) userId: string,
+    @Body() updateCourseTrackingDto: UpdateCourseTrackingDto,
+    @TenantOrg() tenant: {tenantId: string, organisationId: string},  
+  ) {
+    return this.trackingService.updateCourseTracking(
+      courseId, 
+      userId,
+      updateCourseTrackingDto,
       tenant.tenantId,
       tenant.organisationId
     );

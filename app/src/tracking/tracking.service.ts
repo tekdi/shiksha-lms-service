@@ -13,6 +13,7 @@ import { Lesson, LessonStatus, AttemptsGradeMethod } from '../lessons/entities/l
 import { Module, ModuleStatus } from '../modules/entities/module.entity';
 import { RESPONSE_MESSAGES } from '../common/constants/response-messages.constant';
 import { UpdateLessonTrackingDto } from './dto/update-lesson-tracking.dto';
+import { UpdateCourseTrackingDto } from './dto/update-course-tracking.dto';
 import { LessonStatusDto } from './dto/lesson-status.dto';
 import { ConfigService } from '@nestjs/config';
 import { ModuleTrack, ModuleTrackStatus } from './entities/module-track.entity';
@@ -67,6 +68,91 @@ export class TrackingService {
     }
 
     return courseTrack;
+  }
+
+  /**
+   * Update course tracking
+   * @param courseId The course ID
+   * @param userId The user ID
+   * @param updateCourseTrackingDto The update data
+   * @param tenantId The tenant ID for data isolation
+   * @param organisationId The organization ID for data isolation
+   */
+  async updateCourseTracking(
+    courseId: string, 
+    userId: string,
+    updateCourseTrackingDto: UpdateCourseTrackingDto,
+    tenantId?: string,
+    organisationId?: string
+  ): Promise<CourseTrack> {
+    // Build where clause with required filters
+    const whereClause: any = { 
+      courseId, 
+      userId,
+      tenantId,
+      organisationId
+    };
+          
+    const courseTrack = await this.courseTrackRepository.findOne({
+      where: whereClause,
+    });
+
+    if (!courseTrack) {
+      throw new NotFoundException(RESPONSE_MESSAGES.ERROR.COURSE_TRACKING_NOT_FOUND);
+    }
+
+    // Update fields if provided in the DTO
+    if (updateCourseTrackingDto.status !== undefined) {
+      courseTrack.status = updateCourseTrackingDto.status;
+    }
+
+    if (updateCourseTrackingDto.startDatetime !== undefined) {
+      courseTrack.startDatetime = new Date(updateCourseTrackingDto.startDatetime);
+    }
+
+    if (updateCourseTrackingDto.endDatetime !== undefined) {
+      courseTrack.endDatetime = new Date(updateCourseTrackingDto.endDatetime);
+    }
+
+    if (updateCourseTrackingDto.noOfLessons !== undefined) {
+      courseTrack.noOfLessons = updateCourseTrackingDto.noOfLessons;
+    }
+
+    if (updateCourseTrackingDto.completedLessons !== undefined) {
+      courseTrack.completedLessons = updateCourseTrackingDto.completedLessons;
+    }
+
+    if (updateCourseTrackingDto.lastAccessedDate !== undefined) {
+      courseTrack.lastAccessedDate = new Date(updateCourseTrackingDto.lastAccessedDate);
+    }
+
+    if (updateCourseTrackingDto.certGenDate !== undefined) {
+      courseTrack.certGenDate = new Date(updateCourseTrackingDto.certGenDate);
+    }
+    
+    // Auto-update status based on completion
+    if (courseTrack.completedLessons === courseTrack.noOfLessons && courseTrack.noOfLessons > 0) {
+      courseTrack.status = TrackingStatus.COMPLETED;
+      if (!courseTrack.endDatetime) {
+        courseTrack.endDatetime = new Date();
+      }
+    }
+    
+    // Update last accessed date if not explicitly provided
+    if (!updateCourseTrackingDto.lastAccessedDate) {
+      courseTrack.lastAccessedDate = new Date();
+    }
+
+    if (updateCourseTrackingDto.certificateIssued !== undefined) {
+      courseTrack.certificateIssued = updateCourseTrackingDto.certificateIssued;
+    }
+
+    // Save the updated course track
+    const updatedCourseTrack = await this.courseTrackRepository.save(courseTrack);
+
+    this.logger.log(`Course tracking updated for course ${courseId} and user ${userId}`);
+
+    return updatedCourseTrack;
   }
 
   /**
