@@ -599,7 +599,7 @@ export class CoursesService {
       lessons = await this.lessonRepository.find({
         where: lessonWhere,
         order: { ordering: 'ASC', createdAt: 'ASC' },
-        relations: ['media', 'associatedLesson', 'associatedFiles.media']
+        relations: ['media', 'associatedLesson', 'associatedLesson.media', 'associatedFiles.media']
       });
       lessons.forEach(lesson => {
         if (!lessonsByModule.has(lesson.moduleId)) {
