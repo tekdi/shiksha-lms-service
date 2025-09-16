@@ -52,6 +52,7 @@ export const API_IDS = {
   
   // Tracking APIs
   GET_COURSE_TRACKING: 'api.course.progress.read',
+  UPDATE_COURSE_TRACKING: 'api.course.progress.update',
   START_LESSON_ATTEMPT: 'api.lesson.attempt.start',
   MANAGE_LESSON_ATTEMPT: 'api.lesson.attempt.startover',
   GET_LESSON_STATUS: 'api.lesson.attempt.status',
