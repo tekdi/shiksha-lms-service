@@ -13,10 +13,11 @@ import {
 } from '@nestjs/swagger';
 import { AspireLeaderService } from './aspire-leader.service';
 import { CourseReportDto, CourseReportHeadersDto } from './dto/course-report.dto';
+import { TrackingStatus } from '../tracking/entities/course-track.entity';
+import { EnrollmentStatus } from '../enrollments/entities/user-enrollment.entity';
 import { API_IDS } from '../common/constants/api-ids.constant';
 import { ApiId } from '../common/decorators/api-id.decorator';
 import { TenantOrg } from '../common/decorators/tenant-org.decorator';
-import { CommonQueryDto } from 'src/common/dto/common-query.dto';
 
 @ApiTags('Aspire Leader Reports')
 @Controller('course')
@@ -38,6 +39,9 @@ export class AspireLeaderController {
   @ApiQuery({ name: 'limit', type: 'number', description: 'For pagination (default: 10)', required: false })
   @ApiQuery({ name: 'sortBy', type: 'string', description: 'Field to sort by (e.g., progress)', required: false })
   @ApiQuery({ name: 'orderBy', type: 'string', enum: ['asc', 'desc'], description: 'Sort order', required: false })
+  @ApiQuery({ name: 'status', type: 'string', enum: Object.values(TrackingStatus), description: 'Filter by course tracking status', required: false })
+  @ApiQuery({ name: 'enrollmentStatus', type: 'string', enum: Object.values(EnrollmentStatus), description: 'Filter by enrollment status', required: false })
+  @ApiQuery({ name: 'certificateIssued', type: 'boolean', description: 'Filter by certificate issued status', required: false })
   @ApiResponse({ 
     status: 200, 
     description: 'Course report generated successfully',

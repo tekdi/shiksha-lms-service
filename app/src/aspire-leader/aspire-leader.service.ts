@@ -87,8 +87,8 @@ export class AspireLeaderService {
     organisationId: string,
     authorization: string,
   ): Promise<any> {
-    // Query with INNER JOIN course and course track, LEFT JOIN with enrollment
-    const enrollmentData = await this.courseTrackRepository
+    // Build query with filters
+    const queryBuilder = this.courseTrackRepository
       .createQueryBuilder('courseTrack')
       .innerJoinAndSelect('courseTrack.course', 'course')
       .leftJoin(
@@ -106,15 +106,26 @@ export class AspireLeaderService {
       .where('courseTrack.courseId = :courseId', { courseId: reportDto.courseId })
       .andWhere('courseTrack.tenantId = :tenantId', { tenantId })
       .andWhere('courseTrack.organisationId = :organisationId', { organisationId })
-      .andWhere('(enrollment.status IS NULL OR enrollment.status != :status)', { status: EnrollmentStatus.ARCHIVED })
+      .andWhere('(enrollment.status IS NULL OR enrollment.status != :status)', { status: EnrollmentStatus.ARCHIVED });
+
+    // Apply status filter (course tracking status)
+    if (reportDto.status) {
+      queryBuilder.andWhere('courseTrack.status = :trackingStatus', { trackingStatus: reportDto.status });
+    }
+    // Apply certificate issued filter
+    if (reportDto.certificateIssued !== undefined) {
+      queryBuilder.andWhere('courseTrack.certificateIssued = :certificateIssued', { certificateIssued: reportDto.certificateIssued });
+    }
+
+    const enrollmentData = await queryBuilder
       .orderBy(this.getSortField(reportDto.sortBy || 'progress', true), (reportDto.orderBy?.toUpperCase() as 'ASC' | 'DESC') || 'DESC')
       .addOrderBy('courseTrack.lastAccessedDate', 'DESC') // Secondary sort for consistent ordering
       .skip(reportDto.offset || 0)
       .take(reportDto.limit || 10)
       .getMany();
 
-    // Get total count for pagination
-    const totalCount = await this.courseTrackRepository
+    // Get total count for pagination with same filters
+    const countQueryBuilder = this.courseTrackRepository
       .createQueryBuilder('courseTrack')
       .leftJoin(
         'user_enrollments',
@@ -124,8 +135,18 @@ export class AspireLeaderService {
       .where('courseTrack.courseId = :courseId', { courseId: reportDto.courseId })
       .andWhere('courseTrack.tenantId = :tenantId', { tenantId })
       .andWhere('courseTrack.organisationId = :organisationId', { organisationId })
-      .andWhere('(enrollment.status IS NULL OR enrollment.status != :status)', { status: EnrollmentStatus.ARCHIVED })
-      .getCount();
+      .andWhere('(enrollment.status IS NULL OR enrollment.status != :status)', { status: EnrollmentStatus.ARCHIVED });
+
+    // Apply same filters to count query
+    if (reportDto.status) {
+      countQueryBuilder.andWhere('courseTrack.status = :trackingStatus', { trackingStatus: reportDto.status });
+    }
+
+    if (reportDto.certificateIssued !== undefined) {
+      countQueryBuilder.andWhere('courseTrack.certificateIssued = :certificateIssued', { certificateIssued: reportDto.certificateIssued });
+    }
+
+    const totalCount = await countQueryBuilder.getCount();
 
     if (enrollmentData.length === 0) {
       return {

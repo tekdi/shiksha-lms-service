@@ -1,6 +1,8 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsUUID, IsOptional, IsInt, IsString, Min, IsIn } from 'class-validator';
+import { IsUUID, IsOptional, IsInt, IsString, Min, IsIn, IsBoolean } from 'class-validator';
 import { Type } from 'class-transformer';
+import { TrackingStatus } from '../../tracking/entities/course-track.entity';
+import { EnrollmentStatus } from '../../enrollments/entities/user-enrollment.entity';
 
 export class CourseReportHeadersDto {
   @ApiProperty({
@@ -90,4 +92,39 @@ export class CourseReportDto {
   @IsString()
   @IsIn(['asc', 'desc'])
   orderBy?: string = 'desc';
+
+  @ApiProperty({
+    description: 'Filter by course tracking status',
+    example: 'completed',
+    type: 'string',
+    required: false,
+    enum: TrackingStatus
+  })
+  @IsOptional()
+  @IsString()
+  @IsIn(Object.values(TrackingStatus))
+  status?: TrackingStatus;
+
+  @ApiProperty({
+    description: 'Filter by enrollment status',
+    example: 'published',
+    type: 'string',
+    required: false,
+    enum: EnrollmentStatus
+  })
+  @IsOptional()
+  @IsString()
+  @IsIn(Object.values(EnrollmentStatus))
+  enrollmentStatus?: EnrollmentStatus;
+
+  @ApiProperty({
+    description: 'Filter by certificate issued status',
+    example: true,
+    type: 'boolean',
+    required: false
+  })
+  @IsOptional()
+  @Type(() => Boolean)
+  @IsBoolean()
+  certificateIssued?: boolean;
 } 
