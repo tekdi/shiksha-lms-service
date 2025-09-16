@@ -69,6 +69,9 @@ export class CourseTrack {
   @Column({ type: 'timestamptz', nullable: true })
   certGenDate: Date;
 
+  @Column({ type: 'boolean', default: false })
+  certificateIssued: boolean;
+
   @ManyToOne(() => Course)
   @JoinColumn({ name: 'courseId' })
   course: Course;
