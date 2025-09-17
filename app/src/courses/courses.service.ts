@@ -599,33 +599,33 @@ export class CoursesService {
       lessons = await this.lessonRepository.find({
         where: lessonWhere,
         order: { ordering: 'ASC', createdAt: 'ASC' },
-        relations: ['media', 'associatedLesson', 'associatedFiles.media']
+        relations: ['media', 'associatedLesson', 'associatedLesson.media', 'associatedLesson.associatedFiles', 'associatedLesson.associatedFiles.media', 'associatedFiles', 'associatedFiles.media']
       });
       lessons.forEach(lesson => {
         if (!lessonsByModule.has(lesson.moduleId)) {
           lessonsByModule.set(lesson.moduleId, []);
         }
-        // Only add parent lessons to the module list, not associated lessons
+        // Only add parent lessons to the module list, not child lessons
         if (!lesson.parentId) {
           lessonsByModule.get(lesson.moduleId).push(lesson);
         }
       });
 
-      // Extract event media sources for event format lessons
+      // Extract event IDs for event format lessons
       // HACK - Aspire-Leader Project
-      const eventMediaSources: string[] = [];
+      const eventIds: string[] = [];
       const eventMediaMap = new Map<string, any>(); // Map mediaId to lesson for event data integration
       
       lessons.forEach(lesson => {
         if (lesson.format === 'event' && lesson.media && lesson.media.source) {
-          eventMediaSources.push(lesson.media.source);
-          eventMediaMap.set(lesson.mediaId, lesson);
+          eventIds.push(lesson.media.source); 
+          eventMediaMap.set(lesson.media.source, lesson);
         }
       });
 
       // Fetch event data if there are event lessons
-      if (eventMediaSources.length > 0) {
-        eventDataMap = await this.fetchEventData(eventMediaSources, userId, authorizationToken);
+      if (eventIds.length > 0) {
+        eventDataMap = await this.fetchEventData(eventIds, userId, authorizationToken);
       }
       // END HACK - Aspire-Leader Project
     }
@@ -1832,7 +1832,6 @@ export class CoursesService {
       }
 
       const url = `${eventServiceUrl}/event-service/attendees/v1/search`;
-
       const requestBody = {
         userIds: [userId],
         eventIds: eventIds,
@@ -1851,7 +1850,6 @@ export class CoursesService {
       const response = await axios.post(url, requestBody, { 
         headers,
       });
-      
       
       if (response.data && response.data.result && response.data.result.attendees) {
         const eventDataMap = new Map();
