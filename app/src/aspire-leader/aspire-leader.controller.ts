@@ -18,6 +18,7 @@ import { EnrollmentStatus } from '../enrollments/entities/user-enrollment.entity
 import { API_IDS } from '../common/constants/api-ids.constant';
 import { ApiId } from '../common/decorators/api-id.decorator';
 import { TenantOrg } from '../common/decorators/tenant-org.decorator';
+import { ParseBoolPipe } from '@nestjs/common';
 
 @ApiTags('Aspire Leader Reports')
 @Controller('course')
@@ -50,9 +51,11 @@ export class AspireLeaderController {
   @ApiResponse({ status: 404, description: 'Course or lesson not found' })
   async generateCourseReport(
     @Query() reportDto: CourseReportDto,
+    @Query('certificateIssued', new ParseBoolPipe({ optional: true })) certificateIssued: boolean,
     @TenantOrg() tenantOrg: { tenantId: string; organisationId: string },
     @Headers() headers: CourseReportHeadersDto,
   ): Promise<any> {
+    reportDto.certificateIssued = certificateIssued;
     return this.aspireLeaderService.generateCourseReport(
       reportDto,
       tenantOrg.tenantId,
