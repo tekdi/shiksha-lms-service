@@ -210,6 +210,26 @@ export class LessonsService {
         allowResubmission: createLessonDto.allowResubmission
       };
 
+      // Validate associated lesson if provided
+      if (createLessonDto.associatedLesson) {
+        const associatedLesson = await this.lessonRepository.findOne({
+          where: {
+            lessonId: createLessonDto.associatedLesson,
+            tenantId,
+            organisationId
+          },
+          select: ['lessonId', 'parentId']
+        });
+
+        if (!associatedLesson) {
+          throw new NotFoundException(RESPONSE_MESSAGES.ERROR.LESSON_NOT_FOUND);
+        }
+
+        if (associatedLesson.parentId) {
+          throw new BadRequestException(RESPONSE_MESSAGES.ERROR.ASSOCIATED_LESSON_ALREADY_HAS_PARENT);
+        }
+      }
+
       // Create and save the lesson
       const lesson = this.lessonRepository.create(lessonData);
       const savedLesson = await this.lessonRepository.save(lesson);
@@ -756,6 +776,26 @@ export class LessonsService {
       if (updateLessonDto.allowResubmission !== undefined) {
         updateData.allowResubmission = updateLessonDto.allowResubmission;
       } 
+
+      // Validate associated lesson if provided
+      if (updateLessonDto.associatedLesson !== undefined && updateLessonDto.associatedLesson) {
+        const associatedLesson = await this.lessonRepository.findOne({
+          where: {
+            lessonId: updateLessonDto.associatedLesson,
+            tenantId,
+            organisationId
+          },
+          select: ['lessonId', 'parentId']
+        });
+
+        if (!associatedLesson) {
+          throw new NotFoundException(RESPONSE_MESSAGES.ERROR.LESSON_NOT_FOUND);
+        }
+
+        if (associatedLesson.parentId) {
+          throw new BadRequestException(RESPONSE_MESSAGES.ERROR.ASSOCIATED_LESSON_ALREADY_HAS_PARENT);
+        }
+      }
       
       // Update the lesson
       const updatedLesson = this.lessonRepository.merge(lesson, updateData);
