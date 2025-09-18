@@ -1576,12 +1576,13 @@ export class CoursesService {
     currentId: string,
     tenantId: string,
     organisationId: string,
-  ): Promise<{ success: boolean; data: { nextId: string; nextIdFor: string; isLast: boolean } }> {
+  ): Promise<{ success: boolean; data: { nextId: string; nextIdFor: string; isLast: boolean, nextTitle: string | null } }> {
     try {
       this.logger.log(`Getting next ${nextIdFor} for ID: ${currentId}`);
 
       let nextId: string | null = null;
       let isLast = false;
+      let nextTitle: string | null = null;
 
       switch (nextIdFor) {
         case 'course':
@@ -1589,6 +1590,7 @@ export class CoursesService {
           if (nextCourse.nextCourse) {
             nextId = nextCourse.nextCourse?.courseId || null;
             isLast = nextCourse.isLast;
+            nextTitle = nextCourse.nextCourse?.title || null;
             // Check if the next course is the last course
           }
           break;
@@ -1598,6 +1600,7 @@ export class CoursesService {
           if (nextModuleResult.nextModule) {
             nextId = nextModuleResult.nextModule.moduleId;
             isLast = nextModuleResult.isLast;
+            nextTitle = nextModuleResult.nextModule?.title || null;
             // Check if the next module is the last module in the course
           } else {
             // If no next module exists, try to get the next course from the current module's course
@@ -1611,6 +1614,7 @@ export class CoursesService {
               if (nextCourseResult.nextCourse) {
                 nextId = nextCourseResult.nextCourse.courseId;
                 isLast = nextCourseResult.isLast;
+                nextTitle = nextCourseResult.nextCourse?.title || null;
                 // Update nextIdFor to indicate we're returning a course instead of module
                 nextIdFor = 'course';
                 // Check if the next course is the last course
@@ -1624,6 +1628,7 @@ export class CoursesService {
           if (nextLessonResult.nextLesson) {
             nextId = nextLessonResult.nextLesson.lessonId;
             isLast = nextLessonResult.isLast;
+            nextTitle = nextLessonResult.nextLesson?.title || null;
             // Check if the next lesson is the last lesson in the module
           } else {
             // If no next lesson exists, try to get the next module from the current lesson's module
@@ -1637,6 +1642,7 @@ export class CoursesService {
               if (nextModuleResult.nextModule) {
                 nextId = nextModuleResult.nextModule.moduleId;
                 isLast = nextModuleResult.isLast;
+                nextTitle = nextModuleResult.nextModule?.title || null;
                 // Update nextIdFor to indicate we're returning a module instead of lesson
                 nextIdFor = 'module';
                 // Check if the next module is the last module
@@ -1647,6 +1653,7 @@ export class CoursesService {
                   if (nextCourseResult.nextCourse) {
                     nextId = nextCourseResult.nextCourse.courseId;
                     isLast = nextCourseResult.isLast;
+                    nextTitle = nextCourseResult.nextCourse?.title || null;
                     // Update nextIdFor to indicate we're returning a course instead of lesson
                     nextIdFor = 'course';
                     // Check if the next course is the last course
@@ -1668,6 +1675,7 @@ export class CoursesService {
         data: {
           nextId: nextId || '',
           nextIdFor,
+          nextTitle,
           isLast
         }
       };
