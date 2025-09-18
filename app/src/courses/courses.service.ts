@@ -1697,7 +1697,7 @@ export class CoursesService {
     // First get the current course to extract cohortId
     const currentCourse = await this.courseRepository.findOne({
       where: { courseId: currentCourseId, tenantId, organisationId },
-      select: ['courseId', 'params', 'ordering']
+      select: ['courseId', 'params', 'ordering', 'title']
     });
 
     if (!currentCourse) {
@@ -1710,7 +1710,7 @@ export class CoursesService {
     // Build query to find next course
     let query = this.courseRepository
       .createQueryBuilder('course')
-      .select(['course.courseId', 'course.ordering'])
+      .select(['course.courseId', 'course.ordering, course.title'])
       .where('course.tenantId = :tenantId', { tenantId })
       .andWhere('course.organisationId = :organisationId', { organisationId })
       .andWhere('course.status = :status', { status: CourseStatus.PUBLISHED })
@@ -1742,7 +1742,7 @@ export class CoursesService {
     // First get the current module to find its course and ordering
     const currentModule = await this.moduleRepository.findOne({
       where: { moduleId: currentModuleId, tenantId, organisationId },
-      select: ['moduleId', 'courseId', 'ordering']
+      select: ['moduleId', 'courseId', 'ordering', 'title']
     });
 
     if (!currentModule) {
@@ -1754,7 +1754,7 @@ export class CoursesService {
     // Build query to find next module
     const query = this.moduleRepository
       .createQueryBuilder('module')
-      .select(['module.moduleId', 'module.ordering'])
+      .select(['module.moduleId', 'module.ordering', 'module.title'])
       .where('module.courseId = :courseId', { courseId: currentModule.courseId })
       .andWhere('module.tenantId = :tenantId', { tenantId })
       .andWhere('module.organisationId = :organisationId', { organisationId })
@@ -1782,7 +1782,7 @@ export class CoursesService {
     // First get the current lesson to find its module and ordering
     const currentLesson = await this.lessonRepository.findOne({
       where: { lessonId: currentLessonId, tenantId, organisationId },
-      select: ['lessonId', 'moduleId', 'ordering']
+      select: ['lessonId', 'moduleId', 'ordering', 'title']
     });
 
     if (!currentLesson) {
@@ -1794,7 +1794,7 @@ export class CoursesService {
     // Build query to find next lesson
     const query = this.lessonRepository
       .createQueryBuilder('lesson')
-      .select(['lesson.lessonId', 'lesson.ordering'])
+      .select(['lesson.lessonId', 'lesson.ordering', 'lesson.title'])
       .where('lesson.moduleId = :moduleId', { moduleId: currentLesson.moduleId })
       .andWhere('lesson.tenantId = :tenantId', { tenantId })
       .andWhere('lesson.organisationId = :organisationId', { organisationId })
