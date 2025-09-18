@@ -792,7 +792,7 @@ export class LessonsService {
           throw new NotFoundException(RESPONSE_MESSAGES.ERROR.LESSON_NOT_FOUND);
         }
 
-        if (associatedLesson.parentId) {
+        if (lesson.lessonId !== associatedLesson.parentId) {
           throw new BadRequestException(RESPONSE_MESSAGES.ERROR.ASSOCIATED_LESSON_ALREADY_HAS_PARENT);
         }
       }
