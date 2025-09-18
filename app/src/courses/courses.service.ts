@@ -1841,7 +1841,7 @@ export class CoursesService {
 
       const url = `${eventServiceUrl}/event-service/attendees/v1/search`;
       const requestBody = {
-        userIds: [userId],
+        userId: userId,
         eventIds: eventIds,
         offset: 0,
         limit: 100
