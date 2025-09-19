@@ -1710,7 +1710,7 @@ export class CoursesService {
     // Build query to find next course
     let query = this.courseRepository
       .createQueryBuilder('course')
-      .select(['course.courseId', 'course.ordering, course.title'])
+      .select(['course.courseId', 'course.ordering', 'course.title'])
       .where('course.tenantId = :tenantId', { tenantId })
       .andWhere('course.organisationId = :organisationId', { organisationId })
       .andWhere('course.status = :status', { status: CourseStatus.PUBLISHED })
