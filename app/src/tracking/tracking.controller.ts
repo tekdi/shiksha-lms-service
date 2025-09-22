@@ -22,6 +22,7 @@ import { ApiId } from '../common/decorators/api-id.decorator';
 import { CommonQueryDto } from '../common/dto/common-query.dto';
 import { UpdateLessonTrackingDto } from './dto/update-lesson-tracking.dto';
 import { UpdateCourseTrackingDto } from './dto/update-course-tracking.dto';
+import { UpdateEventProgressDto } from './dto/update-event-progress.dto';
 import { TenantOrg } from '../common/decorators/tenant-org.decorator';
 import { LessonStatusDto } from './dto/lesson-status.dto';
 import { LessonTrack } from './entities/lesson-track.entity';
@@ -175,6 +176,27 @@ export class TrackingController {
       attemptId,
       UpdateLessonTrackingDto,
       query.userId,
+      tenant.tenantId,
+      tenant.organisationId
+    );
+  }
+
+  @Patch('event/:eventId')
+  @ApiId(API_IDS.UPDATE_EVENT_LESSON)
+  @ApiOperation({ summary: 'Update lesson completion by event ID' })
+  @ApiParam({ name: 'eventId', description: 'The event ID that maps to lesson.media.source', type: 'string' })
+  @ApiBody({ type: UpdateEventProgressDto })
+  @ApiResponse({ status: 200, description: 'Lesson attempt marked as completed successfully' })
+  @ApiResponse({ status: 404, description: 'Lesson not found for the given event ID' })
+  @ApiResponse({ status: 400, description: 'Invalid request data' })
+  async updateEventLesson(
+    @Param('eventId') eventId: string,
+    @Body() updateEventProgressDto: UpdateEventProgressDto,
+    @TenantOrg() tenant: {tenantId: string, organisationId: string},  
+  ): Promise<LessonTrack> {
+    return this.trackingService.updateEventProgress(
+      eventId,
+      updateEventProgressDto,
       tenant.tenantId,
       tenant.organisationId
     );
