@@ -57,7 +57,7 @@ export class Lesson {
   lessonId: string;
 
   @Column({ type: 'uuid', nullable: true })
-  parentId: string;
+  parentId: string | null;
 
   @Column({ type: 'uuid', nullable: true })
   @Index()
