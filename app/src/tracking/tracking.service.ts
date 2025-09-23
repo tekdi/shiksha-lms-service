@@ -151,8 +151,6 @@ export class TrackingService {
     // Save the updated course track
     const updatedCourseTrack = await this.courseTrackRepository.save(courseTrack);
 
-    this.logger.log(`Course tracking updated for course ${courseId} and user ${userId}`);
-
     return updatedCourseTrack;
   }
 
@@ -892,6 +890,7 @@ export class TrackingService {
     await this.moduleTrackRepository.save(moduleTrack);
 
     } catch (error) {
+      this.logger.error(`Error updating module tracking for moduleId: ${moduleId}, userId: ${userId}`, error);
       throw new BadRequestException(RESPONSE_MESSAGES.ERROR.MODULE_TRACKING_ERROR);
     }
   }
@@ -906,79 +905,87 @@ export class TrackingService {
   async updateEventProgress(
     eventId: string,
     updateEventProgressDto: UpdateEventProgressDto,
-    tenantId?: string,
-    organisationId?: string
+    tenantId: string,
+    organisationId: string
   ): Promise<LessonTrack> {
-    // Find lesson by media.source matching the eventId
-    const lesson = await this.lessonRepository.findOne({
-      where: {
-        tenantId,
-        organisationId,
-        status: LessonStatus.PUBLISHED,
-        media: {
-          source: eventId,
+    try {
+      // Find lesson by media.source matching the eventId
+      const lesson = await this.lessonRepository.findOne({
+        where: {
+          tenantId,
+          organisationId,
+          status: LessonStatus.PUBLISHED,
+          media: {
+            source: eventId,
+            tenantId,
+            organisationId
+          }
+        } as FindOptionsWhere<Lesson>,
+        relations: ['media']
+      });
+
+      if (!lesson) {
+        throw new NotFoundException(RESPONSE_MESSAGES.ERROR.LESSON_NOT_FOUND);
+      }
+
+      // Find the last attempt for this lesson and user
+      const lastAttempt = await this.lessonTrackRepository.findOne({
+        where: {
+          lessonId: lesson.lessonId,
+          userId: updateEventProgressDto.userId,
           tenantId,
           organisationId
+        } as FindOptionsWhere<LessonTrack>,
+        order: {
+          attempt: 'DESC'
         }
-      } as FindOptionsWhere<Lesson>,
-      relations: ['media']
-    });
+      });
 
-    if (!lesson) {
-      throw new NotFoundException(RESPONSE_MESSAGES.ERROR.LESSON_NOT_FOUND);
-    }
-
-    // Find the last attempt for this lesson and user
-    const lastAttempt = await this.lessonTrackRepository.findOne({
-      where: {
-        lessonId: lesson.lessonId,
-        userId: updateEventProgressDto.userId,
-        tenantId,
-        organisationId
-      } as FindOptionsWhere<LessonTrack>,
-      order: {
-        attempt: 'DESC'
+      if (!lastAttempt) {
+        throw new NotFoundException(RESPONSE_MESSAGES.ERROR.TRACKING_NOT_FOUND);
       }
-    });
 
-    if (!lastAttempt) {
-      throw new NotFoundException(RESPONSE_MESSAGES.ERROR.TRACKING_NOT_FOUND);
+      // Update the attempt with the provided data
+      const updateData: Partial<LessonTrack> = {
+        status: updateEventProgressDto.status || TrackingStatus.COMPLETED,
+        endDatetime: new Date(),
+        updatedBy: updateEventProgressDto.userId
+      };
+
+      // Add timeSpent if provided
+      if (updateEventProgressDto.timeSpent !== undefined) {
+        updateData.timeSpent = (lastAttempt.timeSpent || 0) + updateEventProgressDto.timeSpent;
+      }
+
+      // Update completion percentage to 100% if marking as completed
+      if (updateData.status === TrackingStatus.COMPLETED) {
+        updateData.completionPercentage = 100;
+      }
+
+      // Apply updates
+      Object.assign(lastAttempt, updateData);
+
+      // Save the updated attempt
+      const updatedAttempt = await this.lessonTrackRepository.save(lastAttempt);
+
+      // Update course and module tracking if this lesson is part of a course
+      if (lesson.courseId) {
+        await this.updateCourseTracking(lesson.courseId, updateEventProgressDto.userId, {
+          status: TrackingStatus.COMPLETED
+        } as UpdateCourseTrackingDto, tenantId, organisationId);
+      }
+
+      if (lesson.moduleId) {
+        await this.updateModuleTracking(lesson.moduleId, updateEventProgressDto.userId, tenantId, organisationId);
+      }
+
+      return updatedAttempt;
+    } catch (error) {
+      this.logger.error(`Error updating event progress for eventId: ${eventId}, userId: ${updateEventProgressDto.userId}`, error);
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      throw new BadRequestException('Error updating lesson progress');
     }
-
-    // Update the attempt with the provided data
-    const updateData: Partial<LessonTrack> = {
-      status: updateEventProgressDto.status || TrackingStatus.COMPLETED,
-      endDatetime: new Date(),
-      updatedBy: updateEventProgressDto.userId
-    };
-
-    // Add timeSpent if provided
-    if (updateEventProgressDto.timeSpent !== undefined) {
-      updateData.timeSpent = (lastAttempt.timeSpent || 0) + updateEventProgressDto.timeSpent;
-    }
-
-    // Update completion percentage to 100% if marking as completed
-    if (updateData.status === TrackingStatus.COMPLETED) {
-      updateData.completionPercentage = 100;
-    }
-
-    // Apply updates
-    Object.assign(lastAttempt, updateData);
-
-    // Save the updated attempt
-    const updatedAttempt = await this.lessonTrackRepository.save(lastAttempt);
-
-    // Update course and module tracking if this lesson is part of a course
-    if (lesson.courseId) {
-      await this.updateCourseTracking(lesson.courseId, updateEventProgressDto.userId, {
-        status: TrackingStatus.COMPLETED
-      } as UpdateCourseTrackingDto, tenantId, organisationId);
-    }
-
-    if (lesson.moduleId) {
-      await this.updateModuleTracking(lesson.moduleId, updateEventProgressDto.userId, tenantId || '', organisationId || '');
-    }
-
-    return updatedAttempt;
   }
 }

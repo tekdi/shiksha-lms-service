@@ -787,12 +787,11 @@ export class LessonsService {
           },
           select: ['lessonId', 'parentId']
         });
-
         if (!associatedLesson) {
           throw new NotFoundException(RESPONSE_MESSAGES.ERROR.LESSON_NOT_FOUND);
         }
 
-        if (lesson.lessonId !== associatedLesson.parentId) {
+        if (associatedLesson.parentId !== null && associatedLesson.parentId !== lessonId) {
           throw new BadRequestException(RESPONSE_MESSAGES.ERROR.ASSOCIATED_LESSON_ALREADY_HAS_PARENT);
         }
       }
@@ -813,7 +812,7 @@ export class LessonsService {
             },
             { 
               parentId: lessonId,
-              updatedBy: userId,
+              updatedBy: userId, 
               updatedAt: new Date()
             }
           );
@@ -826,12 +825,12 @@ export class LessonsService {
           // Find lessons that have this lesson as parent and set their parentId to null
           await this.lessonRepository.update(
             { 
-              parentId: lessonId,
+              parentId: lesson.lessonId,
               tenantId,
               organisationId 
             },
             { 
-              parentId: undefined,
+              parentId: null,
               updatedBy: userId,
               updatedAt: new Date()
             }
