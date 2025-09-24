@@ -795,6 +795,30 @@ export class LessonsService {
           throw new BadRequestException(RESPONSE_MESSAGES.ERROR.ASSOCIATED_LESSON_ALREADY_HAS_PARENT);
         }
       }
+
+      //find the associated lessons that have this lesson as parent
+      const associatedLessons = await this.lessonRepository.findOne({
+        where: {
+          parentId: lessonId,
+          tenantId,
+          organisationId
+        } 
+      });
+      if (associatedLessons && associatedLessons.lessonId !== updateLessonDto.associatedLesson) {
+        //update the parentId of the associated lessons to null
+        await this.lessonRepository.update(
+          { 
+            parentId: lessonId,
+            tenantId,
+            organisationId 
+          },
+          { 
+            parentId: null,
+            updatedBy: userId,
+            updatedAt: new Date()
+          }
+        );
+      }
       
       // Update the lesson
       const updatedLesson = this.lessonRepository.merge(lesson, updateData);
@@ -820,21 +844,6 @@ export class LessonsService {
           // Invalidate cache for the associated lesson
           const associatedLessonKey = this.cacheConfig.getLessonKey(updateLessonDto.associatedLesson, tenantId, organisationId);
           await this.cacheService.del(associatedLessonKey);
-        } else {
-          // If associatedLessonId is null/empty, remove any existing parent relationship
-          // Find lessons that have this lesson as parent and set their parentId to null
-          await this.lessonRepository.update(
-            { 
-              parentId: lesson.lessonId,
-              tenantId,
-              organisationId 
-            },
-            { 
-              parentId: null,
-              updatedBy: userId,
-              updatedAt: new Date()
-            }
-          );
         }
       }
 
