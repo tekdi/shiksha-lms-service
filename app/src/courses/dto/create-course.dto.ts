@@ -2,7 +2,7 @@ import { IsNotEmpty, IsString, IsOptional, IsBoolean, IsEnum, IsNumber, IsUUID, 
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { CourseStatus, RewardType } from '../entities/course.entity';
-import { HelperUtil, ValidateDatetimeConstraints } from '../../common/utils/helper.util';
+import { HelperUtil, ValidateDatetimeConstraints, ValidateCertificateDateTime } from '../../common/utils/helper.util';
 import { VALIDATION_MESSAGES } from '../../common/constants/response-messages.constant';
 
 export class CreateCourseDto {
@@ -156,4 +156,13 @@ export class CreateCourseDto {
   @IsOptional()
   @IsObject({ message: VALIDATION_MESSAGES.COMMON.OBJECT('Additional parameters') })
   params?: Record<string, any>;
+
+  @ApiPropertyOptional({ 
+    description: 'Certificate generation date and time - must be in the future and greater than course end date',
+    example: '2025-01-01T12:00:00Z'
+  })
+  @IsOptional()
+  @IsDateString()
+  @Validate(ValidateCertificateDateTime)
+  certificateGenDateTime?: string;
 }
