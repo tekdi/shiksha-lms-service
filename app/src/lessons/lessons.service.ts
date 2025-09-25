@@ -25,6 +25,7 @@ import { CacheConfigService } from '../cache/cache-config.service';
 import { OrderingService } from '../common/services/ordering.service';
 import { AssociatedFile } from '../media/entities/associated-file.entity';
 import { SearchLessonDto } from './dto/search-lesson.dto';
+import { v4 as uuidv4 } from 'uuid';
 
 @Injectable()
 export class LessonsService {
@@ -796,56 +797,54 @@ export class LessonsService {
         }
       }
 
-      //find the associated lessons that have this lesson as parent
-      const associatedLessons = await this.lessonRepository.findOne({
-        where: {
-          parentId: lessonId,
-          tenantId,
-          organisationId
-        } 
-      });
-      if (associatedLessons && associatedLessons.lessonId !== updateLessonDto.associatedLesson) {
-        //update the parentId of the associated lessons to null
-        await this.lessonRepository.update(
-          { 
-            parentId: lessonId,
-            tenantId,
-            organisationId 
-          },
-          { 
-            parentId: null,
-            updatedBy: userId,
-            updatedAt: new Date()
-          }
-        );
-      }
-      
       // Update the lesson
       const updatedLesson = this.lessonRepository.merge(lesson, updateData);
       const savedLesson = await this.lessonRepository.save(updatedLesson);
 
-      // If associatedLessonId is provided, update that lesson's parentId to point to this lesson
-      if (updateLessonDto.associatedLesson !== undefined) {
-        if (updateLessonDto.associatedLesson) {
-          // Set the associated lesson's parentId to this lesson
-          await this.lessonRepository.update(
-            { 
-              lessonId: updateLessonDto.associatedLesson,
-              tenantId,
-              organisationId 
-            },
-            { 
+       // If associatedLesson is set to null, clear any existing parent relationship
+          const childLessons = await this.lessonRepository.find({
+            where: {
               parentId: lessonId,
-              updatedBy: userId, 
-              updatedAt: new Date()
+              tenantId,
+              organisationId
             }
-          );
+          });
+          
+          // Clear the parent relationship for all child lessons
+          if (childLessons.length > 0) {
+            await this.lessonRepository
+              .createQueryBuilder()
+              .update()
+              .set({
+                parentId: null,
+                updatedBy: userId,
+                updatedAt: new Date(),
+              })
+              .where("parentId = :lessonId", { lessonId })
+              .andWhere("tenantId = :tenantId", { tenantId })
+              .andWhere("organisationId = :organisationId", { organisationId })
+              .execute();
+          }
+      // If associatedLessonId is provided, update that lesson's parentId to point to this lesson
+      if (updateLessonDto.associatedLesson !== undefined && updateLessonDto.associatedLesson !== null) {
+          // Set the associated lesson's parentId to this lesson
+          await this.lessonRepository
+                .createQueryBuilder()
+                .update()
+                .set({
+                  parentId: lessonId,
+                  updatedBy: userId,
+                  updatedAt: new Date(),
+                })
+                .where("lessonId = :associatedLesson", { associatedLesson: updateLessonDto.associatedLesson })
+                .andWhere("tenantId = :tenantId", { tenantId })
+                .andWhere("organisationId = :organisationId", { organisationId })
+                .execute();
           
           // Invalidate cache for the associated lesson
           const associatedLessonKey = this.cacheConfig.getLessonKey(updateLessonDto.associatedLesson, tenantId, organisationId);
           await this.cacheService.del(associatedLessonKey);
         }
-      }
 
       // Update cache and invalidate related caches
       const lessonKey = this.cacheConfig.getLessonKey(savedLesson.lessonId, tenantId, organisationId);
