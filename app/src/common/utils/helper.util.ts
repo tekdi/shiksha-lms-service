@@ -59,6 +59,56 @@ export class ValidateDatetimeConstraints implements ValidatorConstraintInterface
   }
 }
 
+@ValidatorConstraint({ name: 'validateCertificateDateTime', async: false })
+export class ValidateCertificateDateTime implements ValidatorConstraintInterface {
+  validate(value: string, args: ValidationArguments): boolean {
+    const object = args.object as any;
+    const endDatetimeStr = object.endDatetime;
+    
+    // If certificate generation date is not provided, validation passes (optional field)
+    if (!value) return true;
+    
+    // Validate date format
+    const certificateDate = new Date(value);
+    if (isNaN(certificateDate.getTime())) {
+      return false;
+    }
+    
+    const now = new Date();
+    
+    // Certificate generation date must be in the future
+    if (certificateDate <= now) {
+      return false;
+    }
+    
+    // If endDatetime is provided, certificate generation date must be greater than endDatetime
+    if (endDatetimeStr) {
+      const endDatetime = new Date(endDatetimeStr);
+      
+      if (isNaN(endDatetime.getTime())) {
+        return false;
+      }
+      
+      // Certificate generation date must be greater than endDatetime
+      if (certificateDate <= endDatetime) {
+        return false;
+      }
+    }
+    
+    return true;
+  }
+
+  defaultMessage(args: ValidationArguments) {
+    const object = args.object as any;
+    const endDatetimeStr = object.endDatetime;
+    
+    if (endDatetimeStr) {
+      return 'Certificate generation date must be in the future and greater than course end date';
+    }
+    return 'Certificate generation date must be in the future';
+  }
+}
+
 export class HelperUtil {
   /**
    * Generate a unique UUID

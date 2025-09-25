@@ -342,6 +342,7 @@ export class ModulesService {
       // Create new module data
       const newModuleData = {
         ...originalModule,
+        title: `${originalModule.title} (Copy)`,
         courseId: newCourseId,
         parentId: undefined,
         createdBy: userId,
