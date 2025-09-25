@@ -121,6 +121,7 @@ export class CoursesService {
       rewardType: createCourseDto.rewardType,
       templateId: createCourseDto.templateId,
       prerequisites: createCourseDto.prerequisites,
+      certificateGenDateTime: createCourseDto.certificateGenDateTime || undefined,
       ordering: nextOrdering,
       tenantId,
       organisationId,
@@ -1269,7 +1270,7 @@ export class CoursesService {
           ...originalCourse,
           title: newTitle,
           alias: newAlias,
-          status: CourseStatus.UNPUBLISHED,
+          status: CourseStatus.PUBLISHED,
           createdBy: userId,
           updatedBy: userId,
           // Remove properties that should not be copied

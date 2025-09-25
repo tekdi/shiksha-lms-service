@@ -121,6 +121,14 @@ export class Course {
   params: Record<string, any>;
 
   @ApiProperty({ 
+    description: 'Certificate generation date and time', 
+    example: '2025-01-01T12:00:00Z',
+    required: false
+  })
+  @Column({ type: 'timestamptz', nullable: true })
+  certificateGenDateTime: Date;
+
+  @ApiProperty({ 
     description: 'Course order within organization/tenant', 
     example: 1,
     default: 0
