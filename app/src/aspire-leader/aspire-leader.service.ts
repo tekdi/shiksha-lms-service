@@ -196,6 +196,8 @@ export class AspireLeaderService {
           completedLessons: courseTrackData.completedLessons || 0,
           courseTrackStatus: courseTrackData.status,
           lastAccessedDate: courseTrackData.lastAccessedDate?.toISOString(),
+          certificateIssued: courseTrackData.certificateIssued,
+          certificateIssuedDate: course.certificateGenDateTime?.toISOString(),
           // Enrollment fields
           enrollmentId: enrollment?.enrollmentId,
           enrollmentStatus: enrollment?.status,
