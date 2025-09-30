@@ -1,6 +1,8 @@
 import {
   Controller,
   Get,
+  Post,
+  Body,
   Query,
   HttpStatus,
   Headers,
@@ -13,6 +15,7 @@ import {
 } from '@nestjs/swagger';
 import { AspireLeaderService } from './aspire-leader.service';
 import { CourseReportDto, CourseReportHeadersDto } from './dto/course-report.dto';
+import { LessonCompletionStatusDto, LessonCompletionStatusResponseDto } from './dto/lesson-completion-status.dto';
 import { TrackingStatus } from '../tracking/entities/course-track.entity';
 import { EnrollmentStatus } from '../enrollments/entities/user-enrollment.entity';
 import { API_IDS } from '../common/constants/api-ids.constant';
@@ -61,6 +64,33 @@ export class AspireLeaderController {
       tenantOrg.tenantId,
       tenantOrg.organisationId,
       headers.authorization,
+    );
+  }
+
+  // thie api will accept the cohortId and criteria will be json array like lessonFormat, lessonSubFormat and completionRule (0 , 1, 2, 3 - n)
+  // this api will 1st check if the cohortId is valid and find the all the published lessons as per the format -subformat and minimum completed lesosn as per completionRule
+  // and return the response as per the criteria - true or false
+  @Post('lesson-completion-status')
+  @ApiId(API_IDS.GET_LESSON_COMPLETION_STATUS)
+  @ApiOperation({ 
+    summary: 'Check lesson completion status for cohort',
+    description: 'Check if a cohort meets the lesson completion criteria based on lesson format, sub-format, and minimum completion requirements. The cohortId should match the value stored in course.params.cohortId. Returns overall status and detailed results for each criterion.'
+  })
+  @ApiResponse({ 
+    status: 200, 
+    description: 'Lesson completion status checked successfully',
+    type: LessonCompletionStatusResponseDto
+  })
+  @ApiResponse({ status: 400, description: 'Bad request - Invalid parameters or cohort not found' })
+  @ApiResponse({ status: 404, description: 'Cohort not found' })
+  async checkLessonCompletionStatus(
+    @Body() completionDto: LessonCompletionStatusDto,
+    @TenantOrg() tenantOrg: { tenantId: string; organisationId: string },
+  ): Promise<LessonCompletionStatusResponseDto> {
+    return this.aspireLeaderService.checkLessonCompletionStatus(
+      completionDto,
+      tenantOrg.tenantId,
+      tenantOrg.organisationId,
     );
   }
 } 

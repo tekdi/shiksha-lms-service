@@ -13,11 +13,13 @@ import { LessonStatus } from '../lessons/entities/lesson.entity';
 import { EnrollmentStatus } from '../enrollments/entities/user-enrollment.entity';
 import { Course } from '../courses/entities/course.entity';
 import { Lesson } from '../lessons/entities/lesson.entity';
-import { CourseTrack } from '../tracking/entities/course-track.entity';
+import { CourseTrack, TrackingStatus } from '../tracking/entities/course-track.entity';
 import { LessonTrack } from '../tracking/entities/lesson-track.entity';
 import { UserEnrollment } from '../enrollments/entities/user-enrollment.entity';
 import { CourseReportDto } from './dto/course-report.dto';
+import { LessonCompletionStatusDto, LessonCompletionStatusResponseDto } from './dto/lesson-completion-status.dto';
 import { RESPONSE_MESSAGES } from '../common/constants/response-messages.constant';
+import { AttemptsGradeMethod } from '../lessons/entities/lesson.entity';
 
 @Injectable()
 export class AspireLeaderService {
@@ -379,6 +381,339 @@ export class AspireLeaderService {
       this.logger.error('Failed to fetch user data from external API', error);
       throw new BadRequestException(RESPONSE_MESSAGES.ERROR.FAILED_TO_FETCH_USER_DATA);
     }
+  }
+
+  /**
+   * Check lesson completion status for a cohort based on criteria
+   */
+  async checkLessonCompletionStatus(
+    completionDto: LessonCompletionStatusDto,
+    tenantId: string,
+    organisationId: string,
+  ): Promise<LessonCompletionStatusResponseDto> {
+    const startTime = Date.now();
+    this.logger.log(`Checking lesson completion status for cohortId: ${completionDto.cohortId}`);
+
+    // Find courses that have this cohortId in their params
+    const cohortCourses = await this.courseRepository
+    .createQueryBuilder('course')
+    .where('course."tenantId" = :tenantId', { tenantId })
+    .andWhere('course."organisationId" = :organisationId', { organisationId })
+    .andWhere('course."status" = :status', { status: CourseStatus.PUBLISHED })
+    .andWhere(`course."params"->>'cohortId' = :cohortId`, {
+      cohortId: completionDto.cohortId,
+    })
+    .getMany();
+
+    if (cohortCourses.length === 0) {
+      throw new NotFoundException(`No any course found with cohortId: ${completionDto.cohortId}`);
+    }
+
+    // Get course IDs for this cohort
+    const cohortCourseIds = cohortCourses.map(course => course.courseId);
+    
+    this.logger.log(`Found ${cohortCourses.length} courses for cohortId: ${completionDto.cohortId}`);
+
+    const criteriaResults: Array<{
+      criterion: any;
+      status: boolean;
+      totalLessons: number;
+      completedLessons: number;
+      message: string;
+    }> = [];
+    let overallStatus = true;
+
+    // Process each criterion
+    for (const criterion of completionDto.criteria) {
+      const result = await this.checkCriterionCompletion(
+        cohortCourseIds,
+        criterion,
+        tenantId,
+        organisationId,
+        completionDto.userId
+      );
+      
+      criteriaResults.push(result);
+      
+      // Overall status is false if any criterion fails
+      if (!result.status) {
+        overallStatus = false;
+      }
+    }
+
+    const duration = Date.now() - startTime;
+    this.logger.log(`Lesson completion status checked in ${duration}ms for cohortId: ${completionDto.cohortId}`);
+    
+    return {
+      overallStatus,
+      criteriaResults,
+    };
+  }
+
+  /**
+   * Check completion status for a single criterion across multiple courses
+   */
+  private async checkCriterionCompletion(
+    cohortCourseIds: string[],
+    criterion: any,
+    tenantId: string,
+    organisationId: string,
+    userId: string,
+  ): Promise<{
+    criterion: any;
+    status: boolean;
+    totalLessons: number;
+    completedLessons: number;
+    message: string;
+  }> {
+    // Get all published lessons for the cohort courses matching the format and sub-format
+    const lessons = await this.lessonRepository.find({
+      where: {
+        courseId: In(cohortCourseIds),
+        tenantId,
+        organisationId,
+        status: LessonStatus.PUBLISHED,
+        format: criterion.lessonFormat,
+        subFormat: criterion.lessonSubFormat,
+        // Note: We need to check if lesson has the specific sub-format in params or media
+      } as FindOptionsWhere<Lesson>,
+    });
+
+    const totalLessons = lessons.length;
+
+    if (totalLessons === 0) {
+      return {
+        criterion,
+        status: false,
+        totalLessons: 0,
+        completedLessons: 0,
+        message: `No lessons found matching format: ${criterion.lessonFormat}, sub-format: ${criterion.lessonSubFormat}`,
+      };
+    }
+
+    // Count completed lessons based on lesson configurations
+    let completedLessons = 0;
+    
+    for (const lesson of lessons) {
+      const isCompleted = await this.isLessonCompletedForUser(
+        lesson,
+        userId,
+        tenantId,
+        organisationId,
+      );
+      
+      if (isCompleted) {
+        completedLessons++;
+      }
+    }
+    const status = completedLessons >= criterion.completionRule;
+
+    return {
+      criterion,
+      status,
+      totalLessons,
+      completedLessons,
+      message: status 
+        ? `Criterion met: ${completedLessons}/${totalLessons} lessons completed (required: ${criterion.completionRule})`
+        : `Criterion not met: ${completedLessons}/${totalLessons} lessons completed (required: ${criterion.completionRule})`,
+    };
+  }
+
+  /**
+   * Determine if a lesson is completed for a user based on lesson configurations
+   */
+  private async isLessonCompletedForUser(
+    lesson: Lesson,
+    userId: string,
+    tenantId: string,
+    organisationId: string,
+  ): Promise<boolean> {
+    // Handle resubmission logic
+    if (lesson.allowResubmission) {
+      // If resubmission is enabled, only one attempt should be considered
+      // Query for the single attempt (attempt = 1)
+      const singleAttempt = await this.findLessonAttempt({
+        lessonId: lesson.lessonId,
+        userId,
+        tenantId,
+        organisationId,
+        attempt: 1,
+      });
+
+      if (!singleAttempt) {
+        return false; // No completed attempt
+      }
+        return true;
+     
+    } else {
+      // If resubmission is disabled, query for specific attempt based on grading method
+      return this.querySpecificAttemptBasedOnGradingMethod(lesson, userId, tenantId, organisationId);
+    }
+  }
+
+  /**
+   * Query for specific attempt based on grading method
+   */
+  private async querySpecificAttemptBasedOnGradingMethod(
+    lesson: Lesson,
+    userId: string,
+    tenantId: string,
+    organisationId: string,
+  ): Promise<boolean> {
+    switch (lesson.attemptsGrade) {
+      case AttemptsGradeMethod.FIRST_ATTEMPT:
+        // Query for the first attempt only
+        const firstAttempt = await this.findLessonAttempt({
+          lessonId: lesson.lessonId,
+          userId,
+          tenantId,
+          organisationId,
+          attempt: 1,
+        });
+
+        if (!firstAttempt) {
+          return false;
+        }
+
+        return this.evaluateAttemptCompletion(firstAttempt, lesson);
+
+      case AttemptsGradeMethod.LAST_ATTEMPT:
+        // Query for the last attempt (highest attempt number)
+        const lastAttempt = await this.findLessonAttempt({
+          lessonId: lesson.lessonId,
+          userId,
+          tenantId,
+          organisationId,
+          orderBy: { attempt: 'DESC' },
+        });
+
+        if (!lastAttempt) {
+          return false;
+        }
+        return this.evaluateAttemptCompletion(lastAttempt, lesson);
+
+      case AttemptsGradeMethod.HIGHEST:
+        // Query for the attempt with highest score
+        const highestAttempt = await this.findLessonAttempt({
+          lessonId: lesson.lessonId,
+          userId,
+          tenantId,
+          organisationId,
+          orderBy: { score: 'DESC' },
+        });
+
+        if (!highestAttempt) {
+          return false;
+        }
+
+        return this.evaluateAttemptCompletion(highestAttempt, lesson);
+
+      case AttemptsGradeMethod.AVERAGE:
+        // For average, we need all attempts to calculate average
+        const allAttempts = await this.findAllLessonAttempts({
+          lessonId: lesson.lessonId,
+          userId,
+          tenantId,
+          organisationId,
+        });
+
+        if (allAttempts.length === 0) {
+          return false;
+        }
+
+        // Calculate average score
+        const totalScore = allAttempts.reduce((sum, attempt) => sum + (attempt.score || 0), 0);
+        const averageScore = totalScore / allAttempts.length;
+
+        // Check if average meets passing criteria
+        if (lesson.passingMarks && lesson.totalMarks) {
+          const passingPercentage = lesson.passingMarks / lesson.totalMarks * 100;
+          const averagePercentage = averageScore / lesson.totalMarks * 100;
+          return averagePercentage >= passingPercentage;
+        }
+
+        // If no passing criteria, any completed attempt counts
+        return true;
+
+      default:
+        // Default to last attempt
+        const defaultAttempt = await this.findLessonAttempt({
+          lessonId: lesson.lessonId,
+          userId,
+          tenantId,
+          organisationId,
+          orderBy: { attempt: 'DESC' },
+        });
+
+        if (!defaultAttempt) {
+          return false;
+        }
+
+        return this.evaluateAttemptCompletion(defaultAttempt, lesson);
+    }
+  }
+
+  /**
+   * Evaluate if a single attempt meets completion criteria
+   */
+  private evaluateAttemptCompletion(attempt: LessonTrack, lesson: Lesson): boolean {
+        // If no passing criteria, consider completed if status is completed
+    return attempt.status === TrackingStatus.COMPLETED;
+  }
+
+  /**
+   * Reusable method to find a single lesson attempt
+   */
+  private async findLessonAttempt(params: {
+    lessonId: string;
+    userId: string;
+    tenantId: string;
+    organisationId: string;
+    attempt?: number;
+    orderBy?: { [key: string]: 'ASC' | 'DESC' };
+  }): Promise<LessonTrack | null> {
+    const whereClause: any = {
+      lessonId: params.lessonId,
+      userId: params.userId,
+      tenantId: params.tenantId,
+      organisationId: params.organisationId
+    };
+
+    // Add attempt filter if specified
+    if (params.attempt !== undefined) {
+      whereClause.attempt = params.attempt;
+    }
+
+    const queryOptions: any = {
+      where: whereClause as FindOptionsWhere<LessonTrack>,
+    };
+
+    // Add ordering if specified
+    if (params.orderBy) {
+      queryOptions.order = params.orderBy;
+    }
+
+    return this.lessonTrackRepository.findOne(queryOptions);
+  }
+
+  /**
+   * Reusable method to find all lesson attempts
+   */
+  private async findAllLessonAttempts(params: {
+    lessonId: string;
+    userId: string;
+    tenantId: string;
+    organisationId: string;
+  }): Promise<LessonTrack[]> {
+    return this.lessonTrackRepository.find({
+      where: {
+        lessonId: params.lessonId,
+        userId: params.userId,
+        tenantId: params.tenantId,
+        organisationId: params.organisationId,
+        status: TrackingStatus.COMPLETED,
+      } as FindOptionsWhere<LessonTrack>,
+    });
   }
 
   /**
