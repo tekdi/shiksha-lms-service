@@ -128,6 +128,13 @@ export class Lesson {
   })
   format: LessonFormat;
 
+  @Column({ 
+    type: 'varchar',
+    length: 255,
+    enum: LessonSubFormat
+  })
+  subFormat: LessonSubFormat;
+
   @Column({ type: 'uuid', nullable: true })
   mediaId: string;
 
