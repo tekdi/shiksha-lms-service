@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+  Patch,
   Body,
   Query,
   HttpStatus,
@@ -16,6 +17,7 @@ import {
 import { AspireLeaderService } from './aspire-leader.service';
 import { CourseReportDto, CourseReportHeadersDto } from './dto/course-report.dto';
 import { LessonCompletionStatusDto, LessonCompletionStatusResponseDto } from './dto/lesson-completion-status.dto';
+import { UpdateTestProgressDto } from './dto/update-test-progress.dto';
 import { TrackingStatus } from '../tracking/entities/course-track.entity';
 import { EnrollmentStatus } from '../enrollments/entities/user-enrollment.entity';
 import { API_IDS } from '../common/constants/api-ids.constant';
@@ -89,6 +91,29 @@ export class AspireLeaderController {
   ): Promise<LessonCompletionStatusResponseDto> {
     return this.aspireLeaderService.checkLessonCompletionStatus(
       completionDto,
+      tenantOrg.tenantId,
+      tenantOrg.organisationId,
+    );
+  }
+
+  @Patch('tracking/update_test_progress')
+  @ApiId(API_IDS.UPDATE_TEST_PROGRESS)
+  @ApiOperation({ 
+    summary: 'Update test progress for a lesson',
+    description: 'Update lesson tracking progress based on test results. The testId maps to media.source column, which is linked to lesson.mediaId. The system will find the correct lesson track based on resubmission settings and grading type.'
+  })
+  @ApiResponse({ 
+    status: 200, 
+    description: 'Test progress updated successfully',
+  })
+  @ApiResponse({ status: 400, description: 'Bad request - Invalid parameters' })
+  @ApiResponse({ status: 404, description: 'Test, lesson, or lesson tracking not found' })
+  async updateTestProgress(
+    @Body() updateTestProgressDto: UpdateTestProgressDto,
+    @TenantOrg() tenantOrg: { tenantId: string; organisationId: string },
+  ): Promise<any> {
+    return this.aspireLeaderService.updateTestProgress(
+      updateTestProgressDto,
       tenantOrg.tenantId,
       tenantOrg.organisationId,
     );

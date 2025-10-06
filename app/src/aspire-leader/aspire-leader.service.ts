@@ -18,8 +18,10 @@ import { LessonTrack } from '../tracking/entities/lesson-track.entity';
 import { UserEnrollment } from '../enrollments/entities/user-enrollment.entity';
 import { CourseReportDto } from './dto/course-report.dto';
 import { LessonCompletionStatusDto, LessonCompletionStatusResponseDto } from './dto/lesson-completion-status.dto';
+import { UpdateTestProgressDto } from './dto/update-test-progress.dto';
 import { RESPONSE_MESSAGES } from '../common/constants/response-messages.constant';
 import { AttemptsGradeMethod } from '../lessons/entities/lesson.entity';
+import { Media } from '../media/entities/media.entity';
 
 @Injectable()
 export class AspireLeaderService {
@@ -36,6 +38,8 @@ export class AspireLeaderService {
     private readonly lessonTrackRepository: Repository<LessonTrack>,
     @InjectRepository(UserEnrollment)
     private readonly userEnrollmentRepository: Repository<UserEnrollment>,
+    @InjectRepository(Media)
+    private readonly mediaRepository: Repository<Media>,
     private readonly configService: ConfigService,
   ) {}
 
@@ -738,6 +742,110 @@ export class AspireLeaderService {
         default:
           return 'lessonTrack.completionPercentage';
       }
+    }
+  }
+
+  /**
+   * Update test progress for a lesson based on testId
+   */
+  async updateTestProgress(
+    updateTestProgressDto: UpdateTestProgressDto,
+    tenantId: string,
+    organisationId: string,
+  ): Promise<LessonTrack> {
+    const startTime = Date.now();
+    this.logger.log(`Updating test progress for testId: ${updateTestProgressDto.testId}, userId: ${updateTestProgressDto.userId}`);
+
+    try {
+      // Find the media record by testId (stored in source column)
+      const media = await this.mediaRepository.findOne({
+        where: {
+          source: updateTestProgressDto.testId,
+          tenantId,
+          organisationId,
+        },
+      });
+
+      if (!media) {
+        throw new NotFoundException(`Media not found for testId: ${updateTestProgressDto.testId}`);
+      }
+
+      // Find the lesson that uses this media
+      const lesson = await this.lessonRepository.findOne({
+        where: {
+          mediaId: media.mediaId,
+          tenantId,
+          organisationId,
+          status: LessonStatus.PUBLISHED,
+        },
+        relations: ['media'],
+      });
+
+      if (!lesson) {
+        throw new NotFoundException(`Lesson not found for mediaId: ${media.mediaId}`);
+      }
+
+      // Determine the correct attempt based on lesson configuration
+      let targetAttempt: number;
+      let lessonTrack: LessonTrack;
+
+      if (lesson.allowResubmission) {
+        // For resubmission allowed lessons, find or create the single attempt
+        let existingTrack = await this.lessonTrackRepository.findOne({
+          where: {
+            lessonId: lesson.lessonId,
+            userId: updateTestProgressDto.userId,
+            tenantId,
+            organisationId,
+          },
+        });
+
+        if (!existingTrack) {
+          // Create new attempt if none exists
+          throw new NotFoundException(`No lesson tracking found for TestId: ${updateTestProgressDto.testId} and userId: ${updateTestProgressDto.userId}`);
+        } else {
+          lessonTrack = existingTrack;
+        }
+        targetAttempt = lessonTrack.attempt;
+      } else {
+        // For non-resubmission lessons, find the latest attempt
+        const latestAttempt = await this.lessonTrackRepository.findOne({
+          where: {
+            lessonId: lesson.lessonId,
+            userId: updateTestProgressDto.userId,
+            tenantId,
+            organisationId,
+          },
+          order: {
+            attempt: 'DESC',
+          },
+        });
+
+        if (!latestAttempt) {
+          throw new NotFoundException(`No lesson tracking found for lessonId: ${lesson.lessonId} and userId: ${updateTestProgressDto.userId}`);
+        }
+
+        lessonTrack = latestAttempt;
+        targetAttempt = latestAttempt.attempt;
+      }
+
+      // Update the lesson track with test results
+      const updateData: Partial<LessonTrack> = {
+        score: updateTestProgressDto.score,
+        status: TrackingStatus.COMPLETED,
+        updatedBy: updateTestProgressDto.reviewedBy,
+        updatedAt: new Date(),
+        completionPercentage: 100,
+
+      };
+      // Update the lesson track
+      Object.assign(lessonTrack, updateData);
+      const updatedLessonTrack = await this.lessonTrackRepository.save(lessonTrack);
+
+      return updatedLessonTrack;
+    } catch (error) {
+      this.logger.error(`Error updating test progress: ${error.message}`, error.stack);
+      throw error;
     }
   }
 } 
