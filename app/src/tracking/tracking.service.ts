@@ -636,6 +636,10 @@ export class TrackingService {
     } else if (attempt.status === TrackingStatus.STARTED) {
       attempt.status = TrackingStatus.INCOMPLETE;
     }
+
+    if(updateProgressDto.status !== undefined) {
+      attempt.status = updateProgressDto.status;
+    }
     
     attempt.updatedAt = new Date();
     attempt.updatedBy = userId;

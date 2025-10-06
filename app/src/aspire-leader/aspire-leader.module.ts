@@ -10,6 +10,7 @@ import { Lesson } from '../lessons/entities/lesson.entity';
 import { CourseTrack } from '../tracking/entities/course-track.entity';
 import { LessonTrack } from '../tracking/entities/lesson-track.entity';
 import { UserEnrollment } from '../enrollments/entities/user-enrollment.entity';
+import { Media } from '../media/entities/media.entity';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { UserEnrollment } from '../enrollments/entities/user-enrollment.entity';
       CourseTrack,
       LessonTrack,
       UserEnrollment,
+      Media,
     ]),
     TenantModule,
     CacheModule

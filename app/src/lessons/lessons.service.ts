@@ -182,6 +182,7 @@ export class LessonsService {
         title: createLessonDto.title,
         alias: createLessonDto.alias,
         format: createLessonDto.format,
+        subFormat: createLessonDto.mediaContentSubFormat, // Store subFormat in lesson table
         parentId: createLessonDto.parentId || undefined,
         mediaId,
         image: createLessonDto.image,
@@ -748,6 +749,11 @@ export class LessonsService {
         updateData.passingMarks = updateLessonDto.passingMarks;
       }
       
+      // Handle subFormat field mapping
+      if (updateLessonDto.mediaContentSubFormat !== undefined) {
+        updateData.subFormat = updateLessonDto.mediaContentSubFormat;
+      }
+      
       // Handle image field mapping
       if (updateLessonDto.image) {
         updateData.image = updateLessonDto.image;
@@ -1170,6 +1176,7 @@ export class LessonsService {
         title: originalLesson.title,
         alias: originalLesson.alias + '-copy',
         format: originalLesson.format,
+        subFormat: originalLesson.subFormat, // Copy subFormat from original lesson
         image: originalLesson.image,
         description: originalLesson.description,
         status: originalLesson.status,
