@@ -874,7 +874,9 @@ export class CoursesService {
         return attempts.sort((a, b) => a.attempt - b.attempt)[0];
       
       case AttemptsGradeMethod.LAST_ATTEMPT:
-        return attempts.sort((a, b) => b.attempt - a.attempt)[0];
+        // For LAST_ATTEMPT grading, prefer the last completed attempt
+        const lastCompletedAttempt = this.getLastCompletedAttempt(attempts);
+        return lastCompletedAttempt || attempts.sort((a, b) => b.attempt - a.attempt)[0];
       
       case AttemptsGradeMethod.HIGHEST:
         return attempts.reduce((best, current) => {
@@ -924,6 +926,24 @@ export class CoursesService {
       return null;
     }
     return attempts.sort((a, b) => b.attempt - a.attempt)[0];
+  }
+
+  /**
+   * Get the last completed attempt for a lesson
+   * @param attempts Array of lesson attempts
+   * @returns The last completed attempt
+   */
+  private getLastCompletedAttempt(attempts: LessonTrack[]): LessonTrack | null {
+    if (!attempts || attempts.length === 0) {
+      return null;
+    }
+    
+    // Filter only completed attempts and sort by attempt number descending
+    const completedAttempts = attempts
+      .filter(attempt => attempt.status === TrackingStatus.COMPLETED)
+      .sort((a, b) => b.attempt - a.attempt);
+    
+    return completedAttempts.length > 0 ? completedAttempts[0] : null;
   }
 
   /**
