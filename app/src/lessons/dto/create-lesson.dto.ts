@@ -58,10 +58,8 @@ export class CreateLessonDto {
     example: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
     required: true
   })
-  @ValidateIf((o) => o.format != LessonFormat.DOCUMENT)
+  @ValidateIf((o) => o.format == LessonFormat.VIDEO || o.format == LessonFormat.ASSESSMENT || o.format == LessonFormat.EVENT)
   @IsNotEmpty({ message: VALIDATION_MESSAGES.COMMON.REQUIRED('Source') })
-  @ValidateIf((o) => o.format === LessonFormat.TEXT_AND_MEDIA)
-  @IsUrl({}, { message: VALIDATION_MESSAGES.COMMON.URL('External URL') })
   mediaContentSource: string;
 
   @ApiProperty({
