@@ -43,11 +43,8 @@ export class UpdateLessonDto extends PartialType(
     example: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
     required: false
   })
-  @ValidateIf((o) => o.format && o.format !== LessonFormat.DOCUMENT)
+  @ValidateIf((o) => o.format == LessonFormat.VIDEO || o.format == LessonFormat.ASSESSMENT || o.format == LessonFormat.EVENT)
   @IsNotEmpty({ message: VALIDATION_MESSAGES.COMMON.REQUIRED('Media content source') })
-  @IsString({ message: VALIDATION_MESSAGES.COMMON.STRING('Source') })
-  @ValidateIf((o) => o.format === LessonFormat.TEXT_AND_MEDIA)
-  @IsUrl({}, { message: VALIDATION_MESSAGES.COMMON.URL('External URL') })
   mediaContentSource?: string;
 
   @ApiProperty({
