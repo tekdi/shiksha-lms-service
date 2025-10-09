@@ -209,9 +209,9 @@ export class TrackingService {
         organisationId
       } as FindOptionsWhere<CourseTrack>,
     }); 
-    if (courseTrack && courseTrack.status === TrackingStatus.COMPLETED) {
-      throw new BadRequestException(RESPONSE_MESSAGES.ERROR.COURSE_COMPLETED);
-    }
+    // if (courseTrack && courseTrack.status === TrackingStatus.COMPLETED) {
+    //   throw new BadRequestException(RESPONSE_MESSAGES.ERROR.COURSE_COMPLETED);
+    // }
     // Find existing tracks for course lesson
     const existingTracks = await this.lessonTrackRepository.find({
       where: { 
