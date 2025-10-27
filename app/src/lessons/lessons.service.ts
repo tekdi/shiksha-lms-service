@@ -784,8 +784,8 @@ export class LessonsService {
         updateData.allowResubmission = updateLessonDto.allowResubmission;
       } 
 
-      // Validate associated lesson if provided
-      if (updateLessonDto.associatedLesson !== undefined && updateLessonDto.associatedLesson) {
+      // Validate associated lesson if provided (and not null)
+      if (updateLessonDto.associatedLesson !== undefined && updateLessonDto.associatedLesson !== null) {
         const associatedLesson = await this.lessonRepository.findOne({
           where: {
             lessonId: updateLessonDto.associatedLesson,
@@ -807,7 +807,10 @@ export class LessonsService {
       const updatedLesson = this.lessonRepository.merge(lesson, updateData);
       const savedLesson = await this.lessonRepository.save(updatedLesson);
 
-       // If associatedLesson is set to null, clear any existing parent relationship
+      // Handle associatedLesson changes only if it's explicitly provided in the update
+      if (updateLessonDto.associatedLesson !== undefined) {
+        if (updateLessonDto.associatedLesson === null) {
+          // If explicitly set to null, clear all child lesson relationships
           const childLessons = await this.lessonRepository.find({
             where: {
               parentId: lessonId,
@@ -831,26 +834,52 @@ export class LessonsService {
               .andWhere("organisationId = :organisationId", { organisationId })
               .execute();
           }
-      // If associatedLessonId is provided, update that lesson's parentId to point to this lesson
-      if (updateLessonDto.associatedLesson !== undefined && updateLessonDto.associatedLesson !== null) {
-          // Set the associated lesson's parentId to this lesson
+        } else {
+          // If a specific lesson ID is provided, set that lesson's parentId to this lesson
+          // First, clear any existing child relationships for this lesson
+          const existingChildLessons = await this.lessonRepository.find({
+            where: {
+              parentId: lessonId,
+              tenantId,
+              organisationId
+            }
+          });
+          
+          if (existingChildLessons.length > 0) {
+            await this.lessonRepository
+              .createQueryBuilder()
+              .update()
+              .set({
+                parentId: null,
+                updatedBy: userId,
+                updatedAt: new Date(),
+              })
+              .where("parentId = :lessonId", { lessonId })
+              .andWhere("tenantId = :tenantId", { tenantId })
+              .andWhere("organisationId = :organisationId", { organisationId })
+              .execute();
+          }
+          
+          // Now set the new associated lesson's parentId to this lesson
           await this.lessonRepository
-                .createQueryBuilder()
-                .update()
-                .set({
-                  parentId: lessonId,
-                  updatedBy: userId,
-                  updatedAt: new Date(),
-                })
-                .where("lessonId = :associatedLesson", { associatedLesson: updateLessonDto.associatedLesson })
-                .andWhere("tenantId = :tenantId", { tenantId })
-                .andWhere("organisationId = :organisationId", { organisationId })
-                .execute();
+            .createQueryBuilder()
+            .update()
+            .set({
+              parentId: lessonId,
+              updatedBy: userId,
+              updatedAt: new Date(),
+            })
+            .where("lessonId = :associatedLesson", { associatedLesson: updateLessonDto.associatedLesson })
+            .andWhere("tenantId = :tenantId", { tenantId })
+            .andWhere("organisationId = :organisationId", { organisationId })
+            .execute();
           
           // Invalidate cache for the associated lesson
           const associatedLessonKey = this.cacheConfig.getLessonKey(updateLessonDto.associatedLesson, tenantId, organisationId);
           await this.cacheService.del(associatedLessonKey);
         }
+      }
+      // If associatedLesson is not provided (undefined), do nothing - keep existing associations
 
       // Update cache and invalidate related caches
       const lessonKey = this.cacheConfig.getLessonKey(savedLesson.lessonId, tenantId, organisationId);
@@ -859,7 +888,7 @@ export class LessonsService {
         this.cacheService.invalidateLesson(lessonId, lesson.moduleId, lesson.courseId, tenantId, organisationId),
       ]);
 
-      return savedLesson;
+      return await this.findOne(savedLesson.lessonId, tenantId, organisationId);
     } catch (error) {
       this.logger.error(`Error updating lesson: ${error.message}`);
       if (
