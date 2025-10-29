@@ -680,7 +680,7 @@ export class TrackingService {
     courseTrack.lastAccessedDate = new Date();
 
     // If the lesson is completed, update completed lessons count
-    if (lessonTrack.status === TrackingStatus.COMPLETED || courseTrack.status === TrackingStatus.SUBMITTED) {
+    if (lessonTrack.status === TrackingStatus.COMPLETED || courseTrack.status === TrackingStatus.STARTED || lessonTrack.status === TrackingStatus.SUBMITTED) {
       // Get all parent lessons for this course that have considerForPassing = true
       const courseLessons = await this.lessonRepository.find({
         where: { 
@@ -701,6 +701,7 @@ export class TrackingService {
         tenantId,
         organisationId
       );
+
       
       // Update course track
       courseTrack.completedLessons = completedLessonsCount;
