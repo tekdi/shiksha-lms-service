@@ -706,7 +706,7 @@ export class TrackingService {
       courseTrack.completedLessons = completedLessonsCount;
       
       // Check if course is completed
-      if (courseTrack.completedLessons >= courseTrack.noOfLessons) {
+      if (courseTrack.completedLessons >= courseTrack.noOfLessons && lessonTrack.status === TrackingStatus.COMPLETED) {
         courseTrack.status = TrackingStatus.COMPLETED;
         courseTrack.endDatetime = new Date();
         
@@ -747,7 +747,7 @@ export class TrackingService {
         userId,
         tenantId,
         organisationId,
-        status: TrackingStatus.COMPLETED
+        status: In([TrackingStatus.COMPLETED, TrackingStatus.SUBMITTED])
       };
       
       // Add courseId filter only if it's provided
