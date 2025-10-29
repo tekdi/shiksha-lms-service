@@ -679,7 +679,6 @@ export class TrackingService {
     // Update course track
     courseTrack.lastAccessedDate = new Date();
 
-    this.logger.log('lessonTrack.status', lessonTrack.status);
     // If the lesson is completed, update completed lessons count
     if (lessonTrack.status === TrackingStatus.COMPLETED || courseTrack.status === TrackingStatus.STARTED || lessonTrack.status === TrackingStatus.SUBMITTED) {
       // Get all parent lessons for this course that have considerForPassing = true
@@ -703,7 +702,6 @@ export class TrackingService {
         organisationId
       );
 
-      this.logger.log('completedLessonsCount', completedLessonsCount);
       
       // Update course track
       courseTrack.completedLessons = completedLessonsCount;
