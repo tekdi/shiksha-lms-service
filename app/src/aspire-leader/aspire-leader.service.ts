@@ -3,6 +3,7 @@ import {
   Logger,
   BadRequestException,
   NotFoundException,
+  Inject,
 } from '@nestjs/common';
 import axios from 'axios';
 import { ConfigService } from '@nestjs/config';
@@ -22,6 +23,7 @@ import { UpdateTestProgressDto } from './dto/update-test-progress.dto';
 import { RESPONSE_MESSAGES } from '../common/constants/response-messages.constant';
 import { AttemptsGradeMethod } from '../lessons/entities/lesson.entity';
 import { Media } from '../media/entities/media.entity';
+import { TrackingService } from 'src/tracking/tracking.service';
 
 @Injectable()
 export class AspireLeaderService {
@@ -38,6 +40,8 @@ export class AspireLeaderService {
     private readonly lessonTrackRepository: Repository<LessonTrack>,
     @InjectRepository(UserEnrollment)
     private readonly userEnrollmentRepository: Repository<UserEnrollment>,
+    @Inject(TrackingService)
+    private readonly trackingService: TrackingService,
     @InjectRepository(Media)
     private readonly mediaRepository: Repository<Media>,
     private readonly configService: ConfigService,
@@ -841,6 +845,11 @@ export class AspireLeaderService {
       // Update the lesson track
       Object.assign(lessonTrack, updateData);
       const updatedLessonTrack = await this.lessonTrackRepository.save(lessonTrack);
+
+    // Update course and module tracking if lesson is completed
+    if (updatedLessonTrack.courseId) {
+      await this.trackingService.updateCourseAndModuleTracking(updatedLessonTrack, tenantId, organisationId);
+    }
 
       return updatedLessonTrack;
     } catch (error) {
