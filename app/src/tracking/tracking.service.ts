@@ -657,7 +657,7 @@ export class TrackingService {
   /**
    * Helper method to update course and module tracking
    */
-  private async updateCourseAndModuleTracking(lessonTrack: LessonTrack, tenantId: string, organisationId: string): Promise<void> {
+  public async updateCourseAndModuleTracking(lessonTrack: LessonTrack, tenantId: string, organisationId: string): Promise<void> {
     if (!lessonTrack.courseId) {
       return;
     }
@@ -973,16 +973,10 @@ export class TrackingService {
       // Save the updated attempt
       const updatedAttempt = await this.lessonTrackRepository.save(lastAttempt);
 
-      // Update course and module tracking if this lesson is part of a course
-      if (lesson.courseId) {
-        await this.updateCourseTracking(lesson.courseId, updateEventProgressDto.userId, {
-          status: TrackingStatus.COMPLETED
-        } as UpdateCourseTrackingDto, tenantId, organisationId);
-      }
-
-      if (lesson.moduleId) {
-        await this.updateModuleTracking(lesson.moduleId, updateEventProgressDto.userId, tenantId, organisationId);
-      }
+    // Update course and module tracking if lesson is completed
+    if (updatedAttempt.courseId) {
+      await this.updateCourseAndModuleTracking(updatedAttempt, tenantId, organisationId);
+    }
 
       return updatedAttempt;
     } catch (error) {
