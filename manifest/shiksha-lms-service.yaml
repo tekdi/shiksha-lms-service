@@ -26,7 +26,14 @@ spec:
         envFrom:
         - configMapRef:
             name: shiksha-lms-service-config
-        resources: {}
+        resources:
+          requests:
+            cpu: "1000m"
+            memory: "1500Mi"
+          limits:
+            cpu: "1500m"
+            memory: "2Gi"
+
       restartPolicy: Always
 status: {}
 
