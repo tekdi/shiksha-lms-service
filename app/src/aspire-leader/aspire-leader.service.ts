@@ -834,9 +834,18 @@ export class AspireLeaderService {
       }
 
       // Update the lesson track with test results
+      // Determine status based on result: COMPLETED for PASS, SUBMITTED for FAIL
+      // This ensures that when marks are updated and result changes from PASS to FAIL,
+      // the status correctly changes from COMPLETED to SUBMITTED
+      // Result can be 'P'/'p' (PASS) or 'F'/'f' (FAIL) from assessment service
+      const resultLower = updateTestProgressDto.result?.toLowerCase();
+      const status = resultLower === 'pass' || resultLower === 'p'
+        ? TrackingStatus.COMPLETED
+        : TrackingStatus.SUBMITTED;
+
       const updateData: Partial<LessonTrack> = {
         score: updateTestProgressDto.score,
-        status: TrackingStatus.COMPLETED,
+        status: status,
         updatedBy: updateTestProgressDto.reviewedBy,
         updatedAt: new Date(),
         completionPercentage: 100,

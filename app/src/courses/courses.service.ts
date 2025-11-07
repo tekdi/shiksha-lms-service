@@ -22,7 +22,7 @@ import { HelperUtil } from '../common/utils/helper.util';
 import { CreateCourseDto } from './dto/create-course.dto';
 import { SearchCourseDto, SearchCourseResponseDto, SortBy, SortOrder } from './dto/search-course.dto';
 import { CacheService } from '../cache/cache.service';
-import { CourseStructureDto } from '../courses/dto/course-structure.dto';
+import { CourseStructureDto, BulkCourseOrderDto } from '../courses/dto/course-structure.dto';
 import { CacheConfigService } from '../cache/cache-config.service';
 import { ModulesService } from 'src/modules/modules.service';
 import { OrderingService } from '../common/services/ordering.service';
@@ -1582,6 +1582,91 @@ export class CoursesService {
       if (error instanceof BadRequestException) {
         throw error;
       } else if (error instanceof NotFoundException) {
+        throw error;
+      } else {
+        throw new BadRequestException(`${RESPONSE_MESSAGES.ERROR.INVALID_STRUCTURE_DATA}: ${error.message}`);
+      }
+    }
+  }
+
+  /**
+   * Update the order of multiple courses in bulk
+   */
+  async updateCoursesOrder(
+    bulkCourseOrderDto: BulkCourseOrderDto,
+    userId: string,
+    tenantId: string,
+    organisationId: string
+  ): Promise<{ success: boolean; message: string }> {
+    this.logger.log(`Updating courses order: ${JSON.stringify(bulkCourseOrderDto)}`);
+
+    try {
+      // Use Repository Manager transaction approach
+      const result = await this.courseRepository.manager.transaction(async (transactionalEntityManager) => {
+        // Extract all course IDs from the request
+        const requestCourseIds = bulkCourseOrderDto.courses.map(c => c.courseId);
+
+        // Validate that all courses exist and belong to the tenant/organization
+        const existingCourses = await transactionalEntityManager.find(Course, {
+          where: {
+            courseId: In(requestCourseIds),
+            status: Not(CourseStatus.ARCHIVED),
+            tenantId,
+            organisationId,
+          },
+          select: ['courseId'],
+        });
+
+        if (existingCourses.length !== requestCourseIds.length) {
+          const existingCourseIds = existingCourses.map(c => c.courseId);
+          const missingCourseIds = requestCourseIds.filter(id => !existingCourseIds.includes(id));
+          throw new NotFoundException(`Some courses not found: ${missingCourseIds.join(', ')}`);
+        }
+
+        // Check for duplicate course IDs in the request
+        const uniqueCourseIds = new Set(requestCourseIds);
+        if (uniqueCourseIds.size !== requestCourseIds.length) {
+          throw new BadRequestException('Duplicate course IDs found in the request');
+        }
+
+        // Check for duplicate orders in the request
+        const orders = bulkCourseOrderDto.courses.map(c => c.order);
+        const uniqueOrders = new Set(orders);
+        if (uniqueOrders.size !== orders.length) {
+          throw new BadRequestException('Duplicate order values found in the request');
+        }
+
+        // Update course ordering
+        const courseUpdatePromises = bulkCourseOrderDto.courses.map(courseOrder => {
+          return transactionalEntityManager.update(
+            Course,
+            { courseId: courseOrder.courseId },
+            {
+              ordering: courseOrder.order,
+              updatedBy: userId,
+              updatedAt: new Date()
+            }
+          );
+        });
+
+        await Promise.all(courseUpdatePromises);
+
+        this.logger.log(`Successfully updated order for ${bulkCourseOrderDto.courses.length} courses`);
+        return { success: true, message: RESPONSE_MESSAGES.COURSES_ORDER_UPDATED };
+      });
+
+      // Invalidate cache for all updated courses
+      const courseIds = bulkCourseOrderDto.courses.map(c => c.courseId);
+      for (const courseId of courseIds) {
+        await this.cacheService.invalidateCourse(courseId, tenantId, organisationId);
+      }
+
+      return result;
+    } catch (error) {
+      this.logger.error(`Error updating courses order: ${error.message}`, error.stack);
+      
+      // Re-throw the error with appropriate context
+      if (error instanceof BadRequestException || error instanceof NotFoundException) {
         throw error;
       } else {
         throw new BadRequestException(`${RESPONSE_MESSAGES.ERROR.INVALID_STRUCTURE_DATA}: ${error.message}`);
