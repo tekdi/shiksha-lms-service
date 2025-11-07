@@ -36,7 +36,7 @@ import { ApiId } from '../common/decorators/api-id.decorator';
 import { getUploadPath } from '../common/utils/upload.util';
 import { uploadConfigs } from '../config/file-validation.config';
 import { TenantOrg } from '../common/decorators/tenant-org.decorator';
-import { CourseStructureDto } from '../courses/dto/course-structure.dto';
+import { CourseStructureDto, BulkCourseOrderDto } from '../courses/dto/course-structure.dto';
 import { SearchCourseResponseDto } from './dto/search-course.dto';
 import { CourseHierarchyFilterDto } from './dto/course-hierarchy-filter.dto';
 import { Headers } from '@nestjs/common';
@@ -411,6 +411,46 @@ export class CoursesController {
       requestBody.newCohortId
     );
     return copiedCourse;
+  }
+
+  @Put('structure')
+  @ApiId(API_IDS.UPDATE_COURSES_ORDER)
+  @ApiOperation({ 
+    summary: 'Update courses order in bulk',
+    description: 'Update the order of multiple courses in bulk'
+  })
+  @ApiBody({ type: BulkCourseOrderDto })
+  @ApiResponse({ 
+    status: 200, 
+    description: 'Courses order updated successfully',
+    schema: {
+      properties: {
+        success: { type: 'boolean' },
+        message: { type: 'string' }
+      }
+    }
+  })
+  @ApiResponse({ status: 400, description: 'Bad request - Invalid data or validation error' })
+  @ApiResponse({ status: 404, description: 'Some courses not found' })
+  @ApiResponse({ status: 500, description: 'Internal server error' })
+  async updateCoursesOrder(
+    @Body() bulkCourseOrderDto: BulkCourseOrderDto,
+    @Query() query: CommonQueryDto,
+    @TenantOrg() tenantOrg: { tenantId: string; organisationId: string }
+  ) {
+    try {
+      const result = await this.coursesService.updateCoursesOrder(
+        bulkCourseOrderDto,
+        query.userId,
+        tenantOrg.tenantId,
+        tenantOrg.organisationId
+      );
+      
+      return result;
+    } catch (error) {
+      // Re-throw the error to let the global exception filter handle it
+      throw error;
+    }
   }
 
   @Put(':courseId/structure')
