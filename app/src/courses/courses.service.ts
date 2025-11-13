@@ -153,8 +153,14 @@ export class CoursesService {
     // Validate and sanitize inputs
     const offset = Math.max(0, filters.offset || 0);
     const limit = Math.min(100, Math.max(1, filters.limit || 10));
-    const sortBy = filters.sortBy || SortBy.CREATED_AT;
-    const orderBy = filters.orderBy || SortOrder.DESC;
+    const sortBy = filters.sortBy || SortBy.ORDERING;
+    // Ensure orderBy is properly converted to string for TypeORM
+    const orderByValue = filters.orderBy 
+      ? (typeof filters.orderBy === 'string' ? filters.orderBy.toUpperCase() : filters.orderBy)
+      : SortOrder.DESC;
+    const orderBy = (orderByValue === 'ASC' || orderByValue === SortOrder.ASC) 
+      ? 'ASC' as const 
+      : 'DESC' as const;
 
     // Generate consistent cache key
     const cacheKey = this.cacheConfig.getCourseSearchKey(
@@ -181,7 +187,7 @@ export class CoursesService {
     // Apply filters
     this.applyFilters(filters, whereClause);
 
-    // Build order clause
+    // Build order clause - TypeORM expects 'ASC' or 'DESC' as string literals
     const orderClause: any = {};
     orderClause[sortBy] = orderBy;
 
