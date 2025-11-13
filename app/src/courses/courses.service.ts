@@ -620,20 +620,20 @@ export class CoursesService {
 
       // Extract event IDs for event format lessons
       // HACK - Aspire-Leader Project
-      const eventIds: string[] = [];
-      const eventMediaMap = new Map<string, any>(); // Map mediaId to lesson for event data integration
+      // const eventIds: string[] = [];
+      // const eventMediaMap = new Map<string, any>(); // Map mediaId to lesson for event data integration
       
-      lessons.forEach(lesson => {
-        if (lesson.format === 'event' && lesson.media && lesson.media.source) {
-          eventIds.push(lesson.media.source); 
-          eventMediaMap.set(lesson.media.source, lesson);
-        }
-      });
+      // lessons.forEach(lesson => {
+      //   if (lesson.format === 'event' && lesson.media && lesson.media.source) {
+      //     eventIds.push(lesson.media.source); 
+      //     eventMediaMap.set(lesson.media.source, lesson);
+      //   }
+      // });
 
       // Fetch event data if there are event lessons
-      if (eventIds.length > 0) {
-        eventDataMap = await this.fetchEventData(eventIds, userId, authorizationToken);
-      }
+      // if (eventIds.length > 0) {
+      //   eventDataMap = await this.fetchEventData(eventIds, userId, authorizationToken);
+      // }
       // END HACK - Aspire-Leader Project
     }
 
@@ -738,15 +738,15 @@ export class CoursesService {
           }
           
           // Add event data for event format lessons
-          let eventData = null;
-          if (lesson.format === 'event' && lesson.media && lesson.media.source && eventDataMap.has(lesson.media.source)) {
-            eventData = eventDataMap.get(lesson.media.source);
-          }
+          // let eventData = null;
+          // if (lesson.format === 'event' && lesson.media && lesson.media.source && eventDataMap.has(lesson.media.source)) {
+          //   eventData = eventDataMap.get(lesson.media.source);
+          // }
           
           return {
             ...lesson,
             associatedLesson: associatedLessonsWithTracking,
-            eventData,
+            // eventData,
             tracking: bestAttempt ? {
               status: bestAttempt.status,
               canResume: lesson.allowResubmission ? true : (lesson.resume ?? true) && (lastAttempt && (lastAttempt.status === TrackingStatus.STARTED || lastAttempt.status === TrackingStatus.INCOMPLETE)),
