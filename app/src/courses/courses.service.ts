@@ -153,8 +153,14 @@ export class CoursesService {
     // Validate and sanitize inputs
     const offset = Math.max(0, filters.offset || 0);
     const limit = Math.min(100, Math.max(1, filters.limit || 10));
-    const sortBy = filters.sortBy || SortBy.CREATED_AT;
-    const orderBy = filters.orderBy || SortOrder.DESC;
+    const sortBy = filters.sortBy || SortBy.ORDERING;
+    // Ensure orderBy is properly converted to string for TypeORM
+    const orderByValue = filters.orderBy 
+      ? (typeof filters.orderBy === 'string' ? filters.orderBy.toUpperCase() : filters.orderBy)
+      : SortOrder.DESC;
+    const orderBy = (orderByValue === 'ASC' || orderByValue === SortOrder.ASC) 
+      ? 'ASC' as const 
+      : 'DESC' as const;
 
     // Generate consistent cache key
     const cacheKey = this.cacheConfig.getCourseSearchKey(
@@ -181,7 +187,7 @@ export class CoursesService {
     // Apply filters
     this.applyFilters(filters, whereClause);
 
-    // Build order clause
+    // Build order clause - TypeORM expects 'ASC' or 'DESC' as string literals
     const orderClause: any = {};
     orderClause[sortBy] = orderBy;
 
@@ -614,20 +620,20 @@ export class CoursesService {
 
       // Extract event IDs for event format lessons
       // HACK - Aspire-Leader Project
-      const eventIds: string[] = [];
-      const eventMediaMap = new Map<string, any>(); // Map mediaId to lesson for event data integration
+      // const eventIds: string[] = [];
+      // const eventMediaMap = new Map<string, any>(); // Map mediaId to lesson for event data integration
       
-      lessons.forEach(lesson => {
-        if (lesson.format === 'event' && lesson.media && lesson.media.source) {
-          eventIds.push(lesson.media.source); 
-          eventMediaMap.set(lesson.media.source, lesson);
-        }
-      });
+      // lessons.forEach(lesson => {
+      //   if (lesson.format === 'event' && lesson.media && lesson.media.source) {
+      //     eventIds.push(lesson.media.source); 
+      //     eventMediaMap.set(lesson.media.source, lesson);
+      //   }
+      // });
 
       // Fetch event data if there are event lessons
-      if (eventIds.length > 0) {
-        eventDataMap = await this.fetchEventData(eventIds, userId, authorizationToken);
-      }
+      // if (eventIds.length > 0) {
+      //   eventDataMap = await this.fetchEventData(eventIds, userId, authorizationToken);
+      // }
       // END HACK - Aspire-Leader Project
     }
 
@@ -732,15 +738,15 @@ export class CoursesService {
           }
           
           // Add event data for event format lessons
-          let eventData = null;
-          if (lesson.format === 'event' && lesson.media && lesson.media.source && eventDataMap.has(lesson.media.source)) {
-            eventData = eventDataMap.get(lesson.media.source);
-          }
+          // let eventData = null;
+          // if (lesson.format === 'event' && lesson.media && lesson.media.source && eventDataMap.has(lesson.media.source)) {
+          //   eventData = eventDataMap.get(lesson.media.source);
+          // }
           
           return {
             ...lesson,
             associatedLesson: associatedLessonsWithTracking,
-            eventData,
+            // eventData,
             tracking: bestAttempt ? {
               status: bestAttempt.status,
               canResume: lesson.allowResubmission ? true : (lesson.resume ?? true) && (lastAttempt && (lastAttempt.status === TrackingStatus.STARTED || lastAttempt.status === TrackingStatus.INCOMPLETE)),
