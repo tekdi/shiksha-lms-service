@@ -13,7 +13,6 @@ import {
   LessonStatus,
   AttemptsGradeMethod,
   LessonFormat,
-  LessonSubFormat,
 } from './entities/lesson.entity';
 import { Course, CourseStatus } from '../courses/entities/course.entity';
 import { Module, ModuleStatus } from '../modules/entities/module.entity';
@@ -842,14 +841,6 @@ export class LessonsService {
       ) {
         updateData.endDatetime = new Date(updateLessonDto.endDatetime);
       }
-
-      // if (updateLessonDto.startDatetime !== undefined) {
-      //   updateData.startDatetime = new Date(updateLessonDto.startDatetime);
-      // }
-
-      // if (updateLessonDto.endDatetime !== undefined) {
-      //   updateData.endDatetime = new Date(updateLessonDto.endDatetime);
-      // }
 
       if (updateLessonDto.storage !== undefined) {
         updateData.storage = updateLessonDto.storage;
