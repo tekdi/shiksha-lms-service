@@ -656,7 +656,7 @@ export class TrackingService {
 
     // Remove lesson relation from response to reduce payload size (lesson was loaded only for internal use)
     const { lesson, course, ...response } = savedAttempt;
-    return response as LessonTrack;
+    return response as unknown as LessonTrack;
   }
 
   /**
@@ -1015,7 +1015,7 @@ export class TrackingService {
 
       // Remove lesson relation from response to reduce payload size (lesson was loaded only for internal use)
       const { lesson: _lesson, course: _course, ...response } = updatedAttempt;
-      return response as LessonTrack;
+      return response as unknown as LessonTrack;
     } catch (error) {
       this.logger.error(`Error updating event progress for eventId: ${eventId}, userId: ${updateEventProgressDto.userId}`, error);
       if (error instanceof NotFoundException) {
