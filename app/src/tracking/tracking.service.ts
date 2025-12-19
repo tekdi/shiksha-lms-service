@@ -601,6 +601,7 @@ export class TrackingService {
         tenantId,
         organisationId
       } as FindOptionsWhere<LessonTrack>,
+      relations: ['lesson'], // Load lesson to avoid redundant query later
     });
 
     if (!attempt) {
@@ -646,12 +647,18 @@ export class TrackingService {
 
     const savedAttempt = await this.lessonTrackRepository.save(attempt);
 
-    // Update course and module tracking if lesson is completed
+    // Update course and module tracking asynchronously (fire and forget) to avoid blocking response
+    // This is called for all requests with courseId, but runs in background
     if (savedAttempt.courseId) {
-      await this.updateCourseAndModuleTracking(savedAttempt, tenantId, organisationId);
+      this.updateCourseAndModuleTracking(savedAttempt, tenantId, organisationId)
+        .catch(err => this.logger.error('Failed to update course/module tracking asynchronously', err));
     }
 
-    return savedAttempt;
+    // Remove lesson relation from response to reduce payload size (lesson was loaded only for internal use)
+    const response = { ...savedAttempt };
+    delete (response as any).lesson;
+    delete (response as any).course;
+    return response as LessonTrack;
   }
 
   /**
@@ -718,11 +725,15 @@ export class TrackingService {
     await this.courseTrackRepository.save(courseTrack);
 
     // Find and update module tracking if applicable
-    const lesson = await this.lessonRepository.findOne({
-      where: { 
-        lessonId: lessonTrack.lessonId,
-      } as FindOptionsWhere<Lesson>,
-    });
+    // Use lesson from relation if available (loaded in updateProgress), otherwise query
+    let lesson = (lessonTrack as any).lesson;
+    if (!lesson) {
+      lesson = await this.lessonRepository.findOne({
+        where: { 
+          lessonId: lessonTrack.lessonId,
+        } as FindOptionsWhere<Lesson>,
+      });
+    }
 
     if (lesson && lesson.moduleId) {
       await this.updateModuleTracking(lesson.moduleId, lessonTrack.userId, lessonTrack.tenantId, lessonTrack.organisationId);
@@ -732,6 +743,10 @@ export class TrackingService {
   /**
    * Calculate completed lessons based on attemptsGrade method
    */
+  /**
+   * Calculate completed lessons based on attemptsGrade method
+   * OPTIMIZED: Uses batch query to avoid N+1 problem
+   */
   private async calculateCompletedLessonsBasedOnAttemptsGrade(
     lessons: Lesson[],
     userId: string,
@@ -739,27 +754,45 @@ export class TrackingService {
     tenantId: string,
     organisationId: string
   ): Promise<number> {
-    let completedLessonsCount = 0;
+    if (lessons.length === 0) {
+      return 0;
+    }
 
-    for (const lesson of lessons) {
-      // Get all attempts for this lesson
-      const whereClause: any = { 
-        lessonId: lesson.lessonId,
-        userId,
-        tenantId,
-        organisationId,
-        status: In([TrackingStatus.COMPLETED, TrackingStatus.SUBMITTED])
-      };
-      
-      // Add courseId filter only if it's provided
-      if (courseId) {
-        whereClause.courseId = courseId;
+    // Step 1: Get all lesson IDs
+    const lessonIds = lessons.map(l => l.lessonId);
+
+    // Step 2: Single batch query for ALL attempts (fixes N+1 problem)
+    const whereClause: any = {
+      lessonId: In(lessonIds),
+      userId,
+      tenantId,
+      organisationId,
+      status: In([TrackingStatus.COMPLETED, TrackingStatus.SUBMITTED])
+    };
+    
+    // Add courseId filter only if it's provided
+    if (courseId) {
+      whereClause.courseId = courseId;
+    }
+
+    const allAttempts = await this.lessonTrackRepository.find({
+      where: whereClause as FindOptionsWhere<LessonTrack>,
+      order: { attempt: 'ASC' }
+    });
+
+    // Step 3: Group attempts by lessonId in memory
+    const attemptsByLesson = new Map<string, LessonTrack[]>();
+    allAttempts.forEach(attempt => {
+      if (!attemptsByLesson.has(attempt.lessonId)) {
+        attemptsByLesson.set(attempt.lessonId, []);
       }
+      attemptsByLesson.get(attempt.lessonId)!.push(attempt);
+    });
 
-      const lessonAttempts = await this.lessonTrackRepository.find({
-        where: whereClause as FindOptionsWhere<LessonTrack>,
-        order: { attempt: 'ASC' }
-      });
+    // Step 4: Process each lesson using the grouped data
+    let completedLessonsCount = 0;
+    for (const lesson of lessons) {
+      const lessonAttempts = attemptsByLesson.get(lesson.lessonId) || [];
 
       if (lessonAttempts.length === 0) {
         continue; // No completed attempts
@@ -973,12 +1006,20 @@ export class TrackingService {
       // Save the updated attempt
       const updatedAttempt = await this.lessonTrackRepository.save(lastAttempt);
 
-    // Update course and module tracking if lesson is completed
-    if (updatedAttempt.courseId) {
-      await this.updateCourseAndModuleTracking(updatedAttempt, tenantId, organisationId);
-    }
+      // Attach lesson to attempt to avoid redundant query in async update
+      (updatedAttempt as any).lesson = lesson;
 
-      return updatedAttempt;
+      // Update course and module tracking asynchronously (fire and forget) to avoid blocking response
+      if (updatedAttempt.courseId) {
+        this.updateCourseAndModuleTracking(updatedAttempt, tenantId, organisationId)
+          .catch(err => this.logger.error('Failed to update course/module tracking asynchronously', err));
+      }
+
+      // Remove lesson relation from response to reduce payload size (lesson was loaded only for internal use)
+      const response = { ...updatedAttempt };
+      delete (response as any).lesson;
+      delete (response as any).course;
+      return response as LessonTrack;
     } catch (error) {
       this.logger.error(`Error updating event progress for eventId: ${eventId}, userId: ${updateEventProgressDto.userId}`, error);
       if (error instanceof NotFoundException) {
