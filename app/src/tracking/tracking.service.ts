@@ -655,9 +655,7 @@ export class TrackingService {
     }
 
     // Remove lesson relation from response to reduce payload size (lesson was loaded only for internal use)
-    const response = { ...savedAttempt };
-    delete (response as any).lesson;
-    delete (response as any).course;
+    const { lesson, course, ...response } = savedAttempt;
     return response as LessonTrack;
   }
 
@@ -1016,9 +1014,7 @@ export class TrackingService {
       }
 
       // Remove lesson relation from response to reduce payload size (lesson was loaded only for internal use)
-      const response = { ...updatedAttempt };
-      delete (response as any).lesson;
-      delete (response as any).course;
+      const { lesson: _lesson, course: _course, ...response } = updatedAttempt;
       return response as LessonTrack;
     } catch (error) {
       this.logger.error(`Error updating event progress for eventId: ${eventId}, userId: ${updateEventProgressDto.userId}`, error);
