@@ -648,8 +648,8 @@ export class TrackingService {
     const savedAttempt = await this.lessonTrackRepository.save(attempt);
 
     // Update course and module tracking asynchronously (fire and forget) to avoid blocking response
-    // This is called for all requests with courseId, but runs in background
-    if (savedAttempt.courseId) {
+    // Skip expensive operations for incomplete status - no need to recalculate course completion
+    if (savedAttempt.courseId && savedAttempt.status !== TrackingStatus.INCOMPLETE) {
       this.updateCourseAndModuleTracking(savedAttempt, tenantId, organisationId)
         .catch(err => this.logger.error('Failed to update course/module tracking asynchronously', err));
     }
@@ -1008,7 +1008,8 @@ export class TrackingService {
       (updatedAttempt as any).lesson = lesson;
 
       // Update course and module tracking asynchronously (fire and forget) to avoid blocking response
-      if (updatedAttempt.courseId) {
+      // Skip expensive operations for incomplete status - no need to recalculate course completion
+      if (updatedAttempt.courseId && updatedAttempt.status !== TrackingStatus.INCOMPLETE) {
         this.updateCourseAndModuleTracking(updatedAttempt, tenantId, organisationId)
           .catch(err => this.logger.error('Failed to update course/module tracking asynchronously', err));
       }
