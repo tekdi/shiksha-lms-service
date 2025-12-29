@@ -2403,10 +2403,8 @@ export class CoursesService {
         headers['Authorization'] = `Bearer ${authorizationToken}`;
       }
 
-      // OPTIMIZED: Add timeout to axios request to prevent indefinite blocking
       const response = await axios.post(url, requestBody, {
         headers,
-        timeout: 2000, // 2 second timeout
       });
 
       if (
