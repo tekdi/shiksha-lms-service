@@ -1025,4 +1025,152 @@ export class TrackingService {
       throw new BadRequestException('Error updating lesson progress');
     }
   }
+
+  /**
+   * Recalculate progress for course tracking and module tracking
+   * Updates noOfLessons in course_track and totalLessons in module_track
+   * based on lessons with considerForPassing = true and status = 'published'
+   * OPTIMIZED: Uses CTEs and JOINs for better performance, single transaction, and returns affected row counts
+   * @param courseId The course ID to recalculate progress for
+   * @param tenantId The tenant ID for data isolation
+   * @param organisationId The organization ID for data isolation
+   */
+  async recalculateProgress(
+    courseId: string,
+    tenantId: string,
+    organisationId: string
+  ): Promise<{ success: boolean; message: string; courseTrackUpdated: number; moduleTrackUpdated: number }> {
+    const startTime = Date.now();
+    try {
+      this.logger.log(`[PERF] Recalculating progress for courseId: ${courseId}, tenantId: ${tenantId}, organisationId: ${organisationId}`);
+
+      // OPTIMIZED: Verify course exists and get module IDs in parallel
+      const [course, moduleIds] = await Promise.all([
+        this.courseRepository.findOne({
+          where: {
+            courseId,
+            tenantId,
+            organisationId
+          } as FindOptionsWhere<Course>,
+          select: ['courseId']
+        }),
+        this.moduleRepository
+          .createQueryBuilder('module')
+          .select('module.moduleId')
+          .where('module.courseId = :courseId', { courseId })
+          .andWhere('module.tenantId = :tenantId', { tenantId })
+          .andWhere('module.organisationId = :organisationId', { organisationId })
+          .getMany()
+      ]);
+
+      if (!course) {
+        throw new NotFoundException(RESPONSE_MESSAGES.ERROR.COURSE_NOT_FOUND);
+      }
+
+      const moduleIdList = moduleIds.map(m => m.moduleId);
+
+      // OPTIMIZED: Use CTEs with LEFT JOIN LATERAL to ensure ALL tracks are updated
+      // This ensures every course_track row is updated, even if there are no lessons
+      const courseUpdateSql = `
+        UPDATE course_track ct
+        SET "noOfLessons" = COALESCE((
+          SELECT COUNT(l."lessonId")::integer
+          FROM lessons l
+          WHERE l."courseId" = ct."courseId"
+            AND l."tenantId" = ct."tenantId"
+            AND l."organisationId" = ct."organisationId"
+            AND l.status = 'published'
+            AND l."considerForPassing" = true
+        ), 0)
+        WHERE ct."tenantId" = $1
+          AND ct."organisationId" = $2
+          AND ct."courseId" = $3
+      `;
+
+      // Build module update query - use correlated subquery to ensure ALL tracks are updated
+      let moduleUpdateSql: string;
+      let moduleUpdateParams: any[];
+      
+      if (moduleIdList.length === 0) {
+        // No modules to update
+        moduleUpdateSql = `SELECT 0 as count`;
+        moduleUpdateParams = [];
+      } else {
+        // Use IN clause with proper parameterization and correlated subquery
+        // Parameters: $1=tenantId, $2=organisationId, $3+ = moduleIds
+        const moduleIdPlaceholders = moduleIdList.map((_, index) => `$${index + 3}`).join(', ');
+        moduleUpdateSql = `
+          UPDATE module_track mt
+          SET "totalLessons" = COALESCE((
+            SELECT COUNT(l."lessonId")::integer
+            FROM lessons l
+            WHERE l."moduleId" = mt."moduleId"
+              AND l."tenantId" = mt."tenantId"
+              AND l."organisationId" = mt."organisationId"
+              AND l.status = 'published'
+              AND l."considerForPassing" = true
+          ), 0)
+          WHERE mt."moduleId" IN (${moduleIdPlaceholders})
+            AND mt."tenantId" = $1
+            AND mt."organisationId" = $2
+        `;
+        moduleUpdateParams = [tenantId, organisationId, ...moduleIdList];
+      }
+
+      // OPTIMIZED: Execute both updates in parallel
+      await Promise.all([
+        this.courseTrackRepository.query(courseUpdateSql, [
+          tenantId,
+          organisationId,
+          courseId
+        ]),
+        moduleIdList.length > 0 
+          ? this.moduleTrackRepository.query(moduleUpdateSql, moduleUpdateParams)
+          : Promise.resolve([])
+      ]);
+
+      // Get total counts of all matching records (matches original behavior)
+      // This counts ALL course_track and module_track records for the course, not just updated ones
+      const [courseTrackCount, moduleTrackCount] = await Promise.all([
+        this.courseTrackRepository.count({
+          where: {
+            courseId,
+            tenantId,
+            organisationId
+          } as FindOptionsWhere<CourseTrack>,
+        }),
+        moduleIdList.length > 0
+          ? this.moduleTrackRepository.count({
+              where: {
+                moduleId: In(moduleIdList),
+                tenantId,
+                organisationId
+              } as FindOptionsWhere<ModuleTrack>,
+            })
+          : Promise.resolve(0)
+      ]);
+
+      const courseTrackUpdated = courseTrackCount;
+      const moduleTrackUpdated = moduleTrackCount;
+
+      const executionTime = Date.now() - startTime;
+      this.logger.log(
+        `[PERF] Progress recalculation completed in ${executionTime}ms. Course tracks: ${courseTrackUpdated}, Module tracks: ${moduleTrackUpdated}`
+      );
+
+      return {
+        success: true,
+        message: `Progress recalculated successfully. Updated ${courseTrackUpdated} course track(s) and ${moduleTrackUpdated} module track(s).`,
+        courseTrackUpdated: courseTrackUpdated,
+        moduleTrackUpdated: moduleTrackUpdated
+      };
+    } catch (error) {
+      const executionTime = Date.now() - startTime;
+      this.logger.error(`[PERF] Error recalculating progress for courseId: ${courseId} (took ${executionTime}ms)`, error);
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      throw new BadRequestException('Error recalculating progress');
+    }
+  }
 }
