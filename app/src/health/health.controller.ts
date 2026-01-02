@@ -1,4 +1,4 @@
-import { Controller, Get, HttpStatus, HttpException, Res } from '@nestjs/common';
+import { Controller, Get, HttpStatus, Res } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { InjectDataSource } from '@nestjs/typeorm';
@@ -15,7 +15,9 @@ export class HealthController {
   ) {}
 
   @Get()
-  @ApiOperation({ summary: 'Check service health and database connection (readiness probe)' })
+  @ApiOperation({
+    summary: 'Check service health and database connection (readiness probe)',
+  })
   @ApiResponse({
     status: 200,
     description: 'Service is healthy and database is connected',
@@ -26,55 +28,79 @@ export class HealthController {
   })
   async check(@Res() response: Response) {
     const healthStatus = await this.healthService.getOverallHealth();
-    
+
     if (healthStatus.status === 'error') {
-      const downServices = healthStatus.services.filter((s: { status: string }) => s.status === 'down');
+      const downServices = healthStatus.services.filter(
+        (s: { status: string }) => s.status === 'down',
+      );
       const errorResponse = {
         status: 'error',
         info: {},
-        error: downServices.reduce((acc, service) => {
-          acc[service.name] = {
-            status: 'down',
-            message: service.message || 'Service unavailable',
-          };
-          return acc;
-        }, {} as Record<string, { status: string; message?: string }>),
-        details: healthStatus.services.reduce((acc, service) => {
-          acc[service.name] = {
-            status: service.status,
-            message: service.message,
-            responseTime: service.responseTime ? `${service.responseTime}ms` : undefined,
-          };
-          return acc;
-        }, {} as Record<string, any>),
+        error: downServices.reduce(
+          (acc, service) => {
+            acc[service.name] = {
+              status: 'down',
+              message: service.message || 'Service unavailable',
+            };
+            return acc;
+          },
+          {} as Record<string, { status: string; message?: string }>,
+        ),
+        details: healthStatus.services.reduce(
+          (acc, service) => {
+            acc[service.name] = {
+              status: service.status,
+              message: service.message,
+              responseTime: service.responseTime
+                ? `${service.responseTime}ms`
+                : undefined,
+            };
+            return acc;
+          },
+          {} as Record<string, any>,
+        ),
       };
-      return response.status(HttpStatus.SERVICE_UNAVAILABLE).json(errorResponse);
+      return response
+        .status(HttpStatus.SERVICE_UNAVAILABLE)
+        .json(errorResponse);
     }
 
     const successResponse = {
       status: 'ok',
-      info: healthStatus.services.reduce((acc, service) => {
-        acc[service.name] = {
-          status: 'up',
-          responseTime: service.responseTime ? `${service.responseTime}ms` : undefined,
-        };
-        return acc;
-      }, {} as Record<string, any>),
+      info: healthStatus.services.reduce(
+        (acc, service) => {
+          acc[service.name] = {
+            status: 'up',
+            responseTime: service.responseTime
+              ? `${service.responseTime}ms`
+              : undefined,
+          };
+          return acc;
+        },
+        {} as Record<string, any>,
+      ),
       error: {},
-      details: healthStatus.services.reduce((acc, service) => {
-        acc[service.name] = {
-          status: service.status,
-          message: service.message,
-          responseTime: service.responseTime ? `${service.responseTime}ms` : undefined,
-        };
-        return acc;
-      }, {} as Record<string, any>),
+      details: healthStatus.services.reduce(
+        (acc, service) => {
+          acc[service.name] = {
+            status: service.status,
+            message: service.message,
+            responseTime: service.responseTime
+              ? `${service.responseTime}ms`
+              : undefined,
+          };
+          return acc;
+        },
+        {} as Record<string, any>,
+      ),
     };
     return response.status(HttpStatus.OK).json(successResponse);
   }
 
   @Get('live')
-  @ApiOperation({ summary: 'Liveness probe - checks if service is running (no DB check)' })
+  @ApiOperation({
+    summary: 'Liveness probe - checks if service is running (no DB check)',
+  })
   @ApiResponse({
     status: 200,
     description: 'Service is alive',
@@ -88,7 +114,9 @@ export class HealthController {
   }
 
   @Get('ready')
-  @ApiOperation({ summary: 'Readiness probe - checks if service and database are ready' })
+  @ApiOperation({
+    summary: 'Readiness probe - checks if service and database are ready',
+  })
   @ApiResponse({
     status: 200,
     description: 'Service is ready (database connected)',
@@ -99,7 +127,7 @@ export class HealthController {
   })
   async readiness(@Res() response: Response) {
     const dbStatus = await this.healthService.checkDatabase();
-    
+
     if (dbStatus.status === 'down') {
       const errorResponse = {
         status: 'error',
@@ -117,7 +145,9 @@ export class HealthController {
           },
         },
       };
-      return response.status(HttpStatus.SERVICE_UNAVAILABLE).json(errorResponse);
+      return response
+        .status(HttpStatus.SERVICE_UNAVAILABLE)
+        .json(errorResponse);
     }
 
     const successResponse = {
@@ -125,14 +155,18 @@ export class HealthController {
       info: {
         database: {
           status: 'up',
-          responseTime: dbStatus.responseTime ? `${dbStatus.responseTime}ms` : undefined,
+          responseTime: dbStatus.responseTime
+            ? `${dbStatus.responseTime}ms`
+            : undefined,
         },
       },
       error: {},
       details: {
         database: {
           status: 'up',
-          responseTime: dbStatus.responseTime ? `${dbStatus.responseTime}ms` : undefined,
+          responseTime: dbStatus.responseTime
+            ? `${dbStatus.responseTime}ms`
+            : undefined,
         },
       },
     };
