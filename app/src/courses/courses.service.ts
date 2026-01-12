@@ -362,11 +362,11 @@ export class CoursesService {
       .getRawMany();
 
     const moduleCountMap = new Map(
-      moduleCounts.map((mc) => [mc.courseId, parseInt(mc.count, 10)]),
+      moduleCounts.map((mc) => [mc.courseId, Number.parseInt(mc.count, 10)]),
     );
 
     const enrollmentCountMap = new Map(
-      enrollmentCounts.map((ec) => [ec.courseId, parseInt(ec.count, 10)]),
+      enrollmentCounts.map((ec) => [ec.courseId, Number.parseInt(ec.count, 10)]),
     );
 
     return courses.map((course) => ({
@@ -2100,7 +2100,7 @@ export class CoursesService {
           }
           break;
 
-        case 'module':
+        case 'module': {
           // OPTIMIZED: Fetch next module and current module details in parallel
           // This reduces sequential queries from 3 to 2
           const [nextModuleResult, currentModule] = await Promise.all([
@@ -2135,8 +2135,9 @@ export class CoursesService {
             }
           }
           break;
+        }
 
-        case 'lesson':
+        case 'lesson': {
           // OPTIMIZED: Fetch next lesson and current lesson details in parallel
           // This reduces sequential queries from 4 to 2-3
           const [nextLessonResult, currentLesson] = await Promise.all([
@@ -2190,6 +2191,7 @@ export class CoursesService {
             }
           }
           break;
+        }
 
         default:
           throw new BadRequestException(`Invalid nextIdFor: ${nextIdFor}`);
