@@ -156,6 +156,7 @@ export class TrackingService {
 
   /**
    * Start a new lesson attempt or get existing incomplete attempt
+   * OPTIMIZED: Parallel queries and batch loading for prerequisites
    */
   async startLessonAttempt(
     lessonId: string,
@@ -163,7 +164,7 @@ export class TrackingService {
     tenantId: string,
     organisationId: string
   ): Promise<LessonTrack> {
-    // Get lesson details first
+    // OPTIMIZED: Get lesson details first
     const lesson = await this.lessonRepository.findOne({
       where: { 
         lessonId,
@@ -182,14 +183,27 @@ export class TrackingService {
       throw new NotFoundException(RESPONSE_MESSAGES.ERROR.COURSE_LESSON_NOT_FOUND);
     }
 
-    // Check prerequisites if any exist
-    const prerequisiteCheck = await this.checkLessonsPrerequisites(
-      lesson,
-      userId,
-      courseId,
-      tenantId,
-      organisationId
-    );
+    // OPTIMIZED: Check prerequisites and get existing tracks in parallel
+    // This reduces sequential queries from 2 to 1 (parallel execution)
+    const [prerequisiteCheck, existingTracks] = await Promise.all([
+      this.checkLessonsPrerequisites(
+        lesson,
+        userId,
+        courseId,
+        tenantId,
+        organisationId
+      ),
+      this.lessonTrackRepository.find({
+        where: { 
+          lessonId, 
+          userId,
+          courseId,
+          tenantId,
+          organisationId,
+        } as FindOptionsWhere<LessonTrack>,
+        order: { attempt: 'DESC' },
+      })
+    ]);
 
     if (!prerequisiteCheck.isEligible && prerequisiteCheck.requiredLessons) {
       // Get the titles of missing prerequisite lessons for better error message
@@ -200,29 +214,8 @@ export class TrackingService {
       );
     }
 
-    //check if course is completed ,then throw error
-    const courseTrack = await this.courseTrackRepository.findOne({
-      where: {
-        courseId,
-        userId,
-        tenantId,
-        organisationId
-      } as FindOptionsWhere<CourseTrack>,
-    }); 
-    // if (courseTrack && courseTrack.status === TrackingStatus.COMPLETED) {
-    //   throw new BadRequestException(RESPONSE_MESSAGES.ERROR.COURSE_COMPLETED);
-    // }
-    // Find existing tracks for course lesson
-    const existingTracks = await this.lessonTrackRepository.find({
-      where: { 
-        lessonId, 
-        userId,
-        courseId,
-        tenantId,
-        organisationId,
-      } as FindOptionsWhere<LessonTrack>,
-      order: { attempt: 'DESC' },
-    });
+    // REMOVED: Unused courseTrack query (check was commented out)
+    // This eliminates an unnecessary database query
 
     // If there's an incomplete attempt, return it
     const incompleteAttempt = existingTracks.find(track => track.status !== TrackingStatus.COMPLETED);
@@ -270,6 +263,7 @@ export class TrackingService {
 
   /**
    * Check if all prerequisites for a lesson are completed
+   * OPTIMIZED: Batch load all prerequisites and completion checks to avoid N+1 queries
    * @param lesson The lesson to check prerequisites for
    * @param userId The user ID
    * @param courseId The course ID
@@ -291,50 +285,50 @@ export class TrackingService {
       };
     }
 
+    // OPTIMIZED: Batch load all prerequisite lessons in a single query
+    // Instead of N queries (one per prerequisite), we fetch all at once
+    const prerequisiteLessonIds = lesson.prerequisites;
+    const requiredLessonsData = await this.lessonRepository.find({
+      where: {
+        lessonId: In(prerequisiteLessonIds),
+        tenantId,
+        organisationId,
+        status: LessonStatus.PUBLISHED
+      },
+      select: ['lessonId', 'title']
+    });
+
+    // OPTIMIZED: Batch load all completion tracks in a single query
+    // Instead of N queries (one per prerequisite), we fetch all at once
+    const completedTracks = await this.lessonTrackRepository.find({
+      where: {
+        lessonId: In(prerequisiteLessonIds),
+        userId,
+        courseId,
+        tenantId,
+        organisationId,
+        status: TrackingStatus.COMPLETED
+      } as FindOptionsWhere<LessonTrack>,
+      select: ['lessonId']
+    });
+
+    // Create a map for quick lookup of completed lessons
+    const completedLessonIds = new Set(completedTracks.map(track => track.lessonId));
+    
+    // Create a map for quick lookup of lesson titles
+    const lessonTitleMap = new Map(requiredLessonsData.map(lesson => [lesson.lessonId, lesson.title]));
+
     const requiredLessons: any[] = [];
     let allCompleted = true;
 
-    // Check each required lesson ID from the array
-    for (const requiredLessonId of lesson.prerequisites) {
-      // Fetch the required lesson details
-      const requiredLesson = await this.lessonRepository.findOne({
-        where: {
-          lessonId: requiredLessonId,
-          tenantId,
-          organisationId,
-          status: LessonStatus.PUBLISHED
-        },
-        select: ['lessonId', 'title']
-      });
-
-      if (!requiredLesson) {
-        // If required lesson doesn't exist, consider it as not completed
-        requiredLessons.push({
-          lessonId: requiredLessonId,
-          title: 'Unknown Lesson',
-          completed: false
-        });
-        allCompleted = false;
-        continue;
-      }
-
-      // Check if the user has completed this lesson
-      const completedTrack = await this.lessonTrackRepository.findOne({
-        where: {
-          lessonId: requiredLessonId,
-          userId,
-          courseId,
-          tenantId,
-          organisationId,
-          status: TrackingStatus.COMPLETED
-        } as FindOptionsWhere<LessonTrack>,
-      });
-
-      const isCompleted = !!completedTrack;
+    // Process each prerequisite (now using pre-loaded data)
+    for (const requiredLessonId of prerequisiteLessonIds) {
+      const title = lessonTitleMap.get(requiredLessonId) || 'Unknown Lesson';
+      const isCompleted = completedLessonIds.has(requiredLessonId);
 
       requiredLessons.push({
         lessonId: requiredLessonId,
-        title: requiredLesson.title,
+        title: title,
         completed: isCompleted
       });
 
