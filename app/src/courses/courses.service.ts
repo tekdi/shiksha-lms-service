@@ -242,7 +242,9 @@ export class CoursesService {
     const orderClause: any = {};
     orderClause[sortBy] = orderBy;
 
-    // Fetch courses - can use Join query to get courses , module and enrollment counts in future if there are more courses - with aspire case one cohort can hvae 2-5 courses.
+    // OPTIMIZED: Use findAndCount but we'll optimize enrichCoursesWithCounts separately
+    // Note: Using findAndCount to maintain compatibility with buildSearchConditions OR logic
+    // Column selection optimization can be added later if needed for this endpoint
     const [courses, total] = await this.courseRepository.findAndCount({
       where: this.buildSearchConditions(filters, whereClause),
       order: orderClause,
@@ -337,40 +339,34 @@ export class CoursesService {
 
     const courseIds = courses.map((c) => c.courseId);
 
-    // Get module counts using count method
-    const moduleCountPromises = courseIds.map(async (courseId) => {
-      const count = await this.moduleRepository.count({
-        where: {
-          courseId,
-          tenantId,
-          status: Not(ModuleStatus.ARCHIVED),
-        },
-      });
-      return { courseId, count };
-    });
+    // OPTIMIZED: Batch load all module counts in a single query instead of N queries
+    const moduleCounts = await this.moduleRepository
+      .createQueryBuilder('module')
+      .select('module.courseId', 'courseId')
+      .addSelect('COUNT(*)', 'count')
+      .where('module.courseId IN (:...courseIds)', { courseIds })
+      .andWhere('module.tenantId = :tenantId', { tenantId })
+      .andWhere('module.status != :archivedStatus', { archivedStatus: ModuleStatus.ARCHIVED })
+      .groupBy('module.courseId')
+      .getRawMany();
 
-    const moduleCounts = await Promise.all(moduleCountPromises);
-
-    // Get enrollment counts using count method
-    const enrollmentCountPromises = courseIds.map(async (courseId) => {
-      const count = await this.userEnrollmentRepository.count({
-        where: {
-          courseId,
-          tenantId,
-          status: EnrollmentStatus.PUBLISHED,
-        },
-      });
-      return { courseId, count };
-    });
-
-    const enrollmentCounts = await Promise.all(enrollmentCountPromises);
+    // OPTIMIZED: Batch load all enrollment counts in a single query instead of N queries
+    const enrollmentCounts = await this.userEnrollmentRepository
+      .createQueryBuilder('enrollment')
+      .select('enrollment.courseId', 'courseId')
+      .addSelect('COUNT(*)', 'count')
+      .where('enrollment.courseId IN (:...courseIds)', { courseIds })
+      .andWhere('enrollment.tenantId = :tenantId', { tenantId })
+      .andWhere('enrollment.status = :publishedStatus', { publishedStatus: EnrollmentStatus.PUBLISHED })
+      .groupBy('enrollment.courseId')
+      .getRawMany();
 
     const moduleCountMap = new Map(
-      moduleCounts.map((mc) => [mc.courseId, mc.count]),
+      moduleCounts.map((mc) => [mc.courseId, parseInt(mc.count, 10)]),
     );
 
     const enrollmentCountMap = new Map(
-      enrollmentCounts.map((ec) => [ec.courseId, ec.count]),
+      enrollmentCounts.map((ec) => [ec.courseId, parseInt(ec.count, 10)]),
     );
 
     return courses.map((course) => ({
@@ -2105,11 +2101,16 @@ export class CoursesService {
           break;
 
         case 'module':
-          const nextModuleResult = await this.getNextModule(
-            currentId,
-            tenantId,
-            organisationId,
-          );
+          // OPTIMIZED: Fetch next module and current module details in parallel
+          // This reduces sequential queries from 3 to 2
+          const [nextModuleResult, currentModule] = await Promise.all([
+            this.getNextModule(currentId, tenantId, organisationId),
+            this.moduleRepository.findOne({
+              where: { moduleId: currentId, tenantId, organisationId },
+              select: ['courseId'],
+            }),
+          ]);
+
           if (nextModuleResult.nextModule) {
             nextId = nextModuleResult.nextModule.moduleId;
             isLast = nextModuleResult.isLast;
@@ -2117,11 +2118,6 @@ export class CoursesService {
             // Check if the next module is the last module in the course
           } else {
             // If no next module exists, try to get the next course from the current module's course
-            const currentModule = await this.moduleRepository.findOne({
-              where: { moduleId: currentId, tenantId, organisationId },
-              select: ['courseId'],
-            });
-
             if (currentModule?.courseId) {
               const nextCourseResult = await this.getNextCourse(
                 currentModule.courseId,
@@ -2141,11 +2137,16 @@ export class CoursesService {
           break;
 
         case 'lesson':
-          const nextLessonResult = await this.getNextLesson(
-            currentId,
-            tenantId,
-            organisationId,
-          );
+          // OPTIMIZED: Fetch next lesson and current lesson details in parallel
+          // This reduces sequential queries from 4 to 2-3
+          const [nextLessonResult, currentLesson] = await Promise.all([
+            this.getNextLesson(currentId, tenantId, organisationId),
+            this.lessonRepository.findOne({
+              where: { lessonId: currentId, tenantId, organisationId },
+              select: ['moduleId', 'courseId'],
+            }),
+          ]);
+
           if (nextLessonResult.nextLesson) {
             nextId = nextLessonResult.nextLesson.lessonId;
             isLast = nextLessonResult.isLast;
@@ -2153,11 +2154,6 @@ export class CoursesService {
             // Check if the next lesson is the last lesson in the module
           } else {
             // If no next lesson exists, try to get the next module from the current lesson's module
-            const currentLesson = await this.lessonRepository.findOne({
-              where: { lessonId: currentId, tenantId, organisationId },
-              select: ['moduleId', 'courseId'],
-            });
-
             if (currentLesson?.moduleId) {
               const nextModuleResult = await this.getNextModule(
                 currentLesson.moduleId,
