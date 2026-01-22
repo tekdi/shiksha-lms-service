@@ -1097,21 +1097,50 @@ export class TrackingService {
         moduleUpdateSql = `SELECT 0 as count`;
         moduleUpdateParams = [];
       } else {
-        // Use IN clause with proper parameterization and correlated subquery
+        // OPTIMIZED: Use CTE to calculate lesson counts once, ensures ALL records updated
         // Parameters: $1=tenantId, $2=organisationId, $3+ = moduleIds
+        // Updates totalLessons and calculates progress based on completedLessons / totalLessons * 100
+        // Performance: Calculates lesson count ONCE per module (instead of 3 times per row)
+        // Uses DISTINCT module_track.moduleId to ensure all records are updated, even modules with no lessons
         const moduleIdPlaceholders = moduleIdList.map((_, index) => `$${index + 3}`).join(', ');
         moduleUpdateSql = `
-          UPDATE module_track mt
-          SET "totalLessons" = COALESCE((
-            SELECT COUNT(l."lessonId")::integer
+          WITH target_modules AS (
+            SELECT DISTINCT "moduleId"
+            FROM module_track
+            WHERE "moduleId" IN (${moduleIdPlaceholders})
+              AND "tenantId" = $1
+              AND "organisationId" = $2
+          ),
+          lesson_counts AS (
+            SELECT 
+              l."moduleId",
+              COUNT(l."lessonId")::integer as total
             FROM lessons l
-            WHERE l."moduleId" = mt."moduleId"
-              AND l."tenantId" = mt."tenantId"
-              AND l."organisationId" = mt."organisationId"
+            WHERE l."moduleId" IN (${moduleIdPlaceholders})
+              AND l."tenantId" = $1
+              AND l."organisationId" = $2
               AND l.status = 'published'
               AND l."considerForPassing" = true
-          ), 0)
-          WHERE mt."moduleId" IN (${moduleIdPlaceholders})
+            GROUP BY l."moduleId"
+          ),
+          module_lesson_counts AS (
+            SELECT 
+              tm."moduleId",
+              COALESCE(lc.total, 0) as total
+            FROM target_modules tm
+            LEFT JOIN lesson_counts lc ON tm."moduleId" = lc."moduleId"
+          )
+          UPDATE module_track mt
+          SET 
+            "totalLessons" = mlc.total,
+            "progress" = CASE
+              WHEN mlc.total > 0
+              THEN ROUND((mt."completedLessons"::numeric / mlc.total::numeric) * 100)
+              ELSE 0
+            END
+          FROM module_lesson_counts mlc
+          WHERE mt."moduleId" = mlc."moduleId"
+            AND mt."moduleId" IN (${moduleIdPlaceholders})
             AND mt."tenantId" = $1
             AND mt."organisationId" = $2
         `;
