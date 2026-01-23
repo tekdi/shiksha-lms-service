@@ -290,26 +290,35 @@ export class EnrollmentsService {
       // Commit the transaction
       await queryRunner.commitTransaction();
 
-      // Cache the new enrollment and invalidate related caches
+      // Cache the new enrollment and invalidate related caches (best-effort, non-blocking)
+      // Cache operations are wrapped to prevent Redis errors from breaking requests
       const enrollmentKey = this.cacheConfig.getEnrollmentKey(
         savedEnrollment.userId,
         savedEnrollment.courseId,
         tenantId,
         organisationId,
       );
-      await Promise.all([
-        this.cacheService.invalidateEnrollment(
-          savedEnrollment.userId,
-          savedEnrollment.courseId,
-          tenantId,
-          organisationId,
-        ),
-        this.cacheService.set(
-          enrollmentKey,
-          savedEnrollment,
-          this.cacheConfig.ENROLLMENT_TTL,
-        ),
-      ]);
+      try {
+        await Promise.all([
+          this.cacheService.invalidateEnrollment(
+            savedEnrollment.userId,
+            savedEnrollment.courseId,
+            tenantId,
+            organisationId,
+          ),
+          this.cacheService.set(
+            enrollmentKey,
+            savedEnrollment,
+            this.cacheConfig.ENROLLMENT_TTL,
+          ),
+        ]);
+      } catch (cacheError) {
+        // Log cache operation failure but don't break the request
+        // Cache is an optimization - API should work even if Redis is down
+        this.logger.warn(
+          `Failed to cache enrollment: ${cacheError.message}`
+        );
+      }
 
       return completeEnrollment;
     } catch (error) {
@@ -397,12 +406,21 @@ export class EnrollmentsService {
 
       const result = { count, enrollments };
 
-      // Cache the result with standardized TTL
-      await this.cacheService.set(
-        cacheKey,
-        result,
-        this.cacheConfig.ENROLLMENT_TTL,
-      );
+      // Cache the result with standardized TTL (best-effort, non-blocking)
+      // Cache writes are wrapped to prevent Redis errors from breaking requests
+      try {
+        await this.cacheService.set(
+          cacheKey,
+          result,
+          this.cacheConfig.ENROLLMENT_TTL,
+        );
+      } catch (cacheError) {
+        // Log cache write failure but don't break the request
+        // Cache is an optimization - API should work even if Redis is down
+        this.logger.warn(
+          `Failed to cache enrollment list: ${cacheError.message}`
+        );
+      }
 
       return result;
     } catch (error) {
@@ -443,12 +461,21 @@ export class EnrollmentsService {
         throw new NotFoundException(RESPONSE_MESSAGES.ENROLLMENT_NOT_FOUND);
       }
 
-      // Cache the enrollment with TTL
-      await this.cacheService.set(
-        cacheKey,
-        enrollment,
-        this.cacheConfig.ENROLLMENT_TTL,
-      );
+      // Cache the enrollment with TTL (best-effort, non-blocking)
+      // Cache writes are wrapped to prevent Redis errors from breaking requests
+      try {
+        await this.cacheService.set(
+          cacheKey,
+          enrollment,
+          this.cacheConfig.ENROLLMENT_TTL,
+        );
+      } catch (cacheError) {
+        // Log cache write failure but don't break the request
+        // Cache is an optimization - API should work even if Redis is down
+        this.logger.warn(
+          `Failed to cache enrollment: ${cacheError.message}`
+        );
+      }
 
       return enrollment;
     } catch (error) {
@@ -615,12 +642,21 @@ export class EnrollmentsService {
             updatedAt: course.updatedAt,
           };
 
-          // Store in cache for future requests
-          await this.cacheService.setCourseMetaCached(
-            course.courseId,
-            courseMeta,
-            filters?.cohortId,
-          );
+          // Store in cache for future requests (best-effort, non-blocking)
+          // Cache writes are wrapped in try-catch to prevent Redis errors from breaking requests
+          try {
+            await this.cacheService.setCourseMetaCached(
+              course.courseId,
+              courseMeta,
+              filters?.cohortId,
+            );
+          } catch (cacheError) {
+            // Log cache write failure but don't break the request
+            // Cache is an optimization - API should work even if Redis is down
+            this.logger.warn(
+              `Failed to cache course metadata for courseId ${course.courseId}: ${cacheError.message}`
+            );
+          }
 
           courses.push(course);
         }
@@ -673,33 +709,42 @@ export class EnrollmentsService {
       const updatedEnrollment =
         await this.userEnrollmentRepository.save(enrollment);
 
-      // Update cache and invalidate related caches
+      // Update cache and invalidate related caches (best-effort, non-blocking)
+      // Cache operations are wrapped to prevent Redis errors from breaking requests
       const enrollmentKey = this.cacheConfig.getEnrollmentKey(
         updatedEnrollment.userId,
         updatedEnrollment.courseId,
         tenantId,
         organisationId,
       );
-      await Promise.all([
-        this.cacheService.invalidateEnrollment(
-          updatedEnrollment.userId,
-          updatedEnrollment.courseId,
-          tenantId,
-          organisationId,
-        ),
-        this.cacheService.del(
-          this.cacheConfig.getUserEnrollmentKey(
-            enrollmentId,
+      try {
+        await Promise.all([
+          this.cacheService.invalidateEnrollment(
+            updatedEnrollment.userId,
+            updatedEnrollment.courseId,
             tenantId,
             organisationId,
           ),
-        ),
-        this.cacheService.set(
-          enrollmentKey,
-          updatedEnrollment,
-          this.cacheConfig.ENROLLMENT_TTL,
-        ),
-      ]);
+          this.cacheService.del(
+            this.cacheConfig.getUserEnrollmentKey(
+              enrollmentId,
+              tenantId,
+              organisationId,
+            ),
+          ),
+          this.cacheService.set(
+            enrollmentKey,
+            updatedEnrollment,
+            this.cacheConfig.ENROLLMENT_TTL,
+          ),
+        ]);
+      } catch (cacheError) {
+        // Log cache operation failure but don't break the request
+        // Cache is an optimization - API should work even if Redis is down
+        this.logger.warn(
+          `Failed to update enrollment cache: ${cacheError.message}`
+        );
+      }
 
       return updatedEnrollment;
     } catch (error) {
