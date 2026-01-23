@@ -27,6 +27,14 @@ spec:
         envFrom:
         - configMapRef:
             name: shiksha-lms-service-config
+        resources:
+          requests:
+            cpu: "1000m"
+            memory: "1500Mi"
+          limits:
+            cpu: "1000m"
+            memory: "2Gi"
+
         # Liveness probe - checks if container is alive
         livenessProbe:
           httpGet:
