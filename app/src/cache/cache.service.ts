@@ -13,6 +13,9 @@ import { TenantConfigValue } from '../configuration/interfaces/tenant-config.int
 export class CacheService {
   private readonly logger = new Logger(CacheService.name);
   private readonly cacheEnabled: boolean;
+  // LMS-specific cache enable flag - controls caching for LMS service operations
+  // When false, Redis is completely bypassed for LMS operations to avoid any overhead
+  private readonly lmsCacheEnabled: boolean;
 
   constructor(
     @Inject(CACHE_MANAGER) private cacheManager: Cache,
@@ -20,6 +23,9 @@ export class CacheService {
     private readonly cacheConfig: CacheConfigService
   ) {
     this.cacheEnabled = this.configService.get('CACHE_ENABLED') === 'true';
+    // LMS_CACHE_ENABLED is the global flag that controls LMS-specific caching
+    // This allows fine-grained control over caching behavior in the LMS service
+    this.lmsCacheEnabled = this.configService.get('LMS_CACHE_ENABLED') === 'true';
   }
 
   /**
@@ -344,5 +350,64 @@ export class CacheService {
       this.del(this.cacheConfig.getEnrollmentKey(userId, courseId, tenantId, organisationId)),
       this.delByPattern(this.cacheConfig.getEnrollmentPattern(tenantId, organisationId)),
     ]);
+  }
+
+  /**
+   * Get cached course metadata
+   * 
+   * This method caches ONLY course metadata (title, description, image, status, ordering, 
+   * prerequisites, certificateTerm) - NOT the full course entity or user-specific data.
+   * 
+   * Why only course metadata is cached:
+   * - Course metadata is shared across users and rarely changes
+   * - User-specific data (enrollments, progress) must always be fresh from DB
+   * - Full course entities may contain relations that shouldn't be cached
+   * 
+   * @param courseId Course ID
+   * @param cohortId Optional cohort ID if course metadata varies per cohort
+   * @returns Cached course metadata or null if not found/caching disabled
+   */
+  async getCourseMetaCached(courseId: string, cohortId?: string): Promise<any | null> {
+    // When LMS_CACHE_ENABLED is false, bypass Redis completely to avoid any overhead
+    // This ensures zero performance impact when caching is disabled
+    if (!this.lmsCacheEnabled) {
+      return null;
+    }
+
+    const cacheKey = cohortId 
+      ? `course:meta:${courseId}:cohort:${cohortId}`
+      : `course:meta:${courseId}`;
+    
+    return this.get<any>(cacheKey);
+  }
+
+  /**
+   * Set cached course metadata
+   * 
+   * Stores only course metadata fields, not the full course entity.
+   * TTL is configurable via LMS_COURSE_CACHE_TTL_SECONDS (default: 1800 seconds / 30 minutes).
+   * 
+   * @param courseId Course ID
+   * @param courseMeta Course metadata object (title, description, image, status, ordering, prerequisites, certificateTerm)
+   * @param cohortId Optional cohort ID if course metadata varies per cohort
+   */
+  async setCourseMetaCached(courseId: string, courseMeta: any, cohortId?: string): Promise<void> {
+    // When LMS_CACHE_ENABLED is false, skip Redis operations entirely
+    if (!this.lmsCacheEnabled) {
+      return;
+    }
+
+    const cacheKey = cohortId 
+      ? `course:meta:${courseId}:cohort:${cohortId}`
+      : `course:meta:${courseId}`;
+    
+    // Get TTL from environment variable, default to 1800 seconds (30 minutes)
+    // This allows operators to adjust cache freshness based on business needs
+    const ttl = parseInt(
+      this.configService.get('LMS_COURSE_CACHE_TTL_SECONDS') || '1800',
+      10
+    );
+
+    await this.set(cacheKey, courseMeta, ttl);
   }
 } 

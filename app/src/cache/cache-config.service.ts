@@ -148,4 +148,15 @@ export class CacheConfigService {
   getEnrollmentPattern(tenantId: string, organisationId: string): string {
     return `${this.ENROLLMENT_PREFIX}*:${tenantId}:${organisationId}:*`;
   }
+
+  /**
+   * Get course metadata cache key
+   * @param courseId Course ID
+   * @param cohortId Optional cohort ID if course metadata varies per cohort
+   */
+  getCourseMetaKey(courseId: string, cohortId?: string): string {
+    return cohortId 
+      ? `course:meta:${courseId}:cohort:${cohortId}`
+      : `course:meta:${courseId}`;
+  }
 } 
