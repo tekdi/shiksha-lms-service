@@ -9,6 +9,30 @@ import { UserEnrollment } from '../enrollments/entities/user-enrollment.entity';
 import { ConfigService } from '@nestjs/config';
 import { TenantConfigValue } from '../configuration/interfaces/tenant-config.interface';
 
+/**
+ * Course metadata interface for caching
+ * Contains only cacheable metadata fields, not full course entity
+ */
+export interface CourseMetadata {
+  courseId: string;
+  tenantId: string;
+  organisationId: string;
+  title: string;
+  alias: string;
+  shortDescription?: string;
+  description: string;
+  image?: string;
+  featured: boolean;
+  free: boolean;
+  status: string;
+  params?: Record<string, any>;
+  ordering: number;
+  prerequisites?: string[];
+  certificateTerm?: Record<string, any>;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 @Injectable()
 export class CacheService {
   private readonly logger = new Logger(CacheService.name);
@@ -367,7 +391,7 @@ export class CacheService {
    * @param cohortId Optional cohort ID if course metadata varies per cohort
    * @returns Cached course metadata or null if not found/caching disabled
    */
-  async getCourseMetaCached(courseId: string, cohortId?: string): Promise<any | null> {
+  async getCourseMetaCached(courseId: string, cohortId?: string): Promise<CourseMetadata | null> {
     // When LMS_CACHE_ENABLED is false, bypass Redis completely to avoid any overhead
     // This ensures zero performance impact when caching is disabled
     if (!this.lmsCacheEnabled) {
@@ -378,7 +402,7 @@ export class CacheService {
       ? `course:meta:${courseId}:cohort:${cohortId}`
       : `course:meta:${courseId}`;
     
-    return this.get<any>(cacheKey);
+    return this.get<CourseMetadata>(cacheKey);
   }
 
   /**
@@ -391,7 +415,7 @@ export class CacheService {
    * @param courseMeta Course metadata object (title, description, image, status, ordering, prerequisites, certificateTerm)
    * @param cohortId Optional cohort ID if course metadata varies per cohort
    */
-  async setCourseMetaCached(courseId: string, courseMeta: any, cohortId?: string): Promise<void> {
+  async setCourseMetaCached(courseId: string, courseMeta: CourseMetadata, cohortId?: string): Promise<void> {
     // When LMS_CACHE_ENABLED is false, skip Redis operations entirely
     if (!this.lmsCacheEnabled) {
       return;
@@ -403,7 +427,7 @@ export class CacheService {
     
     // Get TTL from environment variable, default to 1800 seconds (30 minutes)
     // This allows operators to adjust cache freshness based on business needs
-    const ttl = parseInt(
+    const ttl = Number.parseInt(
       this.configService.get('LMS_COURSE_CACHE_TTL_SECONDS') || '1800',
       10
     );

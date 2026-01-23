@@ -10,9 +10,6 @@ import { InjectRepository } from '@nestjs/typeorm';
 import {
   Repository,
   Not,
-  IsNull,
-  LessThan,
-  MoreThan,
   FindOptionsWhere,
   DataSource,
   In,
