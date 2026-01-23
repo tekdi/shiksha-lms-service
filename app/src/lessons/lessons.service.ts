@@ -1447,6 +1447,9 @@ export class LessonsService {
           params: originalLesson.params || {},
           sampleLesson: originalLesson.sampleLesson,
           considerForPassing: originalLesson.considerForPassing,
+          // Explicitly preserve allowResubmission value from original lesson (true stays true, false stays false)
+          // This applies to all lesson formats: feedback, quiz, assessment, reflection.prompt, etc.
+          allowResubmission: originalLesson.allowResubmission,
           tenantId,
           organisationId,
           // Override with new values
