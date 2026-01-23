@@ -387,6 +387,9 @@ export class CacheService {
    * - User-specific data (enrollments, progress) must always be fresh from DB
    * - Full course entities may contain relations that shouldn't be cached
    * 
+   * IMPORTANT: This method uses LMS_CACHE_ENABLED flag, NOT CACHE_ENABLED.
+   * This allows LMS-specific caching to work independently of the old cache system.
+   * 
    * @param courseId Course ID
    * @param cohortId Optional cohort ID if course metadata varies per cohort
    * @returns Cached course metadata or null if not found/caching disabled
@@ -402,7 +405,22 @@ export class CacheService {
       ? `course:meta:${courseId}:cohort:${cohortId}`
       : `course:meta:${courseId}`;
     
-    return this.get<CourseMetadata>(cacheKey);
+    // Use cacheManager directly to bypass cacheEnabled check
+    // This allows LMS caching to work independently of CACHE_ENABLED flag
+    try {
+      this.logger.debug(`Attempting to get LMS cache for key ${cacheKey}`);
+      const value = await this.cacheManager.get<CourseMetadata>(cacheKey);
+      if (value !== undefined && value !== null) {
+        this.logger.debug(`LMS Cache HIT for key ${cacheKey}`);
+        return value;
+      } else {
+        this.logger.debug(`LMS Cache MISS for key ${cacheKey}`);
+        return null;
+      }
+    } catch (error) {
+      this.logger.error(`Error getting LMS cache for key ${cacheKey}: ${error.message}`, error.stack);
+      return null;
+    }
   }
 
   /**
@@ -410,6 +428,9 @@ export class CacheService {
    * 
    * Stores only course metadata fields, not the full course entity.
    * TTL is configurable via LMS_COURSE_CACHE_TTL_SECONDS (default: 1800 seconds / 30 minutes).
+   * 
+   * IMPORTANT: This method uses LMS_CACHE_ENABLED flag, NOT CACHE_ENABLED.
+   * This allows LMS-specific caching to work independently of the old cache system.
    * 
    * @param courseId Course ID
    * @param courseMeta Course metadata object (title, description, image, status, ordering, prerequisites, certificateTerm)
@@ -432,6 +453,17 @@ export class CacheService {
       10
     );
 
-    await this.set(cacheKey, courseMeta, ttl);
+    // Use cacheManager directly to bypass cacheEnabled check
+    // This allows LMS caching to work independently of CACHE_ENABLED flag
+    // Cache writes are best-effort - errors won't break the request
+    try {
+      this.logger.debug(`Attempting to set LMS cache for key ${cacheKey} with TTL ${ttl}s`);
+      await this.cacheManager.set(cacheKey, courseMeta, ttl * 1000); // Convert to milliseconds
+      this.logger.debug(`Successfully set LMS cache for key ${cacheKey}`);
+    } catch (error) {
+      // Log cache write failure but don't break the request
+      // Cache is an optimization - API should work even if Redis is down
+      this.logger.warn(`Failed to cache course metadata for key ${cacheKey}: ${error.message}`);
+    }
   }
 } 
