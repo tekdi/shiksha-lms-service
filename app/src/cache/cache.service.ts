@@ -229,6 +229,9 @@ export class CacheService {
       this.delByPattern(`${this.cacheConfig.COURSE_PREFIX}search:${tenantId}:${organisationId}:*`),
     ]);
 
+    // Invalidate course metadata cache (LMS-specific cache)
+    await this.invalidateCourseMetaCache(courseId);
+
     // Invalidate related module caches
     await this.invalidateCourseModules(courseId, tenantId, organisationId);
 
@@ -464,6 +467,49 @@ export class CacheService {
       // Log cache write failure but don't break the request
       // Cache is an optimization - API should work even if Redis is down
       this.logger.warn(`Failed to cache course metadata for key ${cacheKey}: ${error.message}`);
+    }
+  }
+
+  /**
+   * Invalidate course metadata cache
+   * 
+   * Invalidates both the base course metadata cache and all cohort-specific variants.
+   * This should be called whenever course details are updated to ensure fresh data.
+   * 
+   * IMPORTANT: This method uses LMS_CACHE_ENABLED flag, NOT CACHE_ENABLED.
+   * This allows LMS-specific caching to work independently of the old cache system.
+   * 
+   * @param courseId Course ID to invalidate metadata cache for
+   */
+  async invalidateCourseMetaCache(courseId: string): Promise<void> {
+    // When LMS_CACHE_ENABLED is false, skip Redis operations entirely
+    if (!this.lmsCacheEnabled) {
+      return;
+    }
+
+    try {
+      // Invalidate base course metadata cache (without cohort)
+      const baseCacheKey = `course:meta:${courseId}`;
+      await this.cacheManager.del(baseCacheKey);
+      this.logger.debug(`Invalidated course metadata cache for key ${baseCacheKey}`);
+
+      // Invalidate all cohort-specific course metadata caches
+      // Pattern: course:meta:${courseId}:cohort:*
+      // Get all keys from the cache store to match the pattern
+      const store = (this.cacheManager as any).store;
+      if (store && typeof store.keys === 'function') {
+        const keys = await store.keys();
+        const patternRegex = new RegExp(`^course:meta:${courseId}:cohort:.*$`);
+        const matchingKeys = keys.filter((key: string) => patternRegex.test(key));
+        
+        if (matchingKeys.length > 0) {
+          this.logger.debug(`Found ${matchingKeys.length} cohort-specific course metadata cache keys to invalidate`);
+          await Promise.all(matchingKeys.map((key: string) => this.cacheManager.del(key)));
+        }
+      }
+    } catch (error) {
+      // Log cache invalidation failure but don't break the request
+      this.logger.warn(`Failed to invalidate course metadata cache for courseId ${courseId}: ${error.message}`);
     }
   }
 } 
