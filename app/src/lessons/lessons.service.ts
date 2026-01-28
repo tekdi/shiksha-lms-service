@@ -466,15 +466,23 @@ export class LessonsService {
     tenantId: string,
     organisationId: string,
   ): Promise<Lesson> {
-    // Check cache first
-    const cacheKey = this.cacheConfig.getLessonKey(
-      lessonId,
-      tenantId,
-      organisationId,
-    );
-    const cachedLesson = await this.cacheService.get<Lesson>(cacheKey);
+    // Check Redis cache first (if ENABLE_LMS_CACHE is enabled)
+    // Lesson data is globally shared, so cache key doesn't include tenantId/organisationId
+    const cachedLesson = await this.cacheService.getLessonDetailCached(lessonId);
     if (cachedLesson) {
-      return cachedLesson;
+      // Verify the cached lesson matches the tenant/organization filters
+      // This ensures data isolation even with global cache
+      if (
+        cachedLesson.tenantId === tenantId &&
+        cachedLesson.organisationId === organisationId &&
+        cachedLesson.status !== LessonStatus.ARCHIVED
+      ) {
+        return cachedLesson;
+      }
+      // If cached lesson doesn't match filters, continue to DB query
+      this.logger.debug(
+        `Cached lesson ${lessonId} doesn't match tenant/org filters, fetching from DB`
+      );
     }
 
     // Build where clause with required filters
@@ -494,8 +502,9 @@ export class LessonsService {
       throw new NotFoundException(RESPONSE_MESSAGES.ERROR.LESSON_NOT_FOUND);
     }
 
-    // Cache the lesson
-    await this.cacheService.set(cacheKey, lesson, this.cacheConfig.LESSON_TTL);
+    // Cache the lesson with global cache key (lms:lesson:{lessonId})
+    // TTL is 600 seconds (10 minutes) as per requirements
+    await this.cacheService.setLessonDetailCached(lessonId, lesson);
 
     return lesson;
   }
@@ -1039,6 +1048,8 @@ export class LessonsService {
           tenantId,
           organisationId,
         ),
+        // Invalidate the global lesson detail cache (lms:lesson:{lessonId})
+        this.cacheService.invalidateLessonDetailCached(lessonId),
       ]);
 
       return await this.findOne(savedLesson.lessonId, tenantId, organisationId);
@@ -1114,6 +1125,8 @@ export class LessonsService {
           tenantId,
           organisationId,
         ),
+        // Invalidate the global lesson detail cache (lms:lesson:{lessonId})
+        this.cacheService.invalidateLessonDetailCached(lessonId),
       ]);
 
       return {
@@ -1181,13 +1194,17 @@ export class LessonsService {
       // Invalidate related caches
       await Promise.all([
         ...lessonIds.map((lessonId) =>
-          this.cacheService.invalidateLesson(
-            lessonId,
-            moduleId,
-            '',
-            tenantId,
-            organisationId,
-          ),
+          Promise.all([
+            this.cacheService.invalidateLesson(
+              lessonId,
+              moduleId,
+              '',
+              tenantId,
+              organisationId,
+            ),
+            // Invalidate the global lesson detail cache (lms:lesson:{lessonId})
+            this.cacheService.invalidateLessonDetailCached(lessonId),
+          ]),
         ),
         this.cacheService.invalidateModule(
           moduleId,
