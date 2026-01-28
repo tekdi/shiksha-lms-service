@@ -178,7 +178,7 @@ export class CacheService {
     this.cacheEnabled = this.configService.get('CACHE_ENABLED') === 'true';
     // LMS_CACHE_ENABLED is the global flag that controls LMS-specific caching
     // This allows fine-grained control over caching behavior in the LMS service
-    this.lmsCacheEnabled = this.configService.get('LMS_CACHE_ENABLED') === 'true';
+    this.lmsCacheEnabled = this.configService.get('LMS_CACHE_ENABLED') === 'true' || true;
   }
 
   /**
@@ -825,10 +825,9 @@ export class CacheService {
    * @returns Cached lesson detail or null if not found/caching disabled
    */
   async getLessonDetailCached(lessonId: string): Promise<Lesson | null> {
-    // Check ENABLE_LMS_CACHE flag - when false, bypass Redis completely
-    const enableLmsCache = this.configService.get('ENABLE_LMS_CACHE') === 'true' || true;
-    if (!enableLmsCache) {
-      this.logger.debug(`LMS lesson caching is disabled (ENABLE_LMS_CACHE=false), skipping cache lookup for lessonId ${lessonId}`);
+    // Check LMS_CACHE_ENABLED flag - when false, bypass Redis completely
+    if (!this.lmsCacheEnabled) {
+      this.logger.debug(`LMS lesson caching is disabled (LMS_CACHE_ENABLED=false), skipping cache lookup for lessonId ${lessonId}`);
       return null;
     }
 
@@ -848,6 +847,7 @@ export class CacheService {
       }
     } catch (error) {
       // Fail open - log error but don't break the request
+      // On Redis failure, fall back to DB silently
       this.logger.error(`Error getting LMS lesson cache for key ${cacheKey}: ${error.message}`, error.stack);
       return null;
     }
@@ -857,10 +857,10 @@ export class CacheService {
    * Set cached lesson detail
    * 
    * Stores lesson detail data which is globally shared across users.
-   * TTL is fixed at 600 seconds (10 minutes) as per requirements.
+   * TTL is configurable via LMS_LESSON_CACHE_TTL_SECONDS (default: 300 seconds / 5 minutes).
    * 
-   * IMPORTANT: This method uses ENABLE_LMS_CACHE flag, NOT CACHE_ENABLED or LMS_CACHE_ENABLED.
-   * When ENABLE_LMS_CACHE=false, Redis operations are completely skipped.
+   * IMPORTANT: This method uses LMS_CACHE_ENABLED flag.
+   * When LMS_CACHE_ENABLED=false, Redis operations are completely skipped.
    * 
    * Cache key format:
    * - lms:lesson:{lessonId} (no tenantId or organisationId as lesson data is globally shared)
@@ -869,21 +869,21 @@ export class CacheService {
    * @param lesson Lesson entity to cache
    */
   async setLessonDetailCached(lessonId: string, lesson: Lesson): Promise<void> {
-    // Check ENABLE_LMS_CACHE flag - when false, skip Redis operations entirely
-    const enableLmsCache = this.configService.get('ENABLE_LMS_CACHE') === 'true' || true;
-    if (!enableLmsCache) {
-      this.logger.debug(`LMS lesson caching is disabled (ENABLE_LMS_CACHE=false), skipping cache write for lessonId ${lessonId}`);
+    // Check LMS_CACHE_ENABLED flag - when false, skip Redis operations entirely
+    if (!this.lmsCacheEnabled) {
+      this.logger.debug(`LMS lesson caching is disabled (LMS_CACHE_ENABLED=false), skipping cache write for lessonId ${lessonId}`);
       return;
     }
 
     const cacheKey = `lms:lesson:${lessonId}`;
     
-    // Fixed TTL of 600 seconds (10 minutes) as per requirements
-    const ttl = 600;
+    // Configurable TTL (default: 300 seconds / 5 minutes)
+    const ttl = Number(this.configService.get('LMS_LESSON_CACHE_TTL_SECONDS') || '300');
 
     // Use cacheManager directly to bypass cacheEnabled check
     // This allows LMS lesson caching to work independently of CACHE_ENABLED flag
     // Cache writes are best-effort - errors won't break the request
+    // On Redis failure, fall back to DB silently
     try {
       this.logger.debug(`Attempting to set LMS lesson cache for key ${cacheKey} with TTL ${ttl}s`);
       await this.cacheManager.set(cacheKey, lesson, ttl * 1000); // Convert to milliseconds
@@ -901,8 +901,8 @@ export class CacheService {
    * Removes the cached lesson detail when lesson is updated or deleted.
    * This ensures stale data is not served from cache.
    * 
-   * IMPORTANT: This method uses ENABLE_LMS_CACHE flag, NOT CACHE_ENABLED or LMS_CACHE_ENABLED.
-   * When ENABLE_LMS_CACHE=false, Redis operations are completely skipped.
+   * IMPORTANT: This method uses LMS_CACHE_ENABLED flag.
+   * When LMS_CACHE_ENABLED=false, Redis operations are completely skipped.
    * 
    * Cache key format:
    * - lms:lesson:{lessonId} (no tenantId or organisationId as lesson data is globally shared)
@@ -910,10 +910,9 @@ export class CacheService {
    * @param lessonId Lesson ID to invalidate
    */
   async invalidateLessonDetailCached(lessonId: string): Promise<void> {
-    // Check ENABLE_LMS_CACHE flag - when false, skip Redis operations entirely
-    const enableLmsCache = this.configService.get('ENABLE_LMS_CACHE') === 'true' || true;
-    if (!enableLmsCache) {
-      this.logger.debug(`LMS lesson caching is disabled (ENABLE_LMS_CACHE=false), skipping cache invalidation for lessonId ${lessonId}`);
+    // Check LMS_CACHE_ENABLED flag - when false, skip Redis operations entirely
+    if (!this.lmsCacheEnabled) {
+      this.logger.debug(`LMS lesson caching is disabled (LMS_CACHE_ENABLED=false), skipping cache invalidation for lessonId ${lessonId}`);
       return;
     }
 

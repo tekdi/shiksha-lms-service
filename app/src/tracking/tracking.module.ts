@@ -8,6 +8,7 @@ import { Lesson } from '../lessons/entities/lesson.entity';
 import { Module as CourseModule } from '../modules/entities/module.entity';
 import { TrackingController } from './tracking.controller';
 import { TrackingService } from './tracking.service';
+import { LessonsModule } from '../lessons/lessons.module';
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { TrackingService } from './tracking.service';
       Lesson, 
       CourseModule
     ]),
+    LessonsModule,
   ],
   controllers: [TrackingController],
   providers: [TrackingService],
