@@ -33,6 +33,135 @@ export interface CourseMetadata {
   updatedAt: Date;
 }
 
+/**
+ * Static lesson hierarchy interface for caching
+ * Contains ONLY static/shared lesson structure - NO user-specific tracking data
+ * 
+ * Why this structure is cached:
+ * - Lesson metadata (title, ordering, content references) is identical for all users
+ * - This data rarely changes and can be safely cached
+ * 
+ * Why tracking is NOT cached:
+ * - Tracking data (progress, status, timeSpent) is user-specific and changes frequently
+ * - Each user has different progress, so caching would return wrong data
+ */
+export interface StaticLessonHierarchy {
+  lessonId: string;
+  parentId?: string;
+  tenantId?: string;
+  organisationId?: string;
+  title: string;
+  alias?: string;
+  status: string;
+  description?: string;
+  image?: string;
+  startDatetime?: Date;
+  endDatetime?: Date;
+  storage?: string;
+  noOfAttempts?: number;
+  attemptsGrade?: string;
+  allowResubmission?: boolean;
+  format: string;
+  subFormat?: string;
+  mediaId?: string;
+  media?: any; // Media relation object (static)
+  prerequisites?: string[];
+  idealTime?: number;
+  resume?: boolean;
+  totalMarks?: number;
+  passingMarks?: number;
+  params?: Record<string, any>;
+  courseId?: string;
+  moduleId?: string;
+  sampleLesson?: boolean;
+  considerForPassing?: boolean;
+  ordering: number;
+  createdAt?: Date;
+  updatedAt?: Date;
+  createdBy?: string;
+  updatedBy?: string;
+  // Associated lessons structure (static only, no tracking)
+  associatedLesson?: StaticLessonHierarchy[];
+  // Associated files structure (static only)
+  associatedFiles?: Array<{
+    associatedFileId: string;
+    mediaId?: string;
+    media?: any;
+    [key: string]: any;
+  }>;
+}
+
+/**
+ * Static module hierarchy interface for caching
+ * Contains ONLY static/shared module structure - NO user-specific tracking data
+ * 
+ * Why this structure is cached:
+ * - Module metadata (title, description, ordering, dates) is identical for all users
+ * - This data rarely changes and can be safely cached
+ * 
+ * Why tracking is NOT cached:
+ * - Tracking data (progress, completedLessons) is user-specific and changes frequently
+ * - Each user has different progress, so caching would return wrong data
+ */
+export interface StaticModuleHierarchy {
+  moduleId: string;
+  parentId?: string;
+  courseId?: string;
+  tenantId?: string;
+  organisationId?: string;
+  title: string;
+  description?: string;
+  image?: string;
+  startDatetime?: Date;
+  endDatetime?: Date;
+  prerequisites?: string[];
+  badgeTerm?: Record<string, any>;
+  badgeId?: string;
+  ordering: number;
+  status: string;
+  createdAt?: Date;
+  createdBy?: string;
+  updatedAt?: Date;
+  updatedBy?: string;
+  // Lessons structure (static only, no tracking)
+  lessons?: StaticLessonHierarchy[];
+}
+
+/**
+ * Static course hierarchy interface for caching
+ * Contains ONLY static/shared course structure - NO user-specific tracking or eligibility data
+ * 
+ * Why this structure is cached:
+ * - Course hierarchy (course + modules + lessons structure) is identical for all users
+ * - This static structure rarely changes and can be safely cached
+ * - Caching reduces database load for frequently accessed course structures
+ * 
+ * Why tracking and eligibility are NOT cached:
+ * - Tracking data (progress, status, timeSpent, completedLessons) is user-specific
+ * - Eligibility checks depend on user's completion status of prerequisite courses
+ * - Each user has different tracking and eligibility, so caching would return wrong data
+ */
+export interface CourseHierarchy {
+  // Course static metadata
+  courseId: string;
+  tenantId: string;
+  organisationId: string;
+  title: string;
+  alias: string;
+  shortDescription?: string;
+  description: string;
+  image?: string;
+  featured: boolean;
+  free: boolean;
+  status: string;
+  params?: Record<string, any>;
+  ordering: number;
+  prerequisites?: string[];
+  certificateTerm?: Record<string, any>;
+  // Module hierarchy (static only, no tracking)
+  modules?: StaticModuleHierarchy[];
+}
+
 @Injectable()
 export class CacheService {
   private readonly logger = new Logger(CacheService.name);
@@ -232,6 +361,9 @@ export class CacheService {
     // Invalidate course metadata cache (LMS-specific cache)
     await this.invalidateCourseMetaCache(courseId);
 
+    // Invalidate course hierarchy cache (LMS-specific cache)
+    await this.invalidateCourseHierarchyCache(courseId);
+
     // Invalidate related module caches
     await this.invalidateCourseModules(courseId, tenantId, organisationId);
 
@@ -243,6 +375,49 @@ export class CacheService {
 
     // Invalidate module search caches since they might filter by courseId
     await this.invalidateModuleSearchCaches(tenantId, organisationId);
+  }
+
+  /**
+   * Invalidate course hierarchy cache
+   * 
+   * Invalidates both the base course hierarchy cache and all cohort-specific variants.
+   * This should be called whenever course structure (modules/lessons) is updated.
+   * 
+   * IMPORTANT: This method uses LMS_CACHE_ENABLED flag, NOT CACHE_ENABLED.
+   * This allows LMS-specific caching to work independently of the old cache system.
+   * 
+   * @param courseId Course ID to invalidate hierarchy cache for
+   */
+  async invalidateCourseHierarchyCache(courseId: string): Promise<void> {
+    // When LMS_CACHE_ENABLED is false, skip Redis operations entirely
+    if (!this.lmsCacheEnabled) {
+      return;
+    }
+
+    try {
+      // Invalidate base course hierarchy cache (without cohort)
+      const baseCacheKey = `course:hierarchy:${courseId}`;
+      await this.cacheManager.del(baseCacheKey);
+      this.logger.debug(`Invalidated course hierarchy cache for key ${baseCacheKey}`);
+
+      // Invalidate all cohort-specific course hierarchy caches
+      // Pattern: course:hierarchy:${courseId}:cohort:*
+      // Get all keys from the cache store to match the pattern
+      const store = (this.cacheManager as any).store;
+      if (store && typeof store.keys === 'function') {
+        const keys = await store.keys();
+        const patternRegex = new RegExp(`^course:hierarchy:${courseId}:cohort:.*$`);
+        const matchingKeys = keys.filter((key: string) => patternRegex.test(key));
+        
+        if (matchingKeys.length > 0) {
+          this.logger.debug(`Found ${matchingKeys.length} cohort-specific course hierarchy cache keys to invalidate`);
+          await Promise.all(matchingKeys.map((key: string) => this.cacheManager.del(key)));
+        }
+      }
+    } catch (error) {
+      // Log cache invalidation failure but don't break the request
+      this.logger.warn(`Failed to invalidate course hierarchy cache for courseId ${courseId}: ${error.message}`);
+    }
   }
 
   async invalidateCourseModules(courseId: string, tenantId: string, organisationId: string): Promise<void> {
@@ -510,6 +685,126 @@ export class CacheService {
     } catch (error) {
       // Log cache invalidation failure but don't break the request
       this.logger.warn(`Failed to invalidate course metadata cache for courseId ${courseId}: ${error.message}`);
+    }
+  }
+
+  /**
+   * Get cached course hierarchy (static structure only)
+   * 
+   * This method caches ONLY the static course hierarchy (course + modules + lessons structure).
+   * It does NOT cache user-specific tracking data, which must always be fetched fresh from the database.
+   * 
+   * Why hierarchy is cached:
+   * - Course structure (modules, lessons) is identical for all users
+   * - This static data rarely changes and can be safely cached
+   * - Caching reduces database load for frequently accessed course structures
+   * 
+   * Why tracking is NOT cached:
+   * - Tracking data (progress, status, timeSpent, completedLessons) is user-specific
+   * - Each user has different progress, so caching would return wrong data
+   * - Tracking data changes frequently as users progress through the course
+   * 
+   * IMPORTANT: This method uses LMS_CACHE_ENABLED flag, NOT CACHE_ENABLED.
+   * When LMS_CACHE_ENABLED=false, Redis is completely bypassed to avoid any overhead.
+   * This ensures zero performance impact when caching is disabled.
+   * 
+   * Cache key format:
+   * - course:hierarchy:{courseId} (if hierarchy is same for all cohorts)
+   * - course:hierarchy:{courseId}:cohort:{cohortId} (if hierarchy differs per cohort)
+   * 
+   * @param courseId Course ID
+   * @param cohortId Optional cohort ID if course hierarchy varies per cohort
+   * @returns Cached course hierarchy or null if not found/caching disabled
+   */
+  async getCourseHierarchyCached(courseId: string, cohortId?: string): Promise<CourseHierarchy | null> {
+    // When LMS_CACHE_ENABLED is false, bypass Redis completely to avoid any overhead
+    // This ensures zero performance impact when caching is disabled
+    if (!this.lmsCacheEnabled) {
+      this.logger.debug(`LMS caching is disabled, skipping hierarchy cache lookup for courseId ${courseId}`);
+      return null;
+    }
+
+    const cacheKey = cohortId 
+      ? `course:hierarchy:${courseId}:cohort:${cohortId}`
+      : `course:hierarchy:${courseId}`;
+    
+    // Use cacheManager directly to bypass cacheEnabled check
+    // This allows LMS caching to work independently of CACHE_ENABLED flag
+    try {
+      this.logger.debug(`Attempting to get LMS hierarchy cache for key ${cacheKey}`);
+      const value = await this.cacheManager.get<CourseHierarchy>(cacheKey);
+      if (value !== undefined && value !== null) {
+        this.logger.debug(`LMS Hierarchy Cache HIT for key ${cacheKey}`);
+        return value;
+      } else {
+        this.logger.debug(`LMS Hierarchy Cache MISS for key ${cacheKey}`);
+        return null;
+      }
+    } catch (error) {
+      this.logger.error(`Error getting LMS hierarchy cache for key ${cacheKey}: ${error.message}`, error.stack);
+      return null;
+    }
+  }
+
+  /**
+   * Set cached course hierarchy (static structure only)
+   * 
+   * Stores ONLY the static course hierarchy (course + modules + lessons structure).
+   * Does NOT store user-specific tracking data, which must never be cached.
+   * 
+   * Why hierarchy is cached:
+   * - Course structure (modules, lessons) is identical for all users
+   * - This static data rarely changes and can be safely cached
+   * - Caching reduces database load for frequently accessed course structures
+   * 
+   * Why tracking is NOT cached:
+   * - Tracking data (progress, status, timeSpent, completedLessons) is user-specific
+   * - Each user has different progress, so caching would return wrong data
+   * - Tracking data changes frequently as users progress through the course
+   * 
+   * IMPORTANT: This method uses LMS_CACHE_ENABLED flag, NOT CACHE_ENABLED.
+   * When LMS_CACHE_ENABLED=false, Redis operations are completely skipped.
+   * 
+   * TTL is configurable via LMS_COURSE_HIERARCHY_TTL_SECONDS (default: 1800 seconds / 30 minutes).
+   * This allows operators to adjust cache freshness based on business needs.
+   * 
+   * Cache key format:
+   * - course:hierarchy:{courseId} (if hierarchy is same for all cohorts)
+   * - course:hierarchy:{courseId}:cohort:{cohortId} (if hierarchy differs per cohort)
+   * 
+   * @param courseId Course ID
+   * @param hierarchy Static course hierarchy object (course + modules + lessons structure, NO tracking)
+   * @param cohortId Optional cohort ID if course hierarchy varies per cohort
+   */
+  async setCourseHierarchyCached(courseId: string, hierarchy: CourseHierarchy, cohortId?: string): Promise<void> {
+    // When LMS_CACHE_ENABLED is false, skip Redis operations entirely
+    if (!this.lmsCacheEnabled) {
+      this.logger.debug(`LMS caching is disabled, skipping hierarchy cache write for courseId ${courseId}`);
+      return;
+    }
+
+    const cacheKey = cohortId 
+      ? `course:hierarchy:${courseId}:cohort:${cohortId}`
+      : `course:hierarchy:${courseId}`;
+    
+    // Get TTL from environment variable, default to 1800 seconds (30 minutes)
+    // This allows operators to adjust cache freshness based on business needs
+    const ttl = Number.parseInt(
+      this.configService.get('LMS_COURSE_HIERARCHY_TTL_SECONDS') || '1800',
+      10
+    );
+
+    // Use cacheManager directly to bypass cacheEnabled check
+    // This allows LMS caching to work independently of CACHE_ENABLED flag
+    // Cache writes are best-effort - errors won't break the request
+    try {
+      this.logger.debug(`Attempting to set LMS hierarchy cache for key ${cacheKey} with TTL ${ttl}s`);
+      await this.cacheManager.set(cacheKey, hierarchy, ttl * 1000); // Convert to milliseconds
+      this.logger.debug(`Successfully set LMS hierarchy cache for key ${cacheKey}`);
+    } catch (error) {
+      // Log cache write failure but don't break the request
+      // Cache is an optimization - API should work even if Redis is down
+      this.logger.warn(`Failed to cache course hierarchy for key ${cacheKey}: ${error.message}`);
     }
   }
 } 
