@@ -178,7 +178,7 @@ export class CacheService {
     this.cacheEnabled = this.configService.get('CACHE_ENABLED') === 'true';
     // LMS_CACHE_ENABLED is the global flag that controls LMS-specific caching
     // This allows fine-grained control over caching behavior in the LMS service
-    this.lmsCacheEnabled = this.configService.get('LMS_CACHE_ENABLED') === 'true' || true;
+    this.lmsCacheEnabled = this.configService.get('LMS_CACHE_ENABLED') === 'true';
   }
 
   /**
@@ -380,7 +380,7 @@ export class CacheService {
   /**
    * Invalidate course hierarchy cache
    * 
-   * Invalidates both the base course hierarchy cache and all cohort-specific variants.
+   * Invalidates both the base course hierarchy cache and all module-specific variants.
    * This should be called whenever course structure (modules/lessons) is updated.
    * 
    * IMPORTANT: This method uses LMS_CACHE_ENABLED flag, NOT CACHE_ENABLED.
@@ -395,22 +395,22 @@ export class CacheService {
     }
 
     try {
-      // Invalidate base course hierarchy cache (without cohort)
+      // Invalidate base course hierarchy cache (without module)
       const baseCacheKey = `course:hierarchy:${courseId}`;
       await this.cacheManager.del(baseCacheKey);
       this.logger.debug(`Invalidated course hierarchy cache for key ${baseCacheKey}`);
 
-      // Invalidate all cohort-specific course hierarchy caches
-      // Pattern: course:hierarchy:${courseId}:cohort:*
+      // Invalidate all module-specific course hierarchy caches
+      // Pattern: course:hierarchy:${courseId}:module:*
       // Get all keys from the cache store to match the pattern
       const store = (this.cacheManager as any).store;
       if (store && typeof store.keys === 'function') {
         const keys = await store.keys();
-        const patternRegex = new RegExp(`^course:hierarchy:${courseId}:cohort:.*$`);
+        const patternRegex = new RegExp(`^course:hierarchy:${courseId}:module:.*$`);
         const matchingKeys = keys.filter((key: string) => patternRegex.test(key));
         
         if (matchingKeys.length > 0) {
-          this.logger.debug(`Found ${matchingKeys.length} cohort-specific course hierarchy cache keys to invalidate`);
+          this.logger.debug(`Found ${matchingKeys.length} module-specific course hierarchy cache keys to invalidate`);
           await Promise.all(matchingKeys.map((key: string) => this.cacheManager.del(key)));
         }
       }
@@ -709,14 +709,14 @@ export class CacheService {
    * This ensures zero performance impact when caching is disabled.
    * 
    * Cache key format:
-   * - course:hierarchy:{courseId} (if hierarchy is same for all cohorts)
-   * - course:hierarchy:{courseId}:cohort:{cohortId} (if hierarchy differs per cohort)
+   * - course:hierarchy:{courseId} (if hierarchy is same for all modules)
+   * - course:hierarchy:{courseId}:module:{moduleId} (if hierarchy is filtered by module)
    * 
    * @param courseId Course ID
-   * @param cohortId Optional cohort ID if course hierarchy varies per cohort
+   * @param moduleId Optional module ID if course hierarchy is filtered by module
    * @returns Cached course hierarchy or null if not found/caching disabled
    */
-  async getCourseHierarchyCached(courseId: string, cohortId?: string): Promise<CourseHierarchy | null> {
+  async getCourseHierarchyCached(courseId: string, moduleId?: string): Promise<CourseHierarchy | null> {
     // When LMS_CACHE_ENABLED is false, bypass Redis completely to avoid any overhead
     // This ensures zero performance impact when caching is disabled
     if (!this.lmsCacheEnabled) {
@@ -724,8 +724,8 @@ export class CacheService {
       return null;
     }
 
-    const cacheKey = cohortId 
-      ? `course:hierarchy:${courseId}:cohort:${cohortId}`
+    const cacheKey = moduleId 
+      ? `course:hierarchy:${courseId}:module:${moduleId}`
       : `course:hierarchy:${courseId}`;
     
     // Use cacheManager directly to bypass cacheEnabled check
@@ -769,22 +769,22 @@ export class CacheService {
    * This allows operators to adjust cache freshness based on business needs.
    * 
    * Cache key format:
-   * - course:hierarchy:{courseId} (if hierarchy is same for all cohorts)
-   * - course:hierarchy:{courseId}:cohort:{cohortId} (if hierarchy differs per cohort)
+   * - course:hierarchy:{courseId} (if hierarchy is same for all modules)
+   * - course:hierarchy:{courseId}:module:{moduleId} (if hierarchy is filtered by module)
    * 
    * @param courseId Course ID
    * @param hierarchy Static course hierarchy object (course + modules + lessons structure, NO tracking)
-   * @param cohortId Optional cohort ID if course hierarchy varies per cohort
+   * @param moduleId Optional module ID if course hierarchy is filtered by module
    */
-  async setCourseHierarchyCached(courseId: string, hierarchy: CourseHierarchy, cohortId?: string): Promise<void> {
+  async setCourseHierarchyCached(courseId: string, hierarchy: CourseHierarchy, moduleId?: string): Promise<void> {
     // When LMS_CACHE_ENABLED is false, skip Redis operations entirely
     if (!this.lmsCacheEnabled) {
       this.logger.debug(`LMS caching is disabled, skipping hierarchy cache write for courseId ${courseId}`);
       return;
     }
 
-    const cacheKey = cohortId 
-      ? `course:hierarchy:${courseId}:cohort:${cohortId}`
+    const cacheKey = moduleId 
+      ? `course:hierarchy:${courseId}:module:${moduleId}`
       : `course:hierarchy:${courseId}`;
     
     // Get TTL from environment variable, default to 1800 seconds (30 minutes)
