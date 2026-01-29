@@ -860,13 +860,12 @@ export class CoursesService {
 
     // CACHE CHECK: Try to get static hierarchy from cache
     // Only cache when modules or lessons are requested (hierarchy structure is needed)
-    // Extract cohortId from course params if it exists (hierarchy may differ per cohort)
-    const cohortId = course.params?.cohortId as string | undefined;
+    // Use moduleId from request if provided (hierarchy may be filtered by module)
     let cachedHierarchy: CourseHierarchy | null = null;
     
     // Check cache for static hierarchy (only if caching is enabled)
     // When LMS_CACHE_ENABLED=false, this will return null and we'll fetch from DB
-    cachedHierarchy = await this.cacheService.getCourseHierarchyCached(courseId, cohortId);
+    cachedHierarchy = await this.cacheService.getCourseHierarchyCached(courseId, moduleId);
 
     let modules: any[] = [];
     let lessons: any[] = [];
@@ -942,7 +941,7 @@ export class CoursesService {
       // Extract static hierarchy and cache it
       // This caches ONLY the static structure - NO tracking data
       const staticHierarchy = this.extractStaticCourseHierarchy(course, modules, lessonsByModule);
-      await this.cacheService.setCourseHierarchyCached(courseId, staticHierarchy, cohortId);
+      await this.cacheService.setCourseHierarchyCached(courseId, staticHierarchy, moduleId);
       
       // Use the extracted hierarchy for building response
       cachedHierarchy = staticHierarchy;
