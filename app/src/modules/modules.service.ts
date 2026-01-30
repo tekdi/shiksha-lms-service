@@ -167,6 +167,12 @@ export class ModulesService {
     await Promise.all([
       this.cacheService.setModule(savedModule),
       this.cacheService.invalidateModule(savedModule.moduleId, savedModule.courseId, savedModule.tenantId, savedModule.organisationId),
+      // Invalidate course enrollment cache when module is created
+      this.cacheService.invalidateCourseEnrollments(
+        savedModule.courseId,
+        savedModule.tenantId,
+        savedModule.organisationId,
+      ),
     ]);
 
     return savedModule;
@@ -242,6 +248,12 @@ export class ModulesService {
     await Promise.all([
       this.cacheService.set(moduleKey, savedModule, this.cacheConfig.MODULE_TTL),
       this.cacheService.invalidateModule(moduleId, module.courseId, tenantId, organisationId),
+      // Invalidate course enrollment cache when module is updated
+      this.cacheService.invalidateCourseEnrollments(
+        module.courseId,
+        tenantId,
+        organisationId,
+      ),
     ]);
 
     return savedModule;
@@ -313,6 +325,12 @@ export class ModulesService {
       await Promise.all([
         this.cacheService.del(moduleKey),
         this.cacheService.invalidateModule(moduleId, module.courseId, tenantId, organisationId),
+        // Invalidate course enrollment cache when module is deleted
+        this.cacheService.invalidateCourseEnrollments(
+          module.courseId,
+          tenantId,
+          organisationId,
+        ),
       ]);
 
       return {

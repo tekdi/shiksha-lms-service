@@ -283,6 +283,10 @@ export class LessonsService {
         await this.cacheService.del(associatedLessonKey);
       }
 
+      // Extract courseId and moduleId from saved lesson for cache invalidation
+      const courseId = savedLesson.courseId;
+      const moduleId = savedLesson.moduleId;
+
       // Cache the new lesson with proper key and TTL
       const lessonKey = this.cacheConfig.getLessonKey(
         savedLesson.lessonId,
@@ -297,11 +301,25 @@ export class LessonsService {
         ),
         this.cacheService.invalidateLesson(
           savedLesson.lessonId,
-          savedLesson.moduleId,
-          savedLesson.courseId,
+          moduleId,
+          courseId,
           tenantId,
           organisationId,
         ),
+        // Invalidate the global lesson detail cache (lms:lesson:{lessonId})
+        this.cacheService.invalidateLessonDetailCached(savedLesson.lessonId),
+        // Invalidate course hierarchy cache when lesson is created
+        courseId
+          ? this.cacheService.invalidateCourseHierarchyCache(courseId)
+          : Promise.resolve(),
+        // Invalidate course enrollment cache when lesson is created
+        courseId
+          ? this.cacheService.invalidateCourseEnrollments(
+              courseId,
+              tenantId,
+              organisationId,
+            )
+          : Promise.resolve(),
       ]);
       return savedLesson;
     } catch (error) {
@@ -1030,12 +1048,18 @@ export class LessonsService {
       // If associatedLesson is not provided (undefined), do nothing - keep existing associations
 
       // Update cache and invalidate related caches
+      // Use savedLesson's courseId and moduleId as they reflect the actual saved state
+      const courseId = savedLesson.courseId;
+      const moduleId = savedLesson.moduleId;
+      
       const lessonKey = this.cacheConfig.getLessonKey(
         savedLesson.lessonId,
         tenantId,
         organisationId,
       );
-      await Promise.all([
+      
+      // Prepare cache invalidation promises
+      const cacheInvalidationPromises = [
         this.cacheService.set(
           lessonKey,
           savedLesson,
@@ -1043,14 +1067,65 @@ export class LessonsService {
         ),
         this.cacheService.invalidateLesson(
           lessonId,
-          lesson.moduleId,
-          lesson.courseId,
+          moduleId,
+          courseId,
           tenantId,
           organisationId,
         ),
         // Invalidate the global lesson detail cache (lms:lesson:{lessonId})
         this.cacheService.invalidateLessonDetailCached(lessonId),
-      ]);
+      ];
+
+      // Invalidate course hierarchy cache when lesson is updated
+      // If courseId changed, invalidate both old and new course hierarchy caches
+      if (courseId) {
+        cacheInvalidationPromises.push(
+          this.cacheService.invalidateCourseHierarchyCache(courseId),
+        );
+        // If courseId changed, also invalidate the old course hierarchy
+        if (lesson.courseId && lesson.courseId !== courseId) {
+          cacheInvalidationPromises.push(
+            this.cacheService.invalidateCourseHierarchyCache(lesson.courseId),
+          );
+        }
+      } else if (lesson.courseId) {
+        // If courseId was removed, invalidate the old course hierarchy
+        cacheInvalidationPromises.push(
+          this.cacheService.invalidateCourseHierarchyCache(lesson.courseId),
+        );
+      }
+
+      // Invalidate course enrollment cache when lesson is updated
+      if (courseId) {
+        cacheInvalidationPromises.push(
+          this.cacheService.invalidateCourseEnrollments(
+            courseId,
+            tenantId,
+            organisationId,
+          ),
+        );
+        // If courseId changed, also invalidate enrollment cache for old course
+        if (lesson.courseId && lesson.courseId !== courseId) {
+          cacheInvalidationPromises.push(
+            this.cacheService.invalidateCourseEnrollments(
+              lesson.courseId,
+              tenantId,
+              organisationId,
+            ),
+          );
+        }
+      } else if (lesson.courseId) {
+        // If courseId was removed, invalidate enrollment cache for old course
+        cacheInvalidationPromises.push(
+          this.cacheService.invalidateCourseEnrollments(
+            lesson.courseId,
+            tenantId,
+            organisationId,
+          ),
+        );
+      }
+
+      await Promise.all(cacheInvalidationPromises);
 
       return await this.findOne(savedLesson.lessonId, tenantId, organisationId);
     } catch (error) {
@@ -1110,6 +1185,10 @@ export class LessonsService {
       lesson.updatedBy = userId;
       await this.lessonRepository.save(lesson);
 
+      // Extract courseId and moduleId from fetched lesson for cache invalidation
+      const courseId = lesson.courseId;
+      const moduleId = lesson.moduleId;
+
       // Invalidate all related caches
       const lessonKey = this.cacheConfig.getLessonKey(
         lessonId,
@@ -1120,13 +1199,25 @@ export class LessonsService {
         this.cacheService.del(lessonKey),
         this.cacheService.invalidateLesson(
           lessonId,
-          lesson.moduleId,
-          lesson.courseId,
+          moduleId,
+          courseId,
           tenantId,
           organisationId,
         ),
         // Invalidate the global lesson detail cache (lms:lesson:{lessonId})
         this.cacheService.invalidateLessonDetailCached(lessonId),
+        // Invalidate course hierarchy cache when lesson is deleted
+        courseId
+          ? this.cacheService.invalidateCourseHierarchyCache(courseId)
+          : Promise.resolve(),
+        // Invalidate course enrollment cache when lesson is deleted
+        courseId
+          ? this.cacheService.invalidateCourseEnrollments(
+              courseId,
+              tenantId,
+              organisationId,
+            )
+          : Promise.resolve(),
       ]);
 
       return {

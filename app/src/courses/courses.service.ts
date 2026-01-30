@@ -184,6 +184,12 @@ export class CoursesService {
         tenantId,
         organisationId,
       ),
+      // Invalidate course enrollment cache when course is created
+      this.cacheService.invalidateCourseEnrollments(
+        result.courseId,
+        tenantId,
+        organisationId,
+      ),
     ]);
 
     return result;
@@ -1726,6 +1732,12 @@ export class CoursesService {
     await Promise.all([
       this.cacheService.setCourse(savedCourse),
       this.cacheService.invalidateCourse(courseId, tenantId, organisationId),
+      // Invalidate course enrollment cache when course is updated
+      this.cacheService.invalidateCourseEnrollments(
+        courseId,
+        tenantId,
+        organisationId,
+      ),
     ]);
     return savedCourse;
   }
@@ -1811,11 +1823,19 @@ export class CoursesService {
       );
 
       // Invalidate all related caches after successful transaction
-      await this.cacheService.invalidateCourse(
-        courseId,
-        tenantId,
-        organisationId,
-      );
+      await Promise.all([
+        this.cacheService.invalidateCourse(
+          courseId,
+          tenantId,
+          organisationId,
+        ),
+        // Invalidate course enrollment cache when course is deleted
+        this.cacheService.invalidateCourseEnrollments(
+          courseId,
+          tenantId,
+          organisationId,
+        ),
+      ]);
 
       return {
         success: true,
