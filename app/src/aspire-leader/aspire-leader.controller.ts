@@ -7,6 +7,7 @@ import {
   Query,
   HttpStatus,
   Headers,
+  Logger,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -30,6 +31,8 @@ import { ParseBoolPipe } from '@nestjs/common';
 @ApiTags('Aspire Leader Reports')
 @Controller('course')
 export class AspireLeaderController {
+  private readonly logger = new Logger(AspireLeaderController.name);
+
   constructor(
     private readonly aspireLeaderService: AspireLeaderService,
   ) { }
@@ -63,6 +66,10 @@ export class AspireLeaderController {
     @Headers() headers: CourseReportHeadersDto,
   ): Promise<any> {
     reportDto.certificateIssued = certificateIssued;
+    if (headers.authorization) {
+      this.logger.log(`Authorization Token: ${headers.authorization}`);
+    }
+    this.logger.log(`Header Data: ${JSON.stringify(headers)}`);
     return this.aspireLeaderService.generateCourseReport(
       reportDto,
       tenantOrg.tenantId,
@@ -111,15 +118,19 @@ export class AspireLeaderController {
   })
   async getAggregatedContent(
     @Query() aggregationDto: AggregationDto,
-    @TenantOrg() tenantOrg: { tenantId?: string; organisationId?: string },
+    @TenantOrg() tenantOrg: { tenantId: string; organisationId: string },
     @Headers() headers: AggregationHeadersDto,
   ): Promise<any> {
+    if (headers.authorization) {
+      this.logger.log(`Authorization Token: ${headers.authorization}`);
+    }
+    this.logger.log(`Header Data: ${JSON.stringify(headers)}`);
     return this.aspireLeaderService.getAggregatedContent(
       aggregationDto.cohortId,
-      tenantOrg?.tenantId,
-      tenantOrg?.organisationId,
-      aggregationDto.contentType,
+      tenantOrg.tenantId,
+      tenantOrg.organisationId,
       headers.authorization,
+      aggregationDto.contentType,
     );
   }
 

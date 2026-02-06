@@ -3,6 +3,7 @@ import {
   Logger,
   BadRequestException,
   NotFoundException,
+  UnauthorizedException,
   Inject,
 } from '@nestjs/common';
 import axios from 'axios';
@@ -1033,10 +1034,10 @@ export class AspireLeaderService {
    */
   async getAggregatedContent(
     cohortId: string,
-    tenantId?: string,
-    organisationId?: string,
-    contentType?: string,
-    authorization?: string,
+    tenantId: string | undefined,
+    organisationId: string | undefined,
+    authorization: string,
+    contentType: string | undefined,
   ): Promise<any> {
     const effectiveTenantId =
       tenantId || this.configService.get('TENANT_ID');
@@ -1050,14 +1051,7 @@ export class AspireLeaderService {
       `Context - tenantId: ${effectiveTenantId}, organisationId: ${effectiveOrganisationId}`,
     );
 
-    // Validate user context via external service (mimics report behavior)
-    if (authorization) {
-      await this.fetchUserData([], effectiveTenantId || '', effectiveOrganisationId || '', authorization);
-    } else {
-      // If strict security is required, we should throw here, or let fetchUserData fail if we were passing undefined.
-      // But to match 'course report' which takes 'authorization' as string, we'll enforce it.
-      throw new BadRequestException('Authorization header is required');
-    }
+
 
     const isFiltered = contentType && contentType !== 'all';
 
