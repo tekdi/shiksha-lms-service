@@ -39,9 +39,9 @@ export class ContentDetailDto {
     media?: any;
 }
 
-export class UnitDetailDto {
+export class ModuleDetailDto {
     @ApiProperty()
-    unitId: string;
+    moduleId: string;
 
     @ApiProperty()
     title: string;
@@ -57,13 +57,13 @@ export class AggregatedCourseResponseDto {
     @ApiProperty()
     title: string;
 
-    @ApiProperty({ type: [UnitDetailDto] })
-    units: UnitDetailDto[];
+    @ApiProperty({ type: [ModuleDetailDto] })
+    modules: ModuleDetailDto[];
 }
 
 export class AggregatedResponseDto {
     @ApiProperty({ type: [AggregatedCourseResponseDto] })
-    modules: AggregatedCourseResponseDto[];
+    courses: AggregatedCourseResponseDto[];
 }
 
 export class AggregationHeadersDto {

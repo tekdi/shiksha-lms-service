@@ -521,7 +521,7 @@ export class AspireLeaderService {
 
     if (cohortCourses.length === 0) {
       throw new NotFoundException(
-        `No any course found with cohortId: ${completionDto.cohortId}`,
+        `No course found with cohortId: ${completionDto.cohortId}`,
       );
     }
 
@@ -1081,13 +1081,10 @@ export class AspireLeaderService {
     }
 
     const courses = await queryBuilder.getMany();
-    this.logger.log(`Aggregation SQL: ${queryBuilder.getSql()}`);
-    this.logger.log(`Aggregation Params: ${JSON.stringify(queryBuilder.getParameters())}`);
-    this.logger.log(`Courses found: ${courses.length}`);
 
     if (courses.length === 0) {
       throw new NotFoundException(
-        `No any course found with cohortId: ${cohortId}`,
+        `No course found with cohortId: ${cohortId}`,
       );
     }
 
@@ -1174,14 +1171,14 @@ export class AspireLeaderService {
       const courseData: any = {
         courseId: course.courseId,
         title: course.title,
-        units: [],
+        modules: [],
       };
 
       const topModules = modulesByCourse.get(course.courseId) || [];
 
       for (const module of topModules) {
-        const unitData: any = {
-          unitId: module.moduleId,
+        const moduleData: any = {
+          moduleId: module.moduleId,
           title: module.title,
           contents: [],
         };
@@ -1190,15 +1187,15 @@ export class AspireLeaderService {
         const directLessons = lessonsByModule.get(module.moduleId) || [];
 
         // Collect all lessons for this "Unit" (Module/SubModule)
-        const allUnitLessons = [...directLessons];
+        const allModuleLessons = [...directLessons];
 
         // Flatten sub-modules into the contents of the unit
         for (const submodule of submodules) {
           const submoduleLessons = lessonsByModule.get(submodule.moduleId) || [];
-          allUnitLessons.push(...submoduleLessons);
+          allModuleLessons.push(...submoduleLessons);
         }
 
-        unitData.contents = allUnitLessons.map((lesson) => ({
+        moduleData.contents = allModuleLessons.map((lesson) => ({
           lessonId: lesson.lessonId,
           title: lesson.title,
           format: lesson.format,
@@ -1213,12 +1210,12 @@ export class AspireLeaderService {
           } : null,
         }));
 
-        if (unitData.contents.length > 0 || !isFiltered) {
-          courseData.units.push(unitData);
+        if (moduleData.contents.length > 0 || !isFiltered) {
+          courseData.modules.push(moduleData);
         }
       }
 
-      if (courseData.units.length > 0 || !isFiltered) {
+      if (courseData.modules.length > 0 || !isFiltered) {
         coursesList.push(courseData);
       }
     }
@@ -1227,14 +1224,14 @@ export class AspireLeaderService {
       return {
         message: `No ${contentType} type units are present for this cohort`,
         data: {
-          modules: []
+          courses: []
         },
       };
     }
 
     return {
       data: {
-        modules: coursesList // Wrap in data.modules as requested
+        courses: coursesList // Wrap in data.courses as requested
       },
     };
   }
