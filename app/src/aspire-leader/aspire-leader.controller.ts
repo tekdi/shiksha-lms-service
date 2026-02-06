@@ -18,7 +18,7 @@ import {
 import { AspireLeaderService } from './aspire-leader.service';
 import { CourseReportDto, CourseReportHeadersDto } from './dto/course-report.dto';
 import { LessonCompletionStatusDto, LessonCompletionStatusResponseDto } from './dto/lesson-completion-status.dto';
-import { AggregationDto, AggregatedCourseResponseDto, AggregatedResponseDto, AggregationHeadersDto } from './dto/aggregation.dto';
+import { AggregationDto, AggregatedResponseDto, AggregationHeadersDto } from './dto/aggregation.dto';
 import { UpdateTestProgressDto } from './dto/update-test-progress.dto';
 import { TrackingStatus } from '../tracking/entities/course-track.entity';
 import { EnrollmentStatus } from '../enrollments/entities/user-enrollment.entity';
