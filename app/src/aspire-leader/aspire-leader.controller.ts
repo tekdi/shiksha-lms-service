@@ -7,7 +7,6 @@ import {
   Query,
   HttpStatus,
   Headers,
-  Logger,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -30,7 +29,6 @@ import { ParseBoolPipe } from '@nestjs/common';
 @ApiTags('Aspire Leader Reports')
 @Controller('course')
 export class AspireLeaderController {
-  private readonly logger = new Logger(AspireLeaderController.name);
 
   constructor(
     private readonly aspireLeaderService: AspireLeaderService,
