@@ -3,7 +3,6 @@ import {
   Logger,
   BadRequestException,
   NotFoundException,
-  UnauthorizedException,
   Inject,
 } from '@nestjs/common';
 import axios from 'axios';

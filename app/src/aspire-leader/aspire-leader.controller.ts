@@ -14,7 +14,6 @@ import {
   ApiOperation,
   ApiResponse,
   ApiQuery,
-  ApiHeader,
 } from '@nestjs/swagger';
 import { AspireLeaderService } from './aspire-leader.service';
 import { CourseReportDto, CourseReportHeadersDto } from './dto/course-report.dto';
