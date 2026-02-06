@@ -1215,17 +1215,12 @@ export class AspireLeaderService {
 
     if (coursesList.length === 0 && isFiltered) {
       return {
-        message: `No ${contentType} type units are present for this cohort`,
-        data: {
-          courses: []
-        },
+        courses: [],
       };
     }
 
     return {
-      data: {
-        courses: coursesList // Wrap in data.courses as requested
-      },
+      courses: coursesList,
     };
   }
 }
