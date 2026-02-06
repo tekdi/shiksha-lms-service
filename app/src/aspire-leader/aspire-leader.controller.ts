@@ -120,10 +120,6 @@ export class AspireLeaderController {
     @TenantOrg() tenantOrg: { tenantId: string; organisationId: string },
     @Headers() headers: AggregationHeadersDto,
   ): Promise<any> {
-    if (headers.authorization) {
-      this.logger.log(`Authorization Token: ${headers.authorization}`);
-    }
-    this.logger.log(`Header Data: ${JSON.stringify(headers)}`);
     return this.aspireLeaderService.getAggregatedContent(
       aggregationDto.cohortId,
       tenantOrg.tenantId,
