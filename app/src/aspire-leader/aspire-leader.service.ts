@@ -1149,12 +1149,12 @@ export class AspireLeaderService {
     const lessonsByModule = new Map<string, Lesson[]>();
 
     allModules.forEach((mod) => {
-      if (!mod.parentId) {
-        if (!modulesByCourse.has(mod.courseId)) modulesByCourse.set(mod.courseId, []);
-        modulesByCourse.get(mod.courseId)?.push(mod);
-      } else {
+      if (mod.parentId) {
         if (!submodulesByParent.has(mod.parentId)) submodulesByParent.set(mod.parentId, []);
         submodulesByParent.get(mod.parentId)?.push(mod);
+      } else {
+        if (!modulesByCourse.has(mod.courseId)) modulesByCourse.set(mod.courseId, []);
+        modulesByCourse.get(mod.courseId)?.push(mod);
       }
     });
 
