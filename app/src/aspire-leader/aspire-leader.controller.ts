@@ -8,15 +8,16 @@ import {
   HttpStatus,
   Headers,
 } from '@nestjs/common';
-import { 
-  ApiTags, 
-  ApiOperation, 
-  ApiResponse, 
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
   ApiQuery,
 } from '@nestjs/swagger';
 import { AspireLeaderService } from './aspire-leader.service';
 import { CourseReportDto, CourseReportHeadersDto } from './dto/course-report.dto';
 import { LessonCompletionStatusDto, LessonCompletionStatusResponseDto } from './dto/lesson-completion-status.dto';
+import { AggregationDto, AggregatedResponseDto, AggregationHeadersDto } from './dto/aggregation.dto';
 import { UpdateTestProgressDto } from './dto/update-test-progress.dto';
 import { TrackingStatus } from '../tracking/entities/course-track.entity';
 import { EnrollmentStatus } from '../enrollments/entities/user-enrollment.entity';
@@ -28,13 +29,14 @@ import { ParseBoolPipe } from '@nestjs/common';
 @ApiTags('Aspire Leader Reports')
 @Controller('course')
 export class AspireLeaderController {
+
   constructor(
     private readonly aspireLeaderService: AspireLeaderService,
-  ) {}
+  ) { }
 
   @Get('report')
   @ApiId(API_IDS.GET_COURSE_REPORT)
-  @ApiOperation({ 
+  @ApiOperation({
     summary: 'Generate course report',
     description: 'Generate course-level or lesson-level reports with user progress and activity data. Include lessonId for lesson-level report, omit for course-level report. Requires Authorization header for external API calls.'
   })
@@ -48,8 +50,8 @@ export class AspireLeaderController {
   @ApiQuery({ name: 'status', type: 'string', enum: Object.values(TrackingStatus), description: 'Filter by course tracking status', required: false })
   @ApiQuery({ name: 'enrollmentStatus', type: 'string', enum: Object.values(EnrollmentStatus), description: 'Filter by enrollment status', required: false })
   @ApiQuery({ name: 'certificateIssued', type: 'boolean', description: 'Filter by certificate issued status', required: false })
-  @ApiResponse({ 
-    status: 200, 
+  @ApiResponse({
+    status: 200,
     description: 'Course report generated successfully',
   })
   @ApiResponse({ status: 400, description: 'Bad request - Invalid parameters or missing Authorization header' })
@@ -61,6 +63,10 @@ export class AspireLeaderController {
     @Headers() headers: CourseReportHeadersDto,
   ): Promise<any> {
     reportDto.certificateIssued = certificateIssued;
+    if (headers.authorization) {
+      this.logger.log(`Authorization Token: ${headers.authorization}`);
+    }
+    this.logger.log(`Header Data: ${JSON.stringify(headers)}`);
     return this.aspireLeaderService.generateCourseReport(
       reportDto,
       tenantOrg.tenantId,
@@ -74,12 +80,12 @@ export class AspireLeaderController {
   // and return the response as per the criteria - true or false
   @Post('lesson-completion-status')
   @ApiId(API_IDS.GET_LESSON_COMPLETION_STATUS)
-  @ApiOperation({ 
+  @ApiOperation({
     summary: 'Check lesson completion status for cohort',
     description: 'Check if a cohort meets the lesson completion criteria based on lesson format, sub-format, and minimum completion requirements. The cohortId should match the value stored in course.params.cohortId. Returns overall status and detailed results for each criterion.'
   })
-  @ApiResponse({ 
-    status: 200, 
+  @ApiResponse({
+    status: 200,
     description: 'Lesson completion status checked successfully',
     type: LessonCompletionStatusResponseDto
   })
@@ -96,14 +102,39 @@ export class AspireLeaderController {
     );
   }
 
+  @Get('aggregate-content')
+  @ApiId(API_IDS.GET_AGGREGATED_CONTENT)
+  @ApiOperation({
+    summary: 'Get nested aggregated content for a cohort',
+    description: 'Returns courses (labeled as modules), modules (labeled as units), and lessons (labeled as contents) for a specific cohort. Can be filtered by contentType (e.g., "event").'
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Aggregated content retrieved successfully',
+    type: AggregatedResponseDto
+  })
+  async getAggregatedContent(
+    @Query() aggregationDto: AggregationDto,
+    @TenantOrg() tenantOrg: { tenantId: string; organisationId: string },
+    @Headers() headers: AggregationHeadersDto,
+  ): Promise<any> {
+    return this.aspireLeaderService.getAggregatedContent(
+      aggregationDto.cohortId,
+      tenantOrg.tenantId,
+      tenantOrg.organisationId,
+      headers.authorization,
+      aggregationDto.contentType,
+    );
+  }
+
   @Patch('tracking/update_test_progress')
   @ApiId(API_IDS.UPDATE_TEST_PROGRESS)
-  @ApiOperation({ 
+  @ApiOperation({
     summary: 'Update test progress for a lesson',
     description: 'Update lesson tracking progress based on test results. The testId maps to media.source column, which is linked to lesson.mediaId. The system will find the correct lesson track based on resubmission settings and grading type.'
   })
-  @ApiResponse({ 
-    status: 200, 
+  @ApiResponse({
+    status: 200,
     description: 'Test progress updated successfully',
   })
   @ApiResponse({ status: 400, description: 'Bad request - Invalid parameters' })

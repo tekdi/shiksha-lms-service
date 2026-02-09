@@ -14,6 +14,7 @@ import { LessonStatus } from '../lessons/entities/lesson.entity';
 import { EnrollmentStatus } from '../enrollments/entities/user-enrollment.entity';
 import { Course } from '../courses/entities/course.entity';
 import { Lesson } from '../lessons/entities/lesson.entity';
+import { Module as CourseModule } from '../modules/entities/module.entity';
 import {
   CourseTrack,
   TrackingStatus,
@@ -50,8 +51,10 @@ export class AspireLeaderService {
     private readonly trackingService: TrackingService,
     @InjectRepository(Media)
     private readonly mediaRepository: Repository<Media>,
+    @InjectRepository(CourseModule)
+    private readonly moduleRepository: Repository<CourseModule>,
     private readonly configService: ConfigService,
-  ) {}
+  ) { }
 
   /**
    * Generate course report (course-level or lesson-level)
@@ -240,10 +243,10 @@ export class AspireLeaderService {
         const progress =
           courseTrackData.noOfLessons > 0
             ? Math.round(
-                (courseTrackData.completedLessons /
-                  courseTrackData.noOfLessons) *
-                  100,
-              )
+              (courseTrackData.completedLessons /
+                courseTrackData.noOfLessons) *
+              100,
+            )
             : 0;
 
         reportItems.push({
@@ -272,7 +275,7 @@ export class AspireLeaderService {
           completedDate: enrollment?.endTime?.toISOString(),
           progress:
             (courseTrackData.completedLessons / courseTrackData.noOfLessons) *
-              100 || 0,
+            100 || 0,
         });
       }
     }
@@ -518,7 +521,7 @@ export class AspireLeaderService {
 
     if (cohortCourses.length === 0) {
       throw new NotFoundException(
-        `No any course found with cohortId: ${completionDto.cohortId}`,
+        `No course found with cohortId: ${completionDto.cohortId}`,
       );
     }
 
@@ -1023,5 +1026,201 @@ export class AspireLeaderService {
       );
       throw error;
     }
+  }
+
+  /**
+   * Get aggregated content for a cohort: Course -> Module -> Unit (submodule) -> Content (lesson)
+   */
+  async getAggregatedContent(
+    cohortId: string,
+    tenantId: string | undefined,
+    organisationId: string | undefined,
+    authorization: string,
+    contentType: string | undefined,
+  ): Promise<any> {
+    const effectiveTenantId =
+      tenantId || this.configService.get('TENANT_ID');
+    const effectiveOrganisationId =
+      organisationId || this.configService.get('ORGANISATION_ID');
+
+    this.logger.log(
+      `Fetching aggregated content for cohortId: ${cohortId}, contentType: ${contentType || 'all'}`,
+    );
+    this.logger.log(
+      `Context - tenantId: ${effectiveTenantId}, organisationId: ${effectiveOrganisationId}`,
+    );
+
+
+
+    const isFiltered = contentType && contentType !== 'all';
+
+    // 1. Find all published courses for the cohort
+    const queryBuilder = this.courseRepository
+      .createQueryBuilder('course')
+      .select(['course.courseId', 'course.title', 'course.params']) // Only fetch needed columns
+      .where('course."status" = :status', { status: CourseStatus.PUBLISHED })
+      .andWhere(`course."params"->>'cohortId' = :cohortId`, { cohortId });
+
+    if (effectiveTenantId) {
+      queryBuilder.andWhere('course."tenantId" = :tenantId', {
+        tenantId: effectiveTenantId,
+      });
+    }
+
+    if (effectiveOrganisationId) {
+      queryBuilder.andWhere('course."organisationId" = :organisationId', {
+        organisationId: effectiveOrganisationId,
+      });
+    }
+
+    const courses = await queryBuilder.getMany();
+
+    if (courses.length === 0) {
+      throw new NotFoundException(
+        `No course found with cohortId: ${cohortId}`,
+      );
+    }
+
+    const aggregatedData: any[] = [];
+    const courseIds = courses.map((course) => course.courseId);
+
+    // 2. Fetch all modules for these courses in bulk
+    const moduleWhere: any = {
+      courseId: In(courseIds),
+      status: Not(CourseStatus.ARCHIVED as any),
+    };
+
+    if (effectiveTenantId) moduleWhere.tenantId = effectiveTenantId;
+    if (effectiveOrganisationId)
+      moduleWhere.organisationId = effectiveOrganisationId;
+
+    const allModules = await this.moduleRepository.find({
+      where: moduleWhere,
+      select: ['moduleId', 'title', 'courseId', 'parentId'], // Only fetch needed columns
+      order: { ordering: 'ASC' },
+    });
+
+    // 3. Fetch all lessons for these courses in bulk
+    const lessonWhere: any = {
+      courseId: In(courseIds),
+      status: LessonStatus.PUBLISHED,
+    };
+
+    if (effectiveTenantId) lessonWhere.tenantId = effectiveTenantId;
+    if (effectiveOrganisationId)
+      lessonWhere.organisationId = effectiveOrganisationId;
+
+    if (isFiltered) {
+      lessonWhere.format = contentType;
+    }
+
+    const allLessons = await this.lessonRepository.find({
+      where: lessonWhere,
+      select: {
+        lessonId: true,
+        title: true,
+        format: true,
+        subFormat: true,
+        courseId: true,
+        moduleId: true,
+        media: {
+          mediaId: true,
+          format: true,
+          subFormat: true,
+          path: true,
+          source: true,
+          status: true,
+        },
+      },
+      relations: ['media'],
+      order: { ordering: 'ASC' },
+    });
+
+    // 4. Organize data into Maps for O(1) lookup
+    const modulesByCourse = new Map<string, CourseModule[]>();
+    const submodulesByParent = new Map<string, CourseModule[]>();
+    const lessonsByModule = new Map<string, Lesson[]>();
+
+    allModules.forEach((mod) => {
+      if (mod.parentId) {
+        if (!submodulesByParent.has(mod.parentId)) submodulesByParent.set(mod.parentId, []);
+        submodulesByParent.get(mod.parentId)?.push(mod);
+      } else {
+        if (!modulesByCourse.has(mod.courseId)) modulesByCourse.set(mod.courseId, []);
+        modulesByCourse.get(mod.courseId)?.push(mod);
+      }
+    });
+
+    allLessons.forEach((lesson) => {
+      if (lesson.moduleId) {
+        if (!lessonsByModule.has(lesson.moduleId)) lessonsByModule.set(lesson.moduleId, []);
+        lessonsByModule.get(lesson.moduleId)?.push(lesson);
+      }
+    });
+
+    // 5. Build the hierarchical structure in memory
+    const coursesList: any[] = [];
+    for (const course of courses) {
+      const courseData: any = {
+        courseId: course.courseId,
+        title: course.title,
+        modules: [],
+      };
+
+      const topModules = modulesByCourse.get(course.courseId) || [];
+
+      for (const module of topModules) {
+        const moduleData: any = {
+          moduleId: module.moduleId,
+          title: module.title,
+          contents: [],
+        };
+
+        const submodules = submodulesByParent.get(module.moduleId) || [];
+        const directLessons = lessonsByModule.get(module.moduleId) || [];
+
+        // Collect all lessons for this "Unit" (Module/SubModule)
+        const allModuleLessons = [...directLessons];
+
+        // Flatten sub-modules into the contents of the unit
+        for (const submodule of submodules) {
+          const submoduleLessons = lessonsByModule.get(submodule.moduleId) || [];
+          allModuleLessons.push(...submoduleLessons);
+        }
+
+        moduleData.contents = allModuleLessons.map((lesson) => ({
+          lessonId: lesson.lessonId,
+          title: lesson.title,
+          format: lesson.format,
+          subFormat: lesson.subFormat,
+          media: lesson.media ? {
+            mediaId: lesson.media.mediaId,
+            format: lesson.media.format,
+            subFormat: lesson.media.subFormat,
+            path: lesson.media.path,
+            source: lesson.media.source,
+            status: lesson.media.status,
+          } : null,
+        }));
+
+        if (moduleData.contents.length > 0 || !isFiltered) {
+          courseData.modules.push(moduleData);
+        }
+      }
+
+      if (courseData.modules.length > 0 || !isFiltered) {
+        coursesList.push(courseData);
+      }
+    }
+
+    if (coursesList.length === 0 && isFiltered) {
+      return {
+        courses: [],
+      };
+    }
+
+    return {
+      courses: coursesList,
+    };
   }
 }
