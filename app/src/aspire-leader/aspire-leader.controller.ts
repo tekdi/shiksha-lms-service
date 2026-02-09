@@ -7,7 +7,6 @@ import {
   Query,
   HttpStatus,
   Headers,
-  Logger,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -30,7 +29,6 @@ import { ParseBoolPipe } from '@nestjs/common';
 @ApiTags('Aspire Leader Reports')
 @Controller('course')
 export class AspireLeaderController {
-  private readonly logger = new Logger(AspireLeaderController.name);
 
   constructor(
     private readonly aspireLeaderService: AspireLeaderService,
@@ -65,11 +63,6 @@ export class AspireLeaderController {
     @Headers() headers: CourseReportHeadersDto,
   ): Promise<any> {
     reportDto.certificateIssued = certificateIssued;
-
-    if (headers.authorization) {
-      this.logger.log(`Authorization Token: ${headers.authorization}`);
-    }
-    this.logger.log(`Header Data: ${JSON.stringify(headers)}`);
 
     return this.aspireLeaderService.generateCourseReport(
       reportDto,
