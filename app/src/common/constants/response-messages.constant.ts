@@ -124,7 +124,7 @@ export const RESPONSE_MESSAGES = {
     LMS_CONFIG_LOAD_FAILED: 'Failed to load LMS Configuration',
     USER_SERVICE_URL_NOT_CONFIGURED: 'User service URL not configured',
     FAILED_TO_FETCH_USER_DATA: 'Failed to fetch user data from external service',
-
+    
     // Course Cloning Specific Errors
     COURSE_CLONE_FAILED: 'Failed to clone course',
     MODULE_COPY_FAILED: 'Failed to copy module',
