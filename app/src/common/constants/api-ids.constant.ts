@@ -22,7 +22,7 @@ export const API_IDS = {
   UPDATE_MODULE: 'api.module.update',
   DELETE_MODULE: 'api.module.delete',
   CLONE_MODULE: 'api.module.clone',
-  
+
   // Lesson APIs
   CREATE_LESSON: 'api.lesson.create',
   GET_ALL_LESSONS: 'api.lesson.list',
@@ -32,16 +32,16 @@ export const API_IDS = {
   UPDATE_LESSON: 'api.lesson.update',
   DELETE_LESSON: 'api.lesson.delete',
   CLONE_LESSON: 'api.lesson.clone',
-  
-    // Media APIs
+
+  // Media APIs
   UPLOAD_MEDIA: 'api.media.upload',
   GET_MEDIA_LIST: 'api.media.list',
   GET_MEDIA_BY_ID: 'api.media.read',
   ASSOCIATE_MEDIA_WITH_LESSON: 'api.media.associate.create',
   DELETE_MEDIA: 'api.media.delete',
   REMOVE_MEDIA_ASSOCIATION: 'api.media.associate.delete',
-  
-   // Enrollment APIs
+
+  // Enrollment APIs
   ENROLL_USER: 'api.enrollment.create',
   GET_USER_ENROLLMENTS: 'api.enrollment.list',
   GET_ENROLLMENT_BY_ID: 'api.enrollment.read',
@@ -50,7 +50,7 @@ export const API_IDS = {
   DELETE_ENROLLMENT: 'api.enrollment.delete',
   GET_ENROLLED_COURSES: 'api.enrollment.courses',
 
-  
+
   // Tracking APIs
   GET_COURSE_TRACKING: 'api.course.progress.read',
   UPDATE_COURSE_TRACKING: 'api.course.progress.update',
@@ -67,4 +67,5 @@ export const API_IDS = {
   GET_COURSE_REPORT: 'api.course.report',
   GET_LESSON_COMPLETION_STATUS: 'api.lesson.completion.status',
   UPDATE_TEST_PROGRESS: 'api.tracking.update_test_progress',
+  GET_AGGREGATED_CONTENT: 'api.course.aggregate.content',
 };
