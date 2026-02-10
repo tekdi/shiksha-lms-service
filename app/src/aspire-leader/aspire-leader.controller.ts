@@ -63,10 +63,7 @@ export class AspireLeaderController {
     @Headers() headers: CourseReportHeadersDto,
   ): Promise<any> {
     reportDto.certificateIssued = certificateIssued;
-    if (headers.authorization) {
-      this.logger.log(`Authorization Token: ${headers.authorization}`);
-    }
-    this.logger.log(`Header Data: ${JSON.stringify(headers)}`);
+
     return this.aspireLeaderService.generateCourseReport(
       reportDto,
       tenantOrg.tenantId,
