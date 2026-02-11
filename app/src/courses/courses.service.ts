@@ -234,29 +234,135 @@ export class CoursesService {
       return cachedResult;
     }
 
-    // Build base where clause
-    const whereClause: any = {
-      tenantId,
-      organisationId,
-      status: filters?.status || Not(CourseStatus.ARCHIVED),
-    };
+    // Check if we need to use QueryBuilder for JSONB queries (cohortId or pathwayId)
+    const needsJsonbQuery = !!(filters?.cohortId || filters?.pathwayId);
 
-    // Apply filters
-    this.applyFilters(filters, whereClause);
+    let courses: Course[];
+    let total: number;
 
-    // Build order clause - TypeORM expects 'ASC' or 'DESC' as string literals
-    const orderClause: any = {};
-    orderClause[sortBy] = orderBy;
+    if (needsJsonbQuery) {
+      // Use QueryBuilder for JSONB queries (cohortId or pathwayId)
+      const queryBuilder = this.courseRepository
+        .createQueryBuilder('course')
+        .where('course.tenantId = :tenantId', { tenantId })
+        .andWhere('course.organisationId = :organisationId', { organisationId })
+        .andWhere('course.status != :archivedStatus', {
+          archivedStatus: CourseStatus.ARCHIVED,
+        });
 
-    // OPTIMIZED: Use findAndCount but we'll optimize enrichCoursesWithCounts separately
-    // Note: Using findAndCount to maintain compatibility with buildSearchConditions OR logic
-    // Column selection optimization can be added later if needed for this endpoint
-    const [courses, total] = await this.courseRepository.findAndCount({
-      where: this.buildSearchConditions(filters, whereClause),
-      order: orderClause,
-      take: limit,
-      skip: offset,
-    });
+      // Apply JSONB filters
+      if (filters?.cohortId) {
+        queryBuilder.andWhere(
+          "course.params->>'cohortId' = :cohortId",
+          { cohortId: filters.cohortId },
+        );
+      }
+
+      if (filters?.pathwayId) {
+        queryBuilder.andWhere(
+          "course.params->>'pathwayId' = :pathwayId",
+          { pathwayId: filters.pathwayId },
+        );
+      }
+
+      // Apply other filters
+      if (filters?.status) {
+        queryBuilder.andWhere('course.status = :status', {
+          status: filters.status,
+        });
+      }
+
+      if (filters?.featured !== undefined) {
+        queryBuilder.andWhere('course.featured = :featured', {
+          featured: filters.featured,
+        });
+      }
+
+      if (filters?.free !== undefined) {
+        queryBuilder.andWhere('course.free = :free', {
+          free: filters.free,
+        });
+      }
+
+      if (filters?.createdBy) {
+        queryBuilder.andWhere('course.createdBy = :createdBy', {
+          createdBy: filters.createdBy,
+        });
+      }
+
+      // Apply date filters
+      if (filters?.startDateFrom) {
+        queryBuilder.andWhere('course.startDatetime >= :startDateFrom', {
+          startDateFrom: filters.startDateFrom,
+        });
+      }
+
+      if (filters?.startDateTo) {
+        queryBuilder.andWhere('course.startDatetime <= :startDateTo', {
+          startDateTo: filters.startDateTo,
+        });
+      }
+
+      if (filters?.endDateFrom) {
+        queryBuilder.andWhere('course.endDatetime >= :endDateFrom', {
+          endDateFrom: filters.endDateFrom,
+        });
+      }
+
+      if (filters?.endDateTo) {
+        queryBuilder.andWhere('course.endDatetime <= :endDateTo', {
+          endDateTo: filters.endDateTo,
+        });
+      }
+
+      // Apply search query if provided
+      if (filters?.query) {
+        queryBuilder.andWhere(
+          '(course.title ILIKE :query OR course.description ILIKE :query OR course.shortDescription ILIKE :query)',
+          { query: `%${filters.query}%` },
+        );
+      }
+
+      // Apply ordering
+      const orderDirection = orderBy === 'ASC' ? 'ASC' : 'DESC';
+      const orderField = sortBy === SortBy.CREATED_AT ? 'createdAt' :
+                        sortBy === SortBy.UPDATED_AT ? 'updatedAt' :
+                        sortBy === SortBy.TITLE ? 'title' :
+                        sortBy === SortBy.START_DATETIME ? 'startDatetime' :
+                        sortBy === SortBy.END_DATETIME ? 'endDatetime' :
+                        sortBy === SortBy.FEATURED ? 'featured' :
+                        sortBy === SortBy.FREE ? 'free' :
+                        'ordering'; // Default to ordering
+
+      queryBuilder.orderBy(`course.${orderField}`, orderDirection);
+
+      // Apply pagination
+      queryBuilder.skip(offset).take(limit);
+
+      // Execute query
+      [courses, total] = await queryBuilder.getManyAndCount();
+    } else {
+      // Use findAndCount for non-JSONB queries (maintains OR logic for search)
+      const whereClause: any = {
+        tenantId,
+        organisationId,
+        status: filters?.status || Not(CourseStatus.ARCHIVED),
+      };
+
+      // Apply filters (excluding JSONB filters which are handled above)
+      this.applyFilters(filters, whereClause);
+
+      // Build order clause - TypeORM expects 'ASC' or 'DESC' as string literals
+      const orderClause: any = {};
+      orderClause[sortBy] = orderBy;
+
+      [courses, total] = await this.courseRepository.findAndCount({
+        where: this.buildSearchConditions(filters, whereClause),
+        order: orderClause,
+        take: limit,
+        skip: offset,
+      });
+    }
 
     // Batch fetch module and enrollment counts
     const coursesWithCounts = await this.enrichCoursesWithCounts(
@@ -278,13 +384,10 @@ export class CoursesService {
   }
 
   private applyFilters(filters: any, whereClause: any): void {
-    // Cohort filter
-    if (filters?.cohortId) {
-      whereClause.params = {
-        ...(whereClause.params || {}),
-        cohortId: filters.cohortId,
-      };
-    }
+    // Note: Cohort and Pathway filters are handled in QueryBuilder (needsJsonbQuery)
+    // because TypeORM's findAndCount doesn't support JSONB nested properties
+    // These filters are only applied here for non-JSONB query paths
+    // (Currently not used, but kept for consistency)
 
     // Boolean filters
     const booleanFilters = ['featured', 'free'];
