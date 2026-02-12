@@ -21,6 +21,7 @@ import { Module, ModuleStatus } from '../modules/entities/module.entity';
 import {
   Lesson,
   LessonStatus,
+  LessonFormat,
   AttemptsGradeMethod,
 } from '../lessons/entities/lesson.entity';
 import {
@@ -2907,5 +2908,91 @@ export class CoursesService {
       // Return empty map on error to not break the main flow
       return new Map();
     }
+  }
+
+  /**
+   * Get lesson counts (video, document, total) for multiple courses
+   * OPTIMIZED: Direct database query instead of fetching hierarchy
+   * 
+   * @param courseIds - Array of course IDs to get counts for
+   * @param tenantId - Tenant ID
+   * @param organisationId - Organisation ID
+   * @returns Map of courseId to { videoCount, resourceCount, totalItems }
+   */
+  async getLessonCountsByCourseIds(
+    courseIds: string[],
+    tenantId: string,
+    organisationId: string,
+  ): Promise<Map<string, { videoCount: number; resourceCount: number; totalItems: number }>> {
+    if (courseIds.length === 0) {
+      return new Map();
+    }
+
+    // OPTIMIZED: Single query to get all counts grouped by courseId and format
+    const lessonCounts = await this.lessonRepository
+      .createQueryBuilder('lesson')
+      .select('lesson.courseId', 'courseId')
+      .addSelect('lesson.format', 'format')
+      .addSelect('COUNT(*)', 'count')
+      .where('lesson.courseId IN (:...courseIds)', { courseIds })
+      .andWhere('lesson.tenantId = :tenantId', { tenantId })
+      .andWhere('lesson.organisationId = :organisationId', { organisationId })
+      .andWhere('lesson.status = :status', { status: LessonStatus.PUBLISHED })
+      .andWhere('lesson.parentId IS NULL') // Only count parent lessons, exclude child lessons
+      .groupBy('lesson.courseId')
+      .addGroupBy('lesson.format')
+      .getRawMany();
+
+    // Build result map
+    const countsMap = new Map<string, { videoCount: number; resourceCount: number; totalItems: number }>();
+
+    // Initialize all courseIds with zero counts
+    courseIds.forEach((courseId) => {
+      countsMap.set(courseId, { videoCount: 0, resourceCount: 0, totalItems: 0 });
+    });
+
+    // Aggregate counts by courseId
+    lessonCounts.forEach((row) => {
+      const courseId = row.courseId;
+      const format = row.format;
+      const count = parseInt(row.count, 10);
+
+      const counts = countsMap.get(courseId) || { videoCount: 0, resourceCount: 0, totalItems: 0 };
+
+      // Count total items (all published lessons)
+      counts.totalItems += count;
+
+      // Count videos
+      if (format === LessonFormat.VIDEO) {
+        counts.videoCount += count;
+      }
+
+      // Count resources (documents)
+      if (format === LessonFormat.DOCUMENT) {
+        counts.resourceCount += count;
+      }
+
+      countsMap.set(courseId, counts);
+    });
+
+    return countsMap;
+  }
+
+  /**
+   * Get lesson counts (video, document, total) for a single course
+   * OPTIMIZED: Direct database query instead of fetching hierarchy
+   * 
+   * @param courseId - Course ID to get counts for
+   * @param tenantId - Tenant ID
+   * @param organisationId - Organisation ID
+   * @returns { videoCount, resourceCount, totalItems }
+   */
+  async getLessonCountsByCourseId(
+    courseId: string,
+    tenantId: string,
+    organisationId: string,
+  ): Promise<{ videoCount: number; resourceCount: number; totalItems: number }> {
+    const countsMap = await this.getLessonCountsByCourseIds([courseId], tenantId, organisationId);
+    return countsMap.get(courseId) || { videoCount: 0, resourceCount: 0, totalItems: 0 };
   }
 }
