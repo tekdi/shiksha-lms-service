@@ -326,14 +326,26 @@ export class CoursesService {
 
       // Apply ordering
       const orderDirection = orderBy === 'ASC' ? 'ASC' : 'DESC';
-      const orderField = sortBy === SortBy.CREATED_AT ? 'createdAt' :
-                        sortBy === SortBy.UPDATED_AT ? 'updatedAt' :
-                        sortBy === SortBy.TITLE ? 'title' :
-                        sortBy === SortBy.START_DATETIME ? 'startDatetime' :
-                        sortBy === SortBy.END_DATETIME ? 'endDatetime' :
-                        sortBy === SortBy.FEATURED ? 'featured' :
-                        sortBy === SortBy.FREE ? 'free' :
-                        'ordering'; // Default to ordering
+      
+      // Extract nested ternary into independent statement for better readability
+      let orderField: string;
+      if (sortBy === SortBy.CREATED_AT) {
+        orderField = 'createdAt';
+      } else if (sortBy === SortBy.UPDATED_AT) {
+        orderField = 'updatedAt';
+      } else if (sortBy === SortBy.TITLE) {
+        orderField = 'title';
+      } else if (sortBy === SortBy.START_DATETIME) {
+        orderField = 'startDatetime';
+      } else if (sortBy === SortBy.END_DATETIME) {
+        orderField = 'endDatetime';
+      } else if (sortBy === SortBy.FEATURED) {
+        orderField = 'featured';
+      } else if (sortBy === SortBy.FREE) {
+        orderField = 'free';
+      } else {
+        orderField = 'ordering'; // Default to ordering
+      }
 
       queryBuilder.orderBy(`course.${orderField}`, orderDirection);
 
@@ -2955,7 +2967,7 @@ export class CoursesService {
     lessonCounts.forEach((row) => {
       const courseId = row.courseId;
       const format = row.format;
-      const count = parseInt(row.count, 10);
+      const count = Number.parseInt(row.count, 10);
 
       const counts = countsMap.get(courseId) || { videoCount: 0, resourceCount: 0, totalItems: 0 };
 

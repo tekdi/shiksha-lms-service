@@ -202,7 +202,7 @@ export class CoursesController {
       throw new BadRequestException('tenantid and organisationid headers are required');
     }
 
-    const courseIds = courseIdsParam.split(',').map((id) => id.trim()).filter((id) => id);
+    const courseIds = courseIdsParam.split(',').map((id) => id.trim()).filter(Boolean);
 
     if (courseIds.length === 0) {
       throw new BadRequestException('At least one courseId is required');
