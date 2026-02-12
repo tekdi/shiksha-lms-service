@@ -235,140 +235,47 @@ export class CoursesService {
       return cachedResult;
     }
 
-    // Check if we need to use QueryBuilder for JSONB queries (cohortId or pathwayId)
-    const needsJsonbQuery = !!(filters?.cohortId || filters?.pathwayId);
+    // Build base where clause
+    const whereClause: any = {
+      tenantId,
+      organisationId,
+      status: filters?.status || Not(CourseStatus.ARCHIVED),
+    };
 
+    // Apply filters
+    this.applyFilters(filters, whereClause);
+
+    // Build order clause - TypeORM expects 'ASC' or 'DESC' as string literals
+    const orderClause: any = {};
+    orderClause[sortBy] = orderBy;
+
+    // Use QueryBuilder for JSONB queries (cohortId or pathwayId), otherwise use findAndCount
     let courses: Course[];
     let total: number;
 
-    if (needsJsonbQuery) {
+    if (filters?.cohortId || filters?.pathwayId) {
       // Use QueryBuilder for JSONB queries (cohortId or pathwayId)
       const queryBuilder = this.courseRepository
-        .createQueryBuilder('course')
-        .where('course.tenantId = :tenantId', { tenantId })
-        .andWhere('course.organisationId = :organisationId', { organisationId })
-        .andWhere('course.status != :archivedStatus', {
-          archivedStatus: CourseStatus.ARCHIVED,
-        });
+        .createQueryBuilder("course")
+        .where("course.tenantId = :tenantId", { tenantId })
+        .andWhere("course.organisationId = :organisationId", { organisationId })
+        .andWhere("course.status != :archivedStatus", { archivedStatus: CourseStatus.ARCHIVED });
 
-      // Apply JSONB filters
+      // Apply JSONB filters only
       if (filters?.cohortId) {
-        queryBuilder.andWhere(
-          "course.params->>'cohortId' = :cohortId",
-          { cohortId: filters.cohortId },
-        );
+        queryBuilder.andWhere("course.params->>'cohortId' = :cohortId", { cohortId: filters.cohortId });
       }
-
       if (filters?.pathwayId) {
-        queryBuilder.andWhere(
-          "course.params->>'pathwayId' = :pathwayId",
-          { pathwayId: filters.pathwayId },
-        );
-      }
-
-      // Apply other filters
-      if (filters?.status) {
-        queryBuilder.andWhere('course.status = :status', {
-          status: filters.status,
-        });
-      }
-
-      if (filters?.featured !== undefined) {
-        queryBuilder.andWhere('course.featured = :featured', {
-          featured: filters.featured,
-        });
-      }
-
-      if (filters?.free !== undefined) {
-        queryBuilder.andWhere('course.free = :free', {
-          free: filters.free,
-        });
-      }
-
-      if (filters?.createdBy) {
-        queryBuilder.andWhere('course.createdBy = :createdBy', {
-          createdBy: filters.createdBy,
-        });
-      }
-
-      // Apply date filters
-      if (filters?.startDateFrom) {
-        queryBuilder.andWhere('course.startDatetime >= :startDateFrom', {
-          startDateFrom: filters.startDateFrom,
-        });
-      }
-
-      if (filters?.startDateTo) {
-        queryBuilder.andWhere('course.startDatetime <= :startDateTo', {
-          startDateTo: filters.startDateTo,
-        });
-      }
-
-      if (filters?.endDateFrom) {
-        queryBuilder.andWhere('course.endDatetime >= :endDateFrom', {
-          endDateFrom: filters.endDateFrom,
-        });
-      }
-
-      if (filters?.endDateTo) {
-        queryBuilder.andWhere('course.endDatetime <= :endDateTo', {
-          endDateTo: filters.endDateTo,
-        });
-      }
-
-      // Apply search query if provided
-      if (filters?.query) {
-        queryBuilder.andWhere(
-          '(course.title ILIKE :query OR course.description ILIKE :query OR course.shortDescription ILIKE :query)',
-          { query: `%${filters.query}%` },
-        );
+        queryBuilder.andWhere("course.params->>'pathwayId' = :pathwayId", { pathwayId: filters.pathwayId });
       }
 
       // Apply ordering
-      const orderDirection = orderBy === 'ASC' ? 'ASC' : 'DESC';
-      
-      // Extract nested ternary into independent statement for better readability
-      let orderField: string;
-      if (sortBy === SortBy.CREATED_AT) {
-        orderField = 'createdAt';
-      } else if (sortBy === SortBy.UPDATED_AT) {
-        orderField = 'updatedAt';
-      } else if (sortBy === SortBy.TITLE) {
-        orderField = 'title';
-      } else if (sortBy === SortBy.START_DATETIME) {
-        orderField = 'startDatetime';
-      } else if (sortBy === SortBy.END_DATETIME) {
-        orderField = 'endDatetime';
-      } else if (sortBy === SortBy.FEATURED) {
-        orderField = 'featured';
-      } else if (sortBy === SortBy.FREE) {
-        orderField = 'free';
-      } else {
-        orderField = 'ordering'; // Default to ordering
-      }
-
-      queryBuilder.orderBy(`course.${orderField}`, orderDirection);
-
-      // Apply pagination
+      queryBuilder.orderBy(`course.${sortBy}`, orderBy);
       queryBuilder.skip(offset).take(limit);
 
-      // Execute query
       [courses, total] = await queryBuilder.getManyAndCount();
     } else {
       // Use findAndCount for non-JSONB queries (maintains OR logic for search)
-      const whereClause: any = {
-        tenantId,
-        organisationId,
-        status: filters?.status || Not(CourseStatus.ARCHIVED),
-      };
-
-      // Apply filters (excluding JSONB filters which are handled above)
-      this.applyFilters(filters, whereClause);
-
-      // Build order clause - TypeORM expects 'ASC' or 'DESC' as string literals
-      const orderClause: any = {};
-      orderClause[sortBy] = orderBy;
-
       [courses, total] = await this.courseRepository.findAndCount({
         where: this.buildSearchConditions(filters, whereClause),
         order: orderClause,
@@ -397,13 +304,11 @@ export class CoursesService {
   }
 
   private applyFilters(filters: any, whereClause: any): void {
-    // Note: Cohort and Pathway filters are handled in QueryBuilder (needsJsonbQuery)
+    // Note: Cohort and Pathway filters are handled in QueryBuilder (when present)
     // because TypeORM's findAndCount doesn't support JSONB nested properties
-    // These filters are only applied here for non-JSONB query paths
-    // (Currently not used, but kept for consistency)
 
     // Boolean filters
-    const booleanFilters = ['featured', 'free'];
+    const booleanFilters = ["featured", "free"];
     booleanFilters.forEach((filter) => {
       if (filters?.[filter] !== undefined) {
         whereClause[filter] = filters[filter];
