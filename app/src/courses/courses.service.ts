@@ -21,6 +21,7 @@ import { Module, ModuleStatus } from '../modules/entities/module.entity';
 import {
   Lesson,
   LessonStatus,
+  LessonFormat,
   AttemptsGradeMethod,
 } from '../lessons/entities/lesson.entity';
 import {
@@ -44,7 +45,12 @@ import {
   SortBy,
   SortOrder,
 } from './dto/search-course.dto';
-import { CacheService, CourseHierarchy, StaticModuleHierarchy, StaticLessonHierarchy } from '../cache/cache.service';
+import {
+  CacheService,
+  CourseHierarchy,
+  StaticModuleHierarchy,
+  StaticLessonHierarchy,
+} from '../cache/cache.service';
 import {
   CourseStructureDto,
   BulkCourseOrderDto,
@@ -278,14 +284,20 @@ export class CoursesService {
   }
 
   private applyFilters(filters: any, whereClause: any): void {
-    // Cohort filter
+    // Note: Cohort and Pathway filters are handled in QueryBuilder (when present)
+    // because TypeORM's findAndCount doesn't support JSONB nested properties
     if (filters?.cohortId) {
       whereClause.params = {
         ...(whereClause.params || {}),
         cohortId: filters.cohortId,
       };
     }
-
+    if (filters?.pathwayId) {
+      whereClause.params = {
+        ...(whereClause.params || {}),
+        pathwayId: filters.pathwayId,
+      };
+    }
     // Boolean filters
     const booleanFilters = ['featured', 'free'];
     booleanFilters.forEach((filter) => {
@@ -352,7 +364,9 @@ export class CoursesService {
       .addSelect('COUNT(*)', 'count')
       .where('module.courseId IN (:...courseIds)', { courseIds })
       .andWhere('module.tenantId = :tenantId', { tenantId })
-      .andWhere('module.status != :archivedStatus', { archivedStatus: ModuleStatus.ARCHIVED })
+      .andWhere('module.status != :archivedStatus', {
+        archivedStatus: ModuleStatus.ARCHIVED,
+      })
       .groupBy('module.courseId')
       .getRawMany();
 
@@ -363,7 +377,9 @@ export class CoursesService {
       .addSelect('COUNT(*)', 'count')
       .where('enrollment.courseId IN (:...courseIds)', { courseIds })
       .andWhere('enrollment.tenantId = :tenantId', { tenantId })
-      .andWhere('enrollment.status = :publishedStatus', { publishedStatus: EnrollmentStatus.PUBLISHED })
+      .andWhere('enrollment.status = :publishedStatus', {
+        publishedStatus: EnrollmentStatus.PUBLISHED,
+      })
       .groupBy('enrollment.courseId')
       .getRawMany();
 
@@ -372,7 +388,10 @@ export class CoursesService {
     );
 
     const enrollmentCountMap = new Map(
-      enrollmentCounts.map((ec) => [ec.courseId, Number.parseInt(ec.count, 10)]),
+      enrollmentCounts.map((ec) => [
+        ec.courseId,
+        Number.parseInt(ec.count, 10),
+      ]),
     );
 
     return courses.map((course) => ({
@@ -534,14 +553,14 @@ export class CoursesService {
 
   /**
    * Extract static hierarchy from lesson data (excluding tracking)
-   * 
+   *
    * This helper extracts ONLY static/shared lesson structure - NO user-specific tracking data.
    * Why tracking is excluded:
    * - Tracking data (progress, status, timeSpent) is user-specific and changes frequently
    * - Each user has different progress, so it must never be cached
-   * 
+   *
    * IMPORTANT: This extracts ALL static fields to ensure response structure matches DB exactly.
-   * 
+   *
    * @param lesson Lesson entity with relations
    * @returns Static lesson hierarchy without tracking data
    */
@@ -585,59 +604,63 @@ export class CoursesService {
 
     // Extract associated lessons structure (static only, no tracking)
     if (lesson.associatedLesson && lesson.associatedLesson.length > 0) {
-      staticLesson.associatedLesson = lesson.associatedLesson.map((assocLesson: any) => ({
-        lessonId: assocLesson.lessonId,
-        parentId: assocLesson.parentId,
-        tenantId: assocLesson.tenantId,
-        organisationId: assocLesson.organisationId,
-        title: assocLesson.title,
-        alias: assocLesson.alias,
-        status: assocLesson.status,
-        description: assocLesson.description,
-        image: assocLesson.image,
-        startDatetime: assocLesson.startDatetime,
-        endDatetime: assocLesson.endDatetime,
-        storage: assocLesson.storage,
-        noOfAttempts: assocLesson.noOfAttempts,
-        attemptsGrade: assocLesson.attemptsGrade,
-        allowResubmission: assocLesson.allowResubmission,
-        format: assocLesson.format,
-        subFormat: assocLesson.subFormat,
-        mediaId: assocLesson.mediaId,
-        media: assocLesson.media, // Include media relation object (static)
-        prerequisites: assocLesson.prerequisites,
-        idealTime: assocLesson.idealTime,
-        resume: assocLesson.resume,
-        totalMarks: assocLesson.totalMarks,
-        passingMarks: assocLesson.passingMarks,
-        params: assocLesson.params,
-        courseId: assocLesson.courseId,
-        moduleId: assocLesson.moduleId,
-        sampleLesson: assocLesson.sampleLesson,
-        considerForPassing: assocLesson.considerForPassing,
-        ordering: assocLesson.ordering,
-        createdAt: assocLesson.createdAt,
-        updatedAt: assocLesson.updatedAt,
-        createdBy: assocLesson.createdBy,
-        updatedBy: assocLesson.updatedBy,
-        // Include associated files structure (static only)
-        associatedFiles: assocLesson.associatedFiles?.map((file: any) => ({
-          associatedFileId: file.associatedFileId,
-          mediaId: file.mediaId,
-          media: file.media,
-          ...file,
-        })),
-      }));
+      staticLesson.associatedLesson = lesson.associatedLesson.map(
+        (assocLesson: any) => ({
+          lessonId: assocLesson.lessonId,
+          parentId: assocLesson.parentId,
+          tenantId: assocLesson.tenantId,
+          organisationId: assocLesson.organisationId,
+          title: assocLesson.title,
+          alias: assocLesson.alias,
+          status: assocLesson.status,
+          description: assocLesson.description,
+          image: assocLesson.image,
+          startDatetime: assocLesson.startDatetime,
+          endDatetime: assocLesson.endDatetime,
+          storage: assocLesson.storage,
+          noOfAttempts: assocLesson.noOfAttempts,
+          attemptsGrade: assocLesson.attemptsGrade,
+          allowResubmission: assocLesson.allowResubmission,
+          format: assocLesson.format,
+          subFormat: assocLesson.subFormat,
+          mediaId: assocLesson.mediaId,
+          media: assocLesson.media, // Include media relation object (static)
+          prerequisites: assocLesson.prerequisites,
+          idealTime: assocLesson.idealTime,
+          resume: assocLesson.resume,
+          totalMarks: assocLesson.totalMarks,
+          passingMarks: assocLesson.passingMarks,
+          params: assocLesson.params,
+          courseId: assocLesson.courseId,
+          moduleId: assocLesson.moduleId,
+          sampleLesson: assocLesson.sampleLesson,
+          considerForPassing: assocLesson.considerForPassing,
+          ordering: assocLesson.ordering,
+          createdAt: assocLesson.createdAt,
+          updatedAt: assocLesson.updatedAt,
+          createdBy: assocLesson.createdBy,
+          updatedBy: assocLesson.updatedBy,
+          // Include associated files structure (static only)
+          associatedFiles: assocLesson.associatedFiles?.map((file: any) => ({
+            associatedFileId: file.associatedFileId,
+            mediaId: file.mediaId,
+            media: file.media,
+            ...file,
+          })),
+        }),
+      );
     }
 
     // Extract associated files structure (static only)
     if (lesson.associatedFiles && lesson.associatedFiles.length > 0) {
-      staticLesson.associatedFiles = lesson.associatedFiles.map((file: any) => ({
-        associatedFileId: file.associatedFileId,
-        mediaId: file.mediaId,
-        media: file.media,
-        ...file,
-      }));
+      staticLesson.associatedFiles = lesson.associatedFiles.map(
+        (file: any) => ({
+          associatedFileId: file.associatedFileId,
+          mediaId: file.mediaId,
+          media: file.media,
+          ...file,
+        }),
+      );
     }
 
     return staticLesson;
@@ -645,19 +668,22 @@ export class CoursesService {
 
   /**
    * Extract static hierarchy from module data (excluding tracking)
-   * 
+   *
    * This helper extracts ONLY static/shared module structure - NO user-specific tracking data.
    * Why tracking is excluded:
    * - Tracking data (progress, completedLessons) is user-specific and changes frequently
    * - Each user has different progress, so it must never be cached
-   * 
+   *
    * IMPORTANT: This extracts ALL static fields to ensure response structure matches DB exactly.
-   * 
+   *
    * @param module Module entity
    * @param staticLessons Static lesson hierarchy array (if lessons are included)
    * @returns Static module hierarchy without tracking data
    */
-  private extractStaticModuleHierarchy(module: any, staticLessons?: StaticLessonHierarchy[]): StaticModuleHierarchy {
+  private extractStaticModuleHierarchy(
+    module: any,
+    staticLessons?: StaticLessonHierarchy[],
+  ): StaticModuleHierarchy {
     return {
       moduleId: module.moduleId,
       parentId: module.parentId,
@@ -685,17 +711,17 @@ export class CoursesService {
 
   /**
    * Extract static course hierarchy from course, modules, and lessons (excluding tracking)
-   * 
+   *
    * This helper extracts ONLY static/shared course structure - NO user-specific tracking or eligibility data.
    * Why hierarchy is cached:
    * - Course structure (modules, lessons) is identical for all users
    * - This static data rarely changes and can be safely cached
-   * 
+   *
    * Why tracking and eligibility are NOT cached:
    * - Tracking data (progress, status, timeSpent, completedLessons) is user-specific
    * - Eligibility checks depend on user's completion status of prerequisite courses
    * - Each user has different tracking and eligibility, so it must never be cached
-   * 
+   *
    * @param course Course entity
    * @param modules Array of module entities (if modules are included)
    * @param lessonsByModule Map of moduleId to lessons array (if lessons are included)
@@ -742,29 +768,29 @@ export class CoursesService {
 
   /**
    * Find course hierarchy with tracking information
-   * 
+   *
    * This method implements Redis-based caching for the static course hierarchy.
-   * 
+   *
    * Caching Strategy:
    * - Caches ONLY static/shared hierarchy (course + modules + lessons structure)
    * - NEVER caches user-specific tracking data (progress, status, timeSpent, completedLessons)
    * - NEVER caches eligibility data (depends on user's prerequisite completion)
-   * 
+   *
    * Cache Behavior:
    * - On cache hit: Returns cached hierarchy immediately, then fetches tracking from DB and merges
    * - On cache miss: Fetches hierarchy from DB, caches it, then fetches tracking and merges
    * - When LMS_CACHE_ENABLED=false: Skips Redis entirely, fetches everything from DB
-   * 
+   *
    * Why hierarchy is cached:
    * - Course structure (modules, lessons) is identical for all users
    * - This static data rarely changes and can be safely cached
    * - Caching reduces database load for frequently accessed course structures
-   * 
+   *
    * Why tracking is NOT cached:
    * - Tracking data (progress, status, timeSpent, completedLessons) is user-specific
    * - Each user has different progress, so caching would return wrong data
    * - Tracking data changes frequently as users progress through the course
-   * 
+   *
    * @param courseId The course ID to find
    * @param userId The user ID for tracking data
    * @param tenantId The tenant ID for data isolation
@@ -868,10 +894,13 @@ export class CoursesService {
     // Only cache when modules or lessons are requested (hierarchy structure is needed)
     // Use moduleId from request if provided (hierarchy may be filtered by module)
     let cachedHierarchy: CourseHierarchy | null = null;
-    
+
     // Check cache for static hierarchy (only if caching is enabled)
     // When LMS_CACHE_ENABLED=false, this will return null and we'll fetch from DB
-    cachedHierarchy = await this.cacheService.getCourseHierarchyCached(courseId, moduleId);
+    cachedHierarchy = await this.cacheService.getCourseHierarchyCached(
+      courseId,
+      moduleId,
+    );
 
     let modules: any[] = [];
     let lessons: any[] = [];
@@ -946,9 +975,17 @@ export class CoursesService {
 
       // Extract static hierarchy and cache it
       // This caches ONLY the static structure - NO tracking data
-      const staticHierarchy = this.extractStaticCourseHierarchy(course, modules, lessonsByModule);
-      await this.cacheService.setCourseHierarchyCached(courseId, staticHierarchy, moduleId);
-      
+      const staticHierarchy = this.extractStaticCourseHierarchy(
+        course,
+        modules,
+        lessonsByModule,
+      );
+      await this.cacheService.setCourseHierarchyCached(
+        courseId,
+        staticHierarchy,
+        moduleId,
+      );
+
       // Use the extracted hierarchy for building response
       cachedHierarchy = staticHierarchy;
     } else {
@@ -1025,9 +1062,9 @@ export class CoursesService {
                 // Include associated files structure (static only)
                 associatedFiles: lesson.associatedFiles || [],
               }));
-              
+
               lessonsByModule.set(module.moduleId, reconstructedLessons);
-              
+
               // Flatten lessons for tracking queries (only parent lessons)
               reconstructedLessons.forEach((lesson) => {
                 if (!lesson.parentId) {
@@ -1054,22 +1091,25 @@ export class CoursesService {
       // OPTIMIZATION: Filter lesson tracks by actual lesson IDs that were fetched
       // This reduces data fetched by 70-95% when moduleId is provided
       const lessonIds = lessons.map((l) => l.lessonId);
-      
+
       // Also include associated lesson IDs if they exist (for associated lesson tracking)
       const associatedLessonIds: string[] = [];
       lessons.forEach((lesson) => {
         if (lesson.associatedLesson && lesson.associatedLesson.length > 0) {
           lesson.associatedLesson.forEach((assocLesson: any) => {
-            if (assocLesson.lessonId && !lessonIds.includes(assocLesson.lessonId)) {
+            if (
+              assocLesson.lessonId &&
+              !lessonIds.includes(assocLesson.lessonId)
+            ) {
               associatedLessonIds.push(assocLesson.lessonId);
             }
           });
         }
       });
-      
+
       // Combine all lesson IDs that need tracking data
       const allLessonIds = [...lessonIds, ...associatedLessonIds];
-      
+
       // Only query if we have lesson IDs to filter by
       if (allLessonIds.length > 0) {
         lessonTracks = await this.lessonTrackRepository.find({
@@ -1824,11 +1864,7 @@ export class CoursesService {
 
       // Invalidate all related caches after successful transaction
       await Promise.all([
-        this.cacheService.invalidateCourse(
-          courseId,
-          tenantId,
-          organisationId,
-        ),
+        this.cacheService.invalidateCourse(courseId, tenantId, organisationId),
         // Invalidate course enrollment cache when course is deleted
         this.cacheService.invalidateCourseEnrollments(
           courseId,
@@ -2804,5 +2840,121 @@ export class CoursesService {
       // Return empty map on error to not break the main flow
       return new Map();
     }
+  }
+
+  /**
+   * Get lesson counts (video, document, total) for multiple courses
+   * OPTIMIZED: Direct database query instead of fetching hierarchy
+   *
+   * @param courseIds - Array of course IDs to get counts for
+   * @param tenantId - Tenant ID
+   * @param organisationId - Organisation ID
+   * @returns Map of courseId to { videoCount, resourceCount, totalItems }
+   */
+  async getLessonCountsByCourseIds(
+    courseIds: string[],
+    tenantId: string,
+    organisationId: string,
+  ): Promise<
+    Map<
+      string,
+      { videoCount: number; resourceCount: number; totalItems: number }
+    >
+  > {
+    if (courseIds.length === 0) {
+      return new Map();
+    }
+
+    // OPTIMIZED: Single query to get all counts grouped by courseId and format
+    const lessonCounts = await this.lessonRepository
+      .createQueryBuilder('lesson')
+      .select('lesson.courseId', 'courseId')
+      .addSelect('lesson.format', 'format')
+      .addSelect('COUNT(*)', 'count')
+      .where('lesson.courseId IN (:...courseIds)', { courseIds })
+      .andWhere('lesson.tenantId = :tenantId', { tenantId })
+      .andWhere('lesson.organisationId = :organisationId', { organisationId })
+      .andWhere('lesson.status = :status', { status: LessonStatus.PUBLISHED })
+      .andWhere('lesson.parentId IS NULL') // Only count parent lessons, exclude child lessons
+      .groupBy('lesson.courseId')
+      .addGroupBy('lesson.format')
+      .getRawMany();
+
+    // Build result map
+    const countsMap = new Map<
+      string,
+      { videoCount: number; resourceCount: number; totalItems: number }
+    >();
+
+    // Initialize all courseIds with zero counts
+    courseIds.forEach((courseId) => {
+      countsMap.set(courseId, {
+        videoCount: 0,
+        resourceCount: 0,
+        totalItems: 0,
+      });
+    });
+
+    // Aggregate counts by courseId
+    lessonCounts.forEach((row) => {
+      const courseId = row.courseId;
+      const format = row.format;
+      const count = Number.parseInt(row.count, 10);
+
+      const counts = countsMap.get(courseId) || {
+        videoCount: 0,
+        resourceCount: 0,
+        totalItems: 0,
+      };
+
+      // Count total items (all published lessons)
+      counts.totalItems += count;
+
+      // Count videos
+      if (format === LessonFormat.VIDEO) {
+        counts.videoCount += count;
+      }
+
+      // Count resources (documents)
+      if (format === LessonFormat.DOCUMENT) {
+        counts.resourceCount += count;
+      }
+
+      countsMap.set(courseId, counts);
+    });
+
+    return countsMap;
+  }
+
+  /**
+   * Get lesson counts (video, document, total) for a single course
+   * OPTIMIZED: Direct database query instead of fetching hierarchy
+   *
+   * @param courseId - Course ID to get counts for
+   * @param tenantId - Tenant ID
+   * @param organisationId - Organisation ID
+   * @returns { videoCount, resourceCount, totalItems }
+   */
+  async getLessonCountsByCourseId(
+    courseId: string,
+    tenantId: string,
+    organisationId: string,
+  ): Promise<{
+    videoCount: number;
+    resourceCount: number;
+    totalItems: number;
+  }> {
+    const countsMap = await this.getLessonCountsByCourseIds(
+      [courseId],
+      tenantId,
+      organisationId,
+    );
+    return (
+      countsMap.get(courseId) || {
+        videoCount: 0,
+        resourceCount: 0,
+        totalItems: 0,
+      }
+    );
   }
 }

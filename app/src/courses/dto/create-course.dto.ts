@@ -150,7 +150,9 @@ export class CreateCourseDto {
     example: {
       difficulty: 'intermediate',
       prerequisites: ['basic-programming'],
-      learningOutcomes: ['outcome1', 'outcome2']
+      learningOutcomes: ['outcome1', 'outcome2'],
+      cohortId: '123e4567-e89b-12d3-a456-426614174000',
+      pathwayId: '123e4567-e89b-12d3-a456-426614174000'
     }
   })
   @IsOptional()
