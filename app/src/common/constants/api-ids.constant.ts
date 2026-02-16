@@ -2,6 +2,7 @@ export const API_IDS = {
   // Course APIs
   CREATE_COURSE: 'api.course.create',
   SEARCH_COURSES: 'api.course.search',
+  GET_LESSON_COUNTS: 'api.course.lesson.counts',
   GET_COURSE_BY_ID: 'api.course.read',
   GET_COURSE_HIERARCHY: 'api.course.hierarchy',
   GET_COURSE_HIERARCHY_WITH_TRACKING: 'api.course.tracking',
