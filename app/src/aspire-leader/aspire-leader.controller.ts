@@ -118,6 +118,7 @@ export class AspireLeaderController {
       tenantOrg.organisationId,
       headers.authorization,
       aggregationDto.contentType,
+      aggregationDto.pathwayId,
     );
   }
 
