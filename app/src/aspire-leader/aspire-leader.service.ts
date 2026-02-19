@@ -1035,12 +1035,6 @@ export class AspireLeaderService {
     contentType: string | undefined,
     pathwayId?: string | undefined,
   ): Promise<any> {
-    if ((cohortId && pathwayId) || (!cohortId && !pathwayId)) {
-      throw new BadRequestException(
-        'Either cohortId or pathwayId must be provided, but not both.',
-      );
-    }
-
     const effectiveTenantId =
       tenantId || this.configService.get('TENANT_ID');
     const effectiveOrganisationId =
