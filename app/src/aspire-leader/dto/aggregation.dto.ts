@@ -6,10 +6,23 @@ export class AggregationDto {
         description: 'Associated cohort ID',
         example: '123e4567-e89b-12d3-a456-426614174001',
         type: 'string',
-        format: 'uuid'
+        format: 'uuid',
+        required: false
     })
+    @IsOptional()
     @IsUUID()
-    cohortId: string;
+    cohortId?: string;
+
+    @ApiProperty({
+        description: 'Associated pathway ID',
+        example: '123e4567-e89b-12d3-a456-426614174001',
+        type: 'string',
+        format: 'uuid',
+        required: false
+    })
+    @IsOptional()
+    @IsUUID()
+    pathwayId?: string;
 
     @ApiProperty({
         description: 'Filter parameters for content type (e.g., event)',

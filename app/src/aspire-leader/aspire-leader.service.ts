@@ -1028,12 +1028,19 @@ export class AspireLeaderService {
     }
   }
   async getAggregatedContent(
-    cohortId: string,
+    cohortId: string | undefined,
     tenantId: string | undefined,
     organisationId: string | undefined,
     authorization: string,
     contentType: string | undefined,
+    pathwayId?: string | undefined,
   ): Promise<any> {
+    if ((cohortId && pathwayId) || (!cohortId && !pathwayId)) {
+      throw new BadRequestException(
+        'Either cohortId or pathwayId must be provided, but not both.',
+      );
+    }
+
     const effectiveTenantId =
       tenantId || this.configService.get('TENANT_ID');
     const effectiveOrganisationId =
@@ -1041,12 +1048,23 @@ export class AspireLeaderService {
 
     const isFiltered = contentType && contentType !== 'all';
 
-    // 1. Find all published courses for the cohort
+    // 1. Find all published courses for the cohort or pathway
     const queryBuilder = this.courseRepository
       .createQueryBuilder('course')
       .select(['course.courseId', 'course.title', 'course.params']) // Only fetch needed columns
-      .where('course."status" = :status', { status: CourseStatus.PUBLISHED })
-      .andWhere(`course."params"->>'cohortId' = :cohortId`, { cohortId });
+      .where('course."status" = :status', { status: CourseStatus.PUBLISHED });
+
+    if (cohortId) {
+      queryBuilder.andWhere(`course."params"->>'cohortId' = :cohortId`, {
+        cohortId,
+      });
+    }
+
+    if (pathwayId) {
+      queryBuilder.andWhere(`course."params"->>'pathwayId' = :pathwayId`, {
+        pathwayId,
+      });
+    }
 
     if (effectiveTenantId) {
       queryBuilder.andWhere('course."tenantId" = :tenantId', {
@@ -1063,8 +1081,10 @@ export class AspireLeaderService {
     const courses = await queryBuilder.getMany();
 
     if (courses.length === 0) {
+      const identifierType = cohortId ? 'cohortId' : 'pathwayId';
+      const identifierValue = cohortId || pathwayId;
       throw new NotFoundException(
-        `No course found with cohortId: ${cohortId}`,
+        `No course found with ${identifierType}: ${identifierValue}`,
       );
     }
 
