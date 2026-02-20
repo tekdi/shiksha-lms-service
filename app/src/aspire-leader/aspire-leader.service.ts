@@ -1061,7 +1061,6 @@ export class AspireLeaderService {
         'course.params'
       ])
       .where('course."status" = :status', { status: CourseStatus.PUBLISHED });
-console.log('pathwayId:', pathwayId, typeof pathwayId);
 
     if (cohortId) {
       queryBuilder.andWhere(`course."params"->>'cohortId' = :cohortId`, {
@@ -1086,8 +1085,7 @@ console.log('pathwayId:', pathwayId, typeof pathwayId);
         organisationId: effectiveOrganisationId,
       });
     }
-console.log(queryBuilder.getQuery());
-console.log(queryBuilder.getParameters());
+
 
 const courses = await queryBuilder.getMany();
 
