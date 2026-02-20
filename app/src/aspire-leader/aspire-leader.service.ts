@@ -30,7 +30,7 @@ import { UpdateTestProgressDto } from './dto/update-test-progress.dto';
 import { RESPONSE_MESSAGES } from '../common/constants/response-messages.constant';
 import { AttemptsGradeMethod } from '../lessons/entities/lesson.entity';
 import { Media } from '../media/entities/media.entity';
-import { TrackingService } from 'src/tracking/tracking.service';
+import { TrackingService } from '../tracking/tracking.service';
 
 @Injectable()
 export class AspireLeaderService {
@@ -1035,7 +1035,7 @@ export class AspireLeaderService {
     contentType: string | undefined,
     pathwayId?: string | undefined,
   ): Promise<any> {
-    if ((cohortId && pathwayId)) {
+    if (cohortId && pathwayId) {
       throw new BadRequestException(
         'Either cohortId or pathwayId must be provided, but not both.',
       );
@@ -1051,7 +1051,15 @@ export class AspireLeaderService {
     // 1. Find all published courses for the cohort or pathway
     const queryBuilder = this.courseRepository
       .createQueryBuilder('course')
-      .select(['course.courseId', 'course.title', 'course.params']) // Only fetch needed columns
+      // Fetch additional fields: shortDescription, description, image
+      .select([
+        'course.courseId',
+        'course.title',
+        'course.shortDescription',
+        'course.description',
+        'course.image',
+        'course.params'
+      ])
       .where('course."status" = :status', { status: CourseStatus.PUBLISHED });
 
     if (cohortId) {
@@ -1078,7 +1086,8 @@ export class AspireLeaderService {
       });
     }
 
-    const courses = await queryBuilder.getMany();
+
+const courses = await queryBuilder.getMany();
 
     if (courses.length === 0) {
       const identifierType = cohortId ? 'cohortId' : 'pathwayId';
@@ -1091,7 +1100,7 @@ export class AspireLeaderService {
     const aggregatedData: any[] = [];
     const courseIds = courses.map((course) => course.courseId);
 
-    // 2. Fetch all modules for these courses in bulk
+    // 2. Fetch all modules for these courses
     const moduleWhere: any = {
       courseId: In(courseIds),
       status: Not(CourseStatus.ARCHIVED as any),
@@ -1103,11 +1112,12 @@ export class AspireLeaderService {
 
     const allModules = await this.moduleRepository.find({
       where: moduleWhere,
-      select: ['moduleId', 'title', 'courseId', 'parentId'], // Only fetch needed columns
+      // Fetch additional fields: description, image
+      select: ['moduleId', 'title', 'courseId', 'parentId', 'description', 'image'],
       order: { ordering: 'ASC' },
     });
 
-    // 3. Fetch all lessons for these courses in bulk
+    // 3. Fetch all lessons for these courses
     const lessonWhere: any = {
       courseId: In(courseIds),
       status: LessonStatus.PUBLISHED,
@@ -1130,6 +1140,15 @@ export class AspireLeaderService {
         subFormat: true,
         courseId: true,
         moduleId: true,
+        parentId: true,
+        // Additional fields
+        description: true,
+        image: true,
+        startDatetime: true,
+        endDatetime: true,
+        resume: true,
+        ordering: true,
+        checkedOut: true,
         media: {
           mediaId: true,
           format: true,
@@ -1138,15 +1157,68 @@ export class AspireLeaderService {
           source: true,
           status: true,
         },
+        associatedFiles: {
+            associatedFilesId: true,
+            lessonId: true,
+            mediaId: true,
+            media: {
+              mediaId: true,
+              format: true,
+              subFormat: true,
+              path: true,
+              source: true
+            }
+        }
       },
-      relations: ['media'],
+      relations: ['media', 'associatedFiles', 'associatedFiles.media'],
       order: { ordering: 'ASC' },
     });
 
-    // 4. Organize data into Maps for O(1) lookup
+
+    // 4. Fetch Tracking Data if userId is available
+    let courseTracks: any[] = [];
+    let moduleTracks: any[] = [];
+    let lessonTracks: any[] = [];
+
+      // Course Tracking
+      courseTracks = await this.courseTrackRepository.find({
+        where: {
+          courseId: In(courseIds),
+          tenantId: effectiveTenantId,
+          organisationId: effectiveOrganisationId
+        }
+      });
+
+      // Module Tracking (We need to use 'module_track' repository if injected, or use query builder/manager if not directly available as a property)
+       moduleTracks = await this.courseRepository.manager.find('module_track', {
+         where: {
+            // We need moduleIds.
+            moduleId: In(allModules.map(m => m.moduleId)),
+            tenantId: effectiveTenantId,
+            organisationId: effectiveOrganisationId
+         }
+       });
+
+       // Lesson Tracking
+       lessonTracks = await this.lessonTrackRepository.find({
+         where: {
+           lessonId: In(allLessons.map(l => l.lessonId)),
+           tenantId: effectiveTenantId,
+           organisationId: effectiveOrganisationId
+         }
+       });
+    
+
+    // Maps for tracking data
+    const courseTrackMap = new Map(courseTracks.map(t => [t.courseId, t]));
+    const moduleTrackMap = new Map(moduleTracks.map(t => [t['moduleId'], t])); // Using 'moduleId' index
+    const lessonTrackMap = new Map(lessonTracks.map(t => [t.lessonId, t]));
+
+    // 5. Organize data into Maps for O(1) lookup
     const modulesByCourse = new Map<string, CourseModule[]>();
     const submodulesByParent = new Map<string, CourseModule[]>();
     const lessonsByModule = new Map<string, Lesson[]>();
+    const nestedLessonsByParent = new Map<string, Lesson[]>();
 
     allModules.forEach((mod) => {
       if (mod.parentId) {
@@ -1159,34 +1231,57 @@ export class AspireLeaderService {
     });
 
     allLessons.forEach((lesson) => {
-      if (lesson.moduleId) {
+      if (lesson.parentId) {
+          if (!nestedLessonsByParent.has(lesson.parentId)) nestedLessonsByParent.set(lesson.parentId, []);
+          nestedLessonsByParent.get(lesson.parentId)?.push(lesson);
+      } else if (lesson.moduleId) {
         if (!lessonsByModule.has(lesson.moduleId)) lessonsByModule.set(lesson.moduleId, []);
         lessonsByModule.get(lesson.moduleId)?.push(lesson);
       }
     });
 
-    // 5. Build the hierarchical structure in memory
+    // 6. Build the hierarchical structure in memory
     const coursesList: any[] = [];
     for (const course of courses) {
+      const cTrack = courseTrackMap.get(course.courseId);
       const courseData: any = {
         courseId: course.courseId,
         title: course.title,
+        shortDescription: course.shortDescription,
+        description: course.description,
+        image: course.image,
+        tracking: {
+            status: cTrack?.status || 'incomplete',
+            progress: cTrack ? Math.round((cTrack.completedLessons / (cTrack.noOfLessons || 1)) * 100) : 0, // Approx if not stored
+            completedLessons: cTrack?.completedLessons || 0,
+            totalLessons: cTrack?.noOfLessons || 0,
+        },
         modules: [],
       };
 
       const topModules = modulesByCourse.get(course.courseId) || [];
 
       for (const module of topModules) {
+        const mTrack = moduleTrackMap.get(module.moduleId);
         const moduleData: any = {
           moduleId: module.moduleId,
+          courseId: module.courseId,
           title: module.title,
+          description: module.description,
+          image: module.image,
+          tracking: {
+              status: mTrack?.['status'] || 'incomplete',
+              progress: mTrack?.['progress'] || 0,
+              completedLessons: mTrack?.['completedLessons'] || 0,
+              totalLessons: mTrack?.['totalLessons'] || 0
+          },
           contents: [],
         };
 
         const submodules = submodulesByParent.get(module.moduleId) || [];
         const directLessons = lessonsByModule.get(module.moduleId) || [];
 
-        // Collect all lessons for this "Unit" (Module/SubModule)
+        // Collect all lessons for this "Lesson" (renamed from Module/SubModule context in typical LMS terms)
         const allModuleLessons = [...directLessons];
 
         // Flatten sub-modules into the contents of the unit
@@ -1195,20 +1290,82 @@ export class AspireLeaderService {
           allModuleLessons.push(...submoduleLessons);
         }
 
-        moduleData.contents = allModuleLessons.map((lesson) => ({
-          lessonId: lesson.lessonId,
-          title: lesson.title,
-          format: lesson.format,
-          subFormat: lesson.subFormat,
-          media: lesson.media ? {
-            mediaId: lesson.media.mediaId,
-            format: lesson.media.format,
-            subFormat: lesson.media.subFormat,
-            path: lesson.media.path,
-            source: lesson.media.source,
-            status: lesson.media.status,
-          } : null,
-        }));
+        moduleData.contents = allModuleLessons.map((lesson) => {
+            const lTrack = lessonTrackMap.get(lesson.lessonId);
+            const nested = nestedLessonsByParent.get(lesson.lessonId) || [];
+            
+            return {
+                lessonId: lesson.lessonId,
+                title: lesson.title,
+                description: lesson.description,
+                image: lesson.image,
+                startDateTime: lesson.startDatetime,
+                endDateTime: lesson.endDatetime,
+                format: lesson.format,
+                subFormat: lesson.subFormat,
+                resume: lesson.resume,
+                ordering: lesson.ordering,
+                media: lesson.media ? {
+                    mediaId: lesson.media.mediaId,
+                    format: lesson.media.format,
+                    subFormat: lesson.media.subFormat,
+                    path: lesson.media.path,
+                    source: lesson.media.source,
+                    // status: lesson.media.status // Removed based on prompt requirement not strictly showing this in media obj
+                } : null,
+                associatedFiles: lesson.associatedFiles?.map(af => ({
+                    lessonID: af.lessonId,
+                    mediaId: af.mediaId,
+                    media: af.media ? {
+                        mediaId: af.media.mediaId,
+                        format: af.media.format,
+                        subFormat: af.media.subFormat,
+                        path: af.media.path,
+                        source: af.media.source
+                    } : null
+                })) || [],
+                associatedLesson: nested.map(nl => {
+                    const nlTrack = lessonTrackMap.get(nl.lessonId);
+                    return {
+                        lessonId: nl.lessonId,
+                        title: nl.title,
+                        desc: nl.description,
+                        image: nl.image,
+                        startDateTime: nl.startDatetime,
+                        endDateTime: nl.endDatetime,
+                        format: nl.format,
+                        subformat: nl.subFormat,
+                        resume: nl.resume,
+                        media: nl.media ? {
+                            mediaId: nl.media.mediaId,
+                            path: nl.media.path,
+                            source: nl.media.source
+                        } : null,
+                        associatedFiles: nl.associatedFiles?.map(af => ({
+                            lessonID: af.lessonId,
+                            mediaId: af.mediaId,
+                            media: af.media
+                        })) || [],
+                        tracking: {
+                            status: nlTrack?.status || 'not_started',
+                            progress: nlTrack?.completionPercentage || 0,
+                            lastAccessed: nlTrack?.startDatetime, // approximate
+                            timeSpent: nlTrack?.timeSpent || 0,
+                            score: nlTrack?.score,
+                            attempt: nlTrack?.attempt
+                        }
+                    };
+                }),
+                tracking: {
+                    status: lTrack?.status || 'not_started',
+                    progress: lTrack?.completionPercentage || 0,
+                    lastAccessed: lTrack?.startDatetime,
+                    timeSpent: lTrack?.timeSpent || 0,
+                    score: lTrack?.score,
+                    attempt: lTrack?.attempt
+                }
+            };
+        });
 
         if (moduleData.contents.length > 0 || !isFiltered) {
           courseData.modules.push(moduleData);

@@ -35,6 +35,98 @@ export class AggregationDto {
     contentType?: string;
 }
 
+export class TrackingDto {
+    @ApiProperty()
+    status: string;
+
+    @ApiProperty({ required: false })
+    progress?: number;
+
+    @ApiProperty({ required: false })
+    completedLessons?: number;
+
+    @ApiProperty({ required: false })
+    totalLessons?: number;
+
+    @ApiProperty({ required: false })
+    lastAccessed?: Date;
+
+    @ApiProperty({ required: false })
+    timeSpent?: number;
+
+    @ApiProperty({ required: false })
+    score?: number;
+
+    @ApiProperty({ required: false })
+    attempt?: number;
+}
+
+export class MediaDto {
+    @ApiProperty({ required: false })
+    mediaId?: string;
+
+    @ApiProperty({ required: false })
+    format?: string;
+
+    @ApiProperty({ required: false })
+    subFormat?: string;
+
+    @ApiProperty({ required: false })
+    path?: string;
+
+    @ApiProperty({ required: false })
+    source?: string;
+}
+
+export class AssociatedFileDto {
+    @ApiProperty()
+    lessonID: string;
+
+    @ApiProperty()
+    mediaId: string;
+
+    @ApiProperty()
+    media: MediaDto;
+}
+
+export class AssociatedLessonDto {
+    @ApiProperty()
+    lessonId: string;
+
+    @ApiProperty()
+    title: string;
+
+    @ApiProperty({ required: false })
+    desc?: string;
+
+    @ApiProperty({ required: false })
+    image?: string;
+
+    @ApiProperty({ required: false })
+    startDateTime?: Date;
+
+    @ApiProperty({ required: false })
+    endDateTime?: Date;
+
+    @ApiProperty()
+    format: string;
+
+    @ApiProperty()
+    subformat: string;
+
+    @ApiProperty()
+    resume: boolean;
+
+    @ApiProperty({ required: false })
+    media?: MediaDto;
+
+    @ApiProperty({ type: [AssociatedFileDto], required: false })
+    associatedFiles?: AssociatedFileDto[];
+
+    @ApiProperty({ required: false })
+    tracking?: TrackingDto;
+}
+
 export class ContentDetailDto {
     @ApiProperty()
     lessonId: string;
@@ -42,14 +134,41 @@ export class ContentDetailDto {
     @ApiProperty()
     title: string;
 
+    @ApiProperty({ required: false })
+    description?: string;
+
+    @ApiProperty({ required: false })
+    image?: string;
+
+    @ApiProperty({ required: false })
+    startDateTime?: Date;
+
+    @ApiProperty({ required: false })
+    endDateTime?: Date;
+
     @ApiProperty()
     format: string;
 
     @ApiProperty()
     subFormat: string;
 
+    @ApiProperty()
+    resume: boolean;
+
+    @ApiProperty()
+    ordering: number;
+
     @ApiProperty({ required: false })
-    media?: any;
+    media?: MediaDto;
+
+    @ApiProperty({ type: [AssociatedFileDto], required: false })
+    associatedFiles?: AssociatedFileDto[];
+
+    @ApiProperty({ type: [AssociatedLessonDto], required: false })
+    associatedLesson?: AssociatedLessonDto[];
+
+    @ApiProperty({ required: false })
+    tracking?: TrackingDto;
 }
 
 export class ModuleDetailDto {
@@ -57,7 +176,19 @@ export class ModuleDetailDto {
     moduleId: string;
 
     @ApiProperty()
+    courseId: string;
+
+    @ApiProperty()
     title: string;
+
+    @ApiProperty({ required: false })
+    description?: string;
+
+    @ApiProperty({ required: false })
+    image?: string;
+
+    @ApiProperty({ required: false })
+    tracking?: TrackingDto;
 
     @ApiProperty({ type: [ContentDetailDto] })
     contents: ContentDetailDto[];
@@ -69,6 +200,18 @@ export class AggregatedCourseResponseDto {
 
     @ApiProperty()
     title: string;
+
+    @ApiProperty({ required: false })
+    shortDescription?: string;
+
+    @ApiProperty({ required: false })
+    description?: string;
+
+    @ApiProperty({ required: false })
+    image?: string;
+
+    @ApiProperty({ required: false })
+    tracking?: TrackingDto;
 
     @ApiProperty({ type: [ModuleDetailDto] })
     modules: ModuleDetailDto[];
