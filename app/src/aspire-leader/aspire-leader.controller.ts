@@ -107,20 +107,21 @@ export class AspireLeaderController {
     description: 'Aggregated content retrieved successfully',
     type: AggregatedResponseDto
   })
-  async getAggregatedContent(
-    @Query() aggregationDto: AggregationDto,
-    @TenantOrg() tenantOrg: { tenantId: string; organisationId: string },
-    @Headers() headers: AggregationHeadersDto,
-  ): Promise<any> {
-    return this.aspireLeaderService.getAggregatedContent(
-      aggregationDto.cohortId,
-      tenantOrg.tenantId,
-      tenantOrg.organisationId,
-      headers.authorization,
-      aggregationDto.contentType,
-      aggregationDto.pathwayId,
-    );
-  }
+async getAggregatedContent(
+  @Body() aggregationDto: AggregationDto,
+  @TenantOrg() tenantOrg: { tenantId: string; organisationId: string },
+  @Headers() headers: AggregationHeadersDto,
+): Promise<any> {
+  return this.aspireLeaderService.getAggregatedContent(
+    aggregationDto.cohortId,
+    tenantOrg.tenantId,
+    tenantOrg.organisationId,
+    headers.authorization,
+    aggregationDto.contentType,
+    aggregationDto.pathwayId,
+  );
+}
+
 
   @Patch('tracking/update_test_progress')
   @ApiId(API_IDS.UPDATE_TEST_PROGRESS)
