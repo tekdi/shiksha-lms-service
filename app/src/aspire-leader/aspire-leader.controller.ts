@@ -96,7 +96,7 @@ export class AspireLeaderController {
       tenantOrg.organisationId,
     );
   }
-  @Get('aggregate-content')
+  @Post('aggregate-content')
   @ApiId(API_IDS.GET_AGGREGATED_CONTENT)
   @ApiOperation({
     summary: 'Get nested aggregated content for a cohort',
