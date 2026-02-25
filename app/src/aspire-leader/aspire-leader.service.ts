@@ -31,6 +31,7 @@ import { RESPONSE_MESSAGES } from '../common/constants/response-messages.constan
 import { AttemptsGradeMethod } from '../lessons/entities/lesson.entity';
 import { Media } from '../media/entities/media.entity';
 import { TrackingService } from '../tracking/tracking.service';
+import { CacheService } from '../cache/cache.service';
 
 @Injectable()
 export class AspireLeaderService {
@@ -54,6 +55,7 @@ export class AspireLeaderService {
     @InjectRepository(CourseModule)
     private readonly moduleRepository: Repository<CourseModule>,
     private readonly configService: ConfigService,
+    private readonly cacheService: CacheService,
   ) { }
 
   /**
@@ -1048,6 +1050,62 @@ export class AspireLeaderService {
 
     const isFiltered = contentType && contentType !== 'all';
 
+    // Cache key: static structure is cached per pathway/cohort + tenant + org + contentType; tracking is never cached
+    const aggregateIdentifier = pathwayId || cohortId;
+    const cacheKey = `course:aggregate:${aggregateIdentifier}:${effectiveTenantId}:${effectiveOrganisationId}:${contentType ?? 'all'}`;
+    this.logger.log(`[aggregate-content] API called, checking cache key: ${cacheKey}`);
+    const cachedStatic = await this.cacheService.getAggregateContentCached(cacheKey);
+    if (cachedStatic !== null) {
+      this.logger.log(`[aggregate-content] API serving from CACHE (HIT), key: ${cacheKey}`);
+      const { courseIds, moduleIds, lessonIds } = this.collectAggregateIds(cachedStatic.courses);
+      const [courseTracks, moduleTracks, lessonTracks] = await Promise.all([
+        courseIds.length
+          ? this.courseTrackRepository.find({
+              where: {
+                courseId: In(courseIds),
+                tenantId: effectiveTenantId,
+                organisationId: effectiveOrganisationId,
+              },
+            })
+          : [],
+        moduleIds.length
+          ? this.courseRepository.manager.find('module_track', {
+              where: {
+                moduleId: In(moduleIds),
+                tenantId: effectiveTenantId,
+                organisationId: effectiveOrganisationId,
+              },
+            })
+          : [],
+        lessonIds.length
+          ? this.lessonTrackRepository.find({
+              where: {
+                lessonId: In(lessonIds),
+                tenantId: effectiveTenantId,
+                organisationId: effectiveOrganisationId,
+              },
+            })
+          : [],
+      ]);
+      const courseTrackMap = new Map<string, any>(
+        courseTracks.map((t: any) => [t.courseId, t] as [string, any]),
+      );
+      const moduleTrackMap = new Map<string, any>(
+        moduleTracks.map((t: any) => [t['moduleId'], t] as [string, any]),
+      );
+      const lessonTrackMap = new Map<string, any>(
+        lessonTracks.map((t: any) => [t.lessonId, t] as [string, any]),
+      );
+      const mergedCourses = this.mergeTrackingIntoAggregate(
+        JSON.parse(JSON.stringify(cachedStatic.courses)),
+        courseTrackMap,
+        moduleTrackMap,
+        lessonTrackMap,
+      );
+      return { courses: mergedCourses };
+    }
+
+    this.logger.log(`[aggregate-content] API building from DB (CACHE MISS), key: ${cacheKey}`);
     // 1. Find all published courses for the cohort or pathway
     const queryBuilder = this.courseRepository
       .createQueryBuilder('course')
@@ -1383,8 +1441,115 @@ const courses = await queryBuilder.getMany();
       };
     }
 
+    // Cache static structure only (no tracking); tracking is merged on each request when served from cache
+    const staticCopy = this.stripTrackingFromAggregate(coursesList);
+    this.logger.log(`[aggregate-content] API caching response for next request, key: ${cacheKey}`);
+    await this.cacheService.setAggregateContentCached(cacheKey, { courses: staticCopy });
+
     return {
       courses: coursesList,
     };
+  }
+
+  /**
+   * Collect courseIds, moduleIds, lessonIds from aggregated courses tree (for fetching tracking after cache hit)
+   */
+  private collectAggregateIds(courses: any[]): { courseIds: string[]; moduleIds: string[]; lessonIds: string[] } {
+    const courseIds: string[] = [];
+    const moduleIds: string[] = [];
+    const lessonIds: string[] = [];
+    for (const c of courses) {
+      if (c.courseId) courseIds.push(c.courseId);
+      for (const m of c.modules || []) {
+        if (m.moduleId) moduleIds.push(m.moduleId);
+        for (const cnt of m.contents || []) {
+          if (cnt.lessonId) lessonIds.push(cnt.lessonId);
+          for (const al of cnt.associatedLesson || []) {
+            if (al.lessonId) lessonIds.push(al.lessonId);
+          }
+        }
+      }
+    }
+    return { courseIds, moduleIds, lessonIds };
+  }
+
+  /**
+   * Deep clone aggregated courses and remove every 'tracking' key (for caching static structure only)
+   */
+  private stripTrackingFromAggregate(courses: any[]): any[] {
+    return courses.map((c) => {
+      const { tracking: _tc, modules: mods, ...courseRest } = c;
+      return {
+        ...courseRest,
+        modules: (mods || []).map((m: any) => {
+          const { tracking: _tm, contents: conts, ...moduleRest } = m;
+          return {
+            ...moduleRest,
+            contents: (conts || []).map((cnt: any) => {
+              const { tracking: _tl, associatedLesson: assoc, ...contentRest } = cnt;
+              return {
+                ...contentRest,
+                associatedLesson: (assoc || []).map((al: any) => {
+                  const { tracking: _ta, ...alRest } = al;
+                  return alRest;
+                }),
+              };
+            }),
+          };
+        }),
+      };
+    });
+  }
+
+  /**
+   * Add tracking data into a copy of static aggregated courses (used when serving from cache)
+   */
+  private mergeTrackingIntoAggregate(
+    courses: any[],
+    courseTrackMap: Map<string, any>,
+    moduleTrackMap: Map<string, any>,
+    lessonTrackMap: Map<string, any>,
+  ): any[] {
+    for (const course of courses) {
+      const cTrack = courseTrackMap.get(course.courseId);
+      course.tracking = {
+        status: cTrack?.status || 'incomplete',
+        progress: cTrack ? Math.round((cTrack.completedLessons / (cTrack.noOfLessons || 1)) * 100) : 0,
+        completedLessons: cTrack?.completedLessons || 0,
+        totalLessons: cTrack?.noOfLessons || 0,
+      };
+      for (const module of course.modules || []) {
+        const mTrack = moduleTrackMap.get(module.moduleId);
+        module.tracking = {
+          status: mTrack?.['status'] || 'incomplete',
+          progress: mTrack?.['progress'] || 0,
+          completedLessons: mTrack?.['completedLessons'] || 0,
+          totalLessons: mTrack?.['totalLessons'] || 0,
+        };
+        for (const cnt of module.contents || []) {
+          const lTrack = lessonTrackMap.get(cnt.lessonId);
+          cnt.tracking = {
+            status: lTrack?.status || 'not_started',
+            progress: lTrack?.completionPercentage || 0,
+            lastAccessed: lTrack?.startDatetime,
+            timeSpent: lTrack?.timeSpent || 0,
+            score: lTrack?.score,
+            attempt: lTrack?.attempt,
+          };
+          for (const al of cnt.associatedLesson || []) {
+            const nlTrack = lessonTrackMap.get(al.lessonId);
+            al.tracking = {
+              status: nlTrack?.status || 'not_started',
+              progress: nlTrack?.completionPercentage || 0,
+              lastAccessed: nlTrack?.startDatetime,
+              timeSpent: nlTrack?.timeSpent || 0,
+              score: nlTrack?.score,
+              attempt: nlTrack?.attempt,
+            };
+          }
+        }
+      }
+    }
+    return courses;
   }
 }

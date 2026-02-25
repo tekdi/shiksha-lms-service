@@ -414,6 +414,9 @@ export class CacheService {
           await Promise.all(matchingKeys.map((key: string) => this.cacheManager.del(key)));
         }
       }
+
+      // Invalidate aggregate-content caches so POST /course/aggregate-content serves fresh structure
+      await this.invalidateAggregateContentCache();
     } catch (error) {
       // Log cache invalidation failure but don't break the request
       this.logger.warn(`Failed to invalidate course hierarchy cache for courseId ${courseId}: ${error.message}`);
@@ -929,6 +932,89 @@ export class CacheService {
       // Log cache invalidation failure but don't break the request
       // Cache is an optimization - API should work even if Redis is down
       this.logger.warn(`Failed to invalidate lesson detail cache for key ${cacheKey}: ${error.message}`);
+    }
+  }
+
+  /**
+   * Get cached aggregate content (static structure only, NO tracking)
+   *
+   * Caches ONLY the static course/module/lesson structure for the aggregate-content API.
+   * Tracking data is never cached and must be fetched and merged on each request.
+   *
+   * Cache key format: course:aggregate:{pathwayId|cohortId}:{tenantId}:{organisationId}:{contentType}
+   *
+   * @param cacheKey Full cache key
+   * @returns Cached static courses array or null
+   */
+  async getAggregateContentCached(cacheKey: string): Promise<{ courses: any[] } | null> {
+    if (!this.lmsCacheEnabled) {
+      this.logger.log(`[aggregate-content] LMS caching is disabled (LMS_CACHE_ENABLED), skipping cache lookup for key ${cacheKey}`);
+      return null;
+    }
+    try {
+      this.logger.debug(`Attempting to get aggregate-content cache for key ${cacheKey}`);
+      const value = await this.cacheManager.get<{ courses: any[] }>(cacheKey);
+      if (value !== undefined && value !== null) {
+        this.logger.log(`[aggregate-content] Cache HIT for key ${cacheKey}`);
+        return value;
+      }
+      this.logger.log(`[aggregate-content] Cache MISS for key ${cacheKey}`);
+      return null;
+    } catch (error) {
+      this.logger.error(`Error getting aggregate-content cache for key ${cacheKey}: ${error.message}`, error.stack);
+      return null;
+    }
+  }
+
+  /**
+   * Set cached aggregate content (static structure only, NO tracking)
+   *
+   * TTL: LMS_AGGREGATE_CONTENT_TTL_SECONDS (default 1800 seconds).
+   *
+   * @param cacheKey Full cache key
+   * @param staticCourses Object with { courses } - structure only, no tracking
+   */
+  async setAggregateContentCached(cacheKey: string, staticCourses: { courses: any[] }): Promise<void> {
+    if (!this.lmsCacheEnabled) {
+      this.logger.log(`[aggregate-content] LMS caching is disabled (LMS_CACHE_ENABLED), skipping cache write for key ${cacheKey}`);
+      return;
+    }
+    const ttl = Number.parseInt(
+      this.configService.get('LMS_AGGREGATE_CONTENT_TTL_SECONDS') || '1800',
+      10
+    );
+    try {
+      this.logger.debug(`Attempting to set aggregate-content cache for key ${cacheKey} with TTL ${ttl}s`);
+      await this.cacheManager.set(cacheKey, staticCourses, ttl * 1000);
+      this.logger.log(`[aggregate-content] Cache SET for key ${cacheKey} (TTL ${ttl}s)`);
+    } catch (error) {
+      this.logger.warn(`Failed to set aggregate-content cache for key ${cacheKey}: ${error.message}`);
+    }
+  }
+
+  /**
+   * Invalidate all aggregate-content caches.
+   * Call when any course, module, or lesson is created/updated so aggregate API serves fresh structure.
+   */
+  async invalidateAggregateContentCache(): Promise<void> {
+    if (!this.lmsCacheEnabled) {
+      this.logger.debug(`LMS caching is disabled, skipping aggregate-content cache invalidation`);
+      return;
+    }
+    try {
+      const store = (this.cacheManager as any).store;
+      if (!store || typeof store.keys !== 'function') {
+        return;
+      }
+      const keys = await store.keys();
+      const patternRegex = /^course:aggregate:.*$/;
+      const matchingKeys = keys.filter((key: string) => patternRegex.test(key));
+      if (matchingKeys.length > 0) {
+        this.logger.debug(`Invalidating ${matchingKeys.length} aggregate-content cache key(s)`);
+        await Promise.all(matchingKeys.map((key: string) => this.cacheManager.del(key)));
+      }
+    } catch (error) {
+      this.logger.warn(`Failed to invalidate aggregate-content cache: ${error.message}`);
     }
   }
 } 
