@@ -150,6 +150,7 @@ export class CoursesService {
       endDatetime: createCourseDto.endDatetime,
       status: createCourseDto.status || CourseStatus.PUBLISHED,
       params: createCourseDto.params || {},
+      pricing: createCourseDto.pricing || undefined,
       featured:
         createCourseDto.featured !== undefined
           ? createCourseDto.featured
