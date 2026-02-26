@@ -160,6 +160,18 @@ export class CreateCourseDto {
   params?: Record<string, any>;
 
   @ApiPropertyOptional({ 
+    description: 'Course pricing information',
+    example: {
+      amount: 99.99,
+      currency: 'USD',
+      type: 'one-time'
+    }
+  })
+  @IsOptional()
+  @IsObject({ message: VALIDATION_MESSAGES.COMMON.OBJECT('Pricing') })
+  pricing?: Record<string, any>;
+
+  @ApiPropertyOptional({ 
     description: 'Certificate generation date and time - must be in the future and greater than course end date',
     example: '2025-01-01T12:00:00Z'
   })
