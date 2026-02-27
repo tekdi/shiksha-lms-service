@@ -969,7 +969,7 @@ export class CacheService {
   /**
    * Set cached aggregate content (static structure only, NO tracking)
    *
-   * TTL: LMS_AGGREGATE_CONTENT_TTL_SECONDS (default 1800 seconds).
+   * TTL: LMS_COURSE_CACHE_TTL_SECONDS (default 1800 seconds).
    *
    * @param cacheKey Full cache key
    * @param staticCourses Object with { courses } - structure only, no tracking
@@ -980,7 +980,7 @@ export class CacheService {
       return;
     }
     const ttl = Number.parseInt(
-      this.configService.get('LMS_AGGREGATE_CONTENT_TTL_SECONDS') || '1800',
+      this.configService.get('LMS_COURSE_CACHE_TTL_SECONDS') || '1800',
       10
     );
     try {

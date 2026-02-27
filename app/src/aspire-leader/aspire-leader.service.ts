@@ -1502,7 +1502,8 @@ const courses = await queryBuilder.getMany();
   }
 
   /**
-   * Add tracking data into a copy of static aggregated courses (used when serving from cache)
+   * Add tracking data into a copy of static aggregated courses (used when serving from cache).
+   * Builds new objects with property order matching DB response: tracking before modules, tracking before contents.
    */
   private mergeTrackingIntoAggregate(
     courses: any[],
@@ -1510,25 +1511,25 @@ const courses = await queryBuilder.getMany();
     moduleTrackMap: Map<string, any>,
     lessonTrackMap: Map<string, any>,
   ): any[] {
-    for (const course of courses) {
+    return courses.map((course) => {
       const cTrack = courseTrackMap.get(course.courseId);
-      course.tracking = {
+      const tracking = {
         status: cTrack?.status || 'incomplete',
         progress: cTrack ? Math.round((cTrack.completedLessons / (cTrack.noOfLessons || 1)) * 100) : 0,
         completedLessons: cTrack?.completedLessons || 0,
         totalLessons: cTrack?.noOfLessons || 0,
       };
-      for (const module of course.modules || []) {
-        const mTrack = moduleTrackMap.get(module.moduleId);
-        module.tracking = {
+      const modules = (course.modules || []).map((m: any) => {
+        const mTrack = moduleTrackMap.get(m.moduleId);
+        const moduleTracking = {
           status: mTrack?.['status'] || 'incomplete',
           progress: mTrack?.['progress'] || 0,
           completedLessons: mTrack?.['completedLessons'] || 0,
           totalLessons: mTrack?.['totalLessons'] || 0,
         };
-        for (const cnt of module.contents || []) {
+        const contents = (m.contents || []).map((cnt: any) => {
           const lTrack = lessonTrackMap.get(cnt.lessonId);
-          cnt.tracking = {
+          const contentTracking = {
             status: lTrack?.status || 'not_started',
             progress: lTrack?.completionPercentage || 0,
             lastAccessed: lTrack?.startDatetime,
@@ -1536,9 +1537,9 @@ const courses = await queryBuilder.getMany();
             score: lTrack?.score,
             attempt: lTrack?.attempt,
           };
-          for (const al of cnt.associatedLesson || []) {
+          const associatedLesson = (cnt.associatedLesson || []).map((al: any) => {
             const nlTrack = lessonTrackMap.get(al.lessonId);
-            al.tracking = {
+            const alTracking = {
               status: nlTrack?.status || 'not_started',
               progress: nlTrack?.completionPercentage || 0,
               lastAccessed: nlTrack?.startDatetime,
@@ -1546,10 +1547,17 @@ const courses = await queryBuilder.getMany();
               score: nlTrack?.score,
               attempt: nlTrack?.attempt,
             };
-          }
-        }
-      }
-    }
-    return courses;
+            return { ...al, tracking: alTracking };
+          });
+          return { ...cnt, associatedLesson, tracking: contentTracking };
+        });
+        // Explicit order: ...moduleFields, tracking, contents (tracking before contents)
+        const { contents: _c, ...moduleRest } = m;
+        return { ...moduleRest, tracking: moduleTracking, contents };
+      });
+      // Explicit order: ...courseFields, tracking, modules (tracking before modules)
+      const { modules: _m, ...courseRest } = course;
+      return { ...courseRest, tracking, modules };
+    });
   }
 }
