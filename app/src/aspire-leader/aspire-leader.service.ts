@@ -1090,14 +1090,10 @@ export class AspireLeaderService {
             })
           : [],
       ]);
-      const courseTrackMap = new Map<string, any>(
-        courseTracks.map((t: any) => [t.courseId, t] as [string, any]),
-      );
-      const moduleTrackMap = new Map<string, any>(
-        moduleTracks.map((t: any) => [t['moduleId'], t] as [string, any]),
-      );
-      const lessonTrackMap = new Map<string, any>(
-        lessonTracks.map((t: any) => [t.lessonId, t] as [string, any]),
+      const { courseTrackMap, moduleTrackMap, lessonTrackMap } = this.buildTrackingMaps(
+        courseTracks,
+        moduleTracks,
+        lessonTracks,
       );
       const mergedCourses = this.mergeTrackingIntoAggregate(
         JSON.parse(JSON.stringify(cachedStatic.courses)),
@@ -1259,17 +1255,11 @@ const courses = await queryBuilder.getMany();
         },
       }),
     ]);
-    
 
-    // Maps for tracking data
-    const courseTrackMap = new Map<string, any>(
-      courseTracks.map((t: any) => [t.courseId, t] as [string, any]),
-    );
-    const moduleTrackMap = new Map<string, any>(
-      moduleTracks.map((t: any) => [t['moduleId'], t] as [string, any]),
-    );
-    const lessonTrackMap = new Map<string, any>(
-      lessonTracks.map((t: any) => [t.lessonId, t] as [string, any]),
+    const { courseTrackMap, moduleTrackMap, lessonTrackMap } = this.buildTrackingMaps(
+      courseTracks,
+      moduleTracks,
+      lessonTracks,
     );
 
     // 5. Organize data into Maps for O(1) lookup
@@ -1448,6 +1438,31 @@ const courses = await queryBuilder.getMany();
 
     return {
       courses: coursesList,
+    };
+  }
+
+  /**
+   * Build Maps for O(1) tracking lookup by courseId, moduleId, lessonId
+   */
+  private buildTrackingMaps(
+    courseTracks: any[],
+    moduleTracks: any[],
+    lessonTracks: any[],
+  ): {
+    courseTrackMap: Map<string, any>;
+    moduleTrackMap: Map<string, any>;
+    lessonTrackMap: Map<string, any>;
+  } {
+    return {
+      courseTrackMap: new Map<string, any>(
+        courseTracks.map((t: any) => [t.courseId, t] as [string, any]),
+      ),
+      moduleTrackMap: new Map<string, any>(
+        moduleTracks.map((t: any) => [t['moduleId'], t] as [string, any]),
+      ),
+      lessonTrackMap: new Map<string, any>(
+        lessonTracks.map((t: any) => [t.lessonId, t] as [string, any]),
+      ),
     };
   }
 
