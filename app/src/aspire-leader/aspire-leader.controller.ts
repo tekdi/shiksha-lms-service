@@ -119,6 +119,7 @@ async getAggregatedContent(
     headers.authorization,
     aggregationDto.contentType,
     aggregationDto.pathwayId,
+    aggregationDto.userId,
   );
 }
 
