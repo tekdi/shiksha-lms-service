@@ -1036,6 +1036,7 @@ export class AspireLeaderService {
     authorization: string,
     contentType: string | undefined,
     pathwayId?: string | undefined,
+    userId?: string | undefined,
   ): Promise<any> {
     if (cohortId && pathwayId) {
       throw new BadRequestException(
@@ -1058,13 +1059,17 @@ export class AspireLeaderService {
     if (cachedStatic !== null) {
       this.logger.log(`[aggregate-content] API serving from CACHE (HIT), key: ${cacheKey}`);
       const { courseIds, moduleIds, lessonIds } = this.collectAggregateIds(cachedStatic.courses);
+      const trackWhereBase = {
+        tenantId: effectiveTenantId,
+        organisationId: effectiveOrganisationId,
+        ...(userId && { userId }),
+      };
       const [courseTracks, moduleTracks, lessonTracks] = await Promise.all([
         courseIds.length
           ? this.courseTrackRepository.find({
               where: {
                 courseId: In(courseIds),
-                tenantId: effectiveTenantId,
-                organisationId: effectiveOrganisationId,
+                ...trackWhereBase,
               },
             })
           : [],
@@ -1072,8 +1077,7 @@ export class AspireLeaderService {
           ? this.courseRepository.manager.find('module_track', {
               where: {
                 moduleId: In(moduleIds),
-                tenantId: effectiveTenantId,
-                organisationId: effectiveOrganisationId,
+                ...trackWhereBase,
               },
             })
           : [],
@@ -1081,8 +1085,7 @@ export class AspireLeaderService {
           ? this.lessonTrackRepository.find({
               where: {
                 lessonId: In(lessonIds),
-                tenantId: effectiveTenantId,
-                organisationId: effectiveOrganisationId,
+                ...trackWhereBase,
               },
             })
           : [],
@@ -1233,44 +1236,41 @@ const courses = await queryBuilder.getMany();
     });
 
 
-    // 4. Fetch Tracking Data if userId is available
-    let courseTracks: any[] = [];
-    let moduleTracks: any[] = [];
-    let lessonTracks: any[] = [];
-
-      // Course Tracking
-      courseTracks = await this.courseTrackRepository.find({
+    // 4. Fetch Tracking Data (filter by userId when provided for correct user-specific progress)
+    const trackWhereBase = {
+      tenantId: effectiveTenantId,
+      organisationId: effectiveOrganisationId,
+      ...(userId && { userId }),
+    };
+    const [courseTracks, moduleTracks, lessonTracks] = await Promise.all([
+      this.courseTrackRepository.find({
+        where: { courseId: In(courseIds), ...trackWhereBase },
+      }),
+      this.courseRepository.manager.find('module_track', {
         where: {
-          courseId: In(courseIds),
-          tenantId: effectiveTenantId,
-          organisationId: effectiveOrganisationId
-        }
-      });
-
-      // Module Tracking (We need to use 'module_track' repository if injected, or use query builder/manager if not directly available as a property)
-       moduleTracks = await this.courseRepository.manager.find('module_track', {
-         where: {
-            // We need moduleIds.
-            moduleId: In(allModules.map(m => m.moduleId)),
-            tenantId: effectiveTenantId,
-            organisationId: effectiveOrganisationId
-         }
-       });
-
-       // Lesson Tracking
-       lessonTracks = await this.lessonTrackRepository.find({
-         where: {
-           lessonId: In(allLessons.map(l => l.lessonId)),
-           tenantId: effectiveTenantId,
-           organisationId: effectiveOrganisationId
-         }
-       });
+          moduleId: In(allModules.map((m) => m.moduleId)),
+          ...trackWhereBase,
+        },
+      }),
+      this.lessonTrackRepository.find({
+        where: {
+          lessonId: In(allLessons.map((l) => l.lessonId)),
+          ...trackWhereBase,
+        },
+      }),
+    ]);
     
 
     // Maps for tracking data
-    const courseTrackMap = new Map(courseTracks.map(t => [t.courseId, t]));
-    const moduleTrackMap = new Map(moduleTracks.map(t => [t['moduleId'], t])); // Using 'moduleId' index
-    const lessonTrackMap = new Map(lessonTracks.map(t => [t.lessonId, t]));
+    const courseTrackMap = new Map<string, any>(
+      courseTracks.map((t: any) => [t.courseId, t] as [string, any]),
+    );
+    const moduleTrackMap = new Map<string, any>(
+      moduleTracks.map((t: any) => [t['moduleId'], t] as [string, any]),
+    );
+    const lessonTrackMap = new Map<string, any>(
+      lessonTracks.map((t: any) => [t.lessonId, t] as [string, any]),
+    );
 
     // 5. Organize data into Maps for O(1) lookup
     const modulesByCourse = new Map<string, CourseModule[]>();
