@@ -1398,6 +1398,7 @@ export class LessonsService {
               createdBy: userId,
               updatedBy: userId,
               source: clonedTestId,
+              path: clonedTestId,
               // Remove properties that should not be copied
               mediaId: undefined,
               // Don't set createdAt/updatedAt - let TypeORM handle them automatically
