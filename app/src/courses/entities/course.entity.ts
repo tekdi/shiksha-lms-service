@@ -121,6 +121,14 @@ export class Course {
   params: Record<string, any>;
 
   @ApiProperty({ 
+    description: 'Course pricing information', 
+    example: { amount: 99.99, currency: 'USD', type: 'one-time' },
+    required: false
+  })
+  @Column({ type: 'jsonb', nullable: true })
+  pricing: Record<string, any>;
+
+  @ApiProperty({ 
     description: 'Certificate generation date and time', 
     example: '2025-01-01T12:00:00Z',
     required: false

@@ -150,12 +150,26 @@ export class CreateCourseDto {
     example: {
       difficulty: 'intermediate',
       prerequisites: ['basic-programming'],
-      learningOutcomes: ['outcome1', 'outcome2']
+      learningOutcomes: ['outcome1', 'outcome2'],
+      cohortId: '123e4567-e89b-12d3-a456-426614174000',
+      pathwayId: '123e4567-e89b-12d3-a456-426614174000'
     }
   })
   @IsOptional()
   @IsObject({ message: VALIDATION_MESSAGES.COMMON.OBJECT('Additional parameters') })
   params?: Record<string, any>;
+
+  @ApiPropertyOptional({ 
+    description: 'Course pricing information',
+    example: {
+      amount: 99.99,
+      currency: 'USD',
+      type: 'one-time'
+    }
+  })
+  @IsOptional()
+  @IsObject({ message: VALIDATION_MESSAGES.COMMON.OBJECT('Pricing') })
+  pricing?: Record<string, any>;
 
   @ApiPropertyOptional({ 
     description: 'Certificate generation date and time - must be in the future and greater than course end date',

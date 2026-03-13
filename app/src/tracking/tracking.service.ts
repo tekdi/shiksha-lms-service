@@ -18,6 +18,7 @@ import { UpdateEventProgressDto } from './dto/update-event-progress.dto';
 import { LessonStatusDto } from './dto/lesson-status.dto';
 import { ConfigService } from '@nestjs/config';
 import { ModuleTrack, ModuleTrackStatus } from './entities/module-track.entity';
+import { LessonsService } from '../lessons/lessons.service';
 
 @Injectable()
 export class TrackingService {
@@ -37,6 +38,7 @@ export class TrackingService {
     @InjectRepository(ModuleTrack)
     private readonly moduleTrackRepository: Repository<ModuleTrack>,
     private readonly configService: ConfigService,
+    private readonly lessonsService: LessonsService,
   ) {}
 
   /**
@@ -561,6 +563,11 @@ export class TrackingService {
 
   /**
    * Get an attempt
+   * 
+   * IMPORTANT: This API contains userId in the response, so we DO NOT cache the response.
+   * However, lesson data is read-only and safe to cache. We fetch the lesson separately
+   * through LessonsService.findOne() which handles caching, while tracking/attempt data is
+   * always fetched live from the database.
    */
   async getAttempt(
     attemptId: string,
@@ -568,6 +575,8 @@ export class TrackingService {
     tenantId: string,
     organisationId: string
   ): Promise<LessonTrack> {
+    // Fetch attempt without lesson relation - tracking data must always be fresh
+    // Lesson data may come from cache via LessonsService.findOne()
     const attempt = await this.lessonTrackRepository.findOne({
       where: { 
         lessonTrackId: attemptId,
@@ -575,12 +584,22 @@ export class TrackingService {
         tenantId,
         organisationId
       } as FindOptionsWhere<LessonTrack>,
-      relations: ['lesson', 'lesson.media'],
     });
 
     if (!attempt) {
       throw new NotFoundException(RESPONSE_MESSAGES.ERROR.ATTEMPT_NOT_FOUND);
     }
+
+    // Fetch lesson separately through LessonsService.findOne() which handles caching
+    // Lesson is read-only data, safe to cache. Tracking/attempt data is NOT cached.
+    const lesson = await this.lessonsService.findOne(
+      attempt.lessonId,
+      tenantId,
+      organisationId
+    );
+
+    // Attach lesson to attempt to maintain identical response structure
+    attempt.lesson = lesson;
 
     return attempt;
   }
