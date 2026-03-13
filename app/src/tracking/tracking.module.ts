@@ -9,18 +9,20 @@ import { Module as CourseModule } from '../modules/entities/module.entity';
 import { TrackingController } from './tracking.controller';
 import { TrackingService } from './tracking.service';
 import { LessonsModule } from '../lessons/lessons.module';
+import { EnrollmentsModule } from '../enrollments/enrollments.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([
-      CourseTrack, 
+      CourseTrack,
       LessonTrack,
       ModuleTrack,
-      Course, 
-      Lesson, 
+      Course,
+      Lesson,
       CourseModule
     ]),
     LessonsModule,
+    EnrollmentsModule,
   ],
   controllers: [TrackingController],
   providers: [TrackingService],
