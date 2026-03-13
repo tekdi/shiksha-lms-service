@@ -9,7 +9,7 @@ import { Repository, FindOptionsWhere, Not, FindManyOptions, IsNull, In } from '
 import { CourseTrack, TrackingStatus } from './entities/course-track.entity';
 import { LessonTrack } from './entities/lesson-track.entity';
 import { Course, CourseStatus } from '../courses/entities/course.entity';
-import { Lesson, LessonStatus, AttemptsGradeMethod } from '../lessons/entities/lesson.entity';
+import { Lesson, LessonStatus, AttemptsGradeMethod, LessonFormat } from '../lessons/entities/lesson.entity';
 import { Module, ModuleStatus } from '../modules/entities/module.entity';
 import { RESPONSE_MESSAGES } from '../common/constants/response-messages.constant';
 import { UpdateLessonTrackingDto } from './dto/update-lesson-tracking.dto';
@@ -19,6 +19,12 @@ import { LessonStatusDto } from './dto/lesson-status.dto';
 import { ConfigService } from '@nestjs/config';
 import { ModuleTrack, ModuleTrackStatus } from './entities/module-track.entity';
 import { LessonsService } from '../lessons/lessons.service';
+import { EnrollmentsService } from '../enrollments/enrollments.service';
+import {
+  UserJourneyDto,
+  UserJourneyResponseDto,
+  UserJourneyItemDto,
+} from './dto/user-journey.dto';
 
 @Injectable()
 export class TrackingService {
@@ -39,6 +45,7 @@ export class TrackingService {
     private readonly moduleTrackRepository: Repository<ModuleTrack>,
     private readonly configService: ConfigService,
     private readonly lessonsService: LessonsService,
+    private readonly enrollmentsService: EnrollmentsService,
   ) {}
 
   /**
@@ -154,6 +161,139 @@ export class TrackingService {
     const updatedCourseTrack = await this.courseTrackRepository.save(courseTrack);
 
     return updatedCourseTrack;
+  }
+
+  /**
+   * Get user journey: enrolled courses for user in cohort with event-attendance flags.
+   * Uses existing usersEnrolledCourses (limit/offset), then two batch queries:
+   * 1) event-type lessons per course, 2) user's completed lesson tracks for those lessons.
+   */
+  async getUserJourney(
+    dto: UserJourneyDto,
+    tenantId: string,
+    organisationId: string,
+  ): Promise<UserJourneyResponseDto> {
+    const offset = Math.max(0, dto.offset ?? 0);
+    const limit = Math.min(100, Math.max(1, dto.limit ?? 10));
+
+    const { courses, totalElements } = await this.enrollmentsService.usersEnrolledCourses(
+      {
+        userId: dto.userId,
+        cohortId: dto.cohortId,
+        limit,
+        offset,
+      },
+      tenantId,
+      organisationId,
+    );
+
+    if (courses.length === 0) {
+      return {
+        courses: [],
+        totalElements,
+        offset,
+        limit,
+      };
+    }
+
+    const courseIds = courses.map((c) => c.courseId);
+
+    const [eventLessons, courseTracks] = await Promise.all([
+      this.lessonRepository.find({
+        where: {
+          courseId: In(courseIds),
+          format: LessonFormat.EVENT,
+          status: LessonStatus.PUBLISHED,
+          tenantId,
+          organisationId,
+        },
+        select: ['lessonId', 'courseId'],
+      }),
+      this.courseTrackRepository.find({
+        where: {
+          userId: dto.userId,
+          courseId: In(courseIds),
+          tenantId,
+          organisationId,
+        },
+        select: [
+          'courseId',
+          'status',
+          'completedLessons',
+          'noOfLessons',
+          'lastAccessedDate',
+          'certificateIssued',
+        ],
+      }),
+    ]);
+
+    const courseTrackByCourseId = new Map(courseTracks.map((t) => [t.courseId, t]));
+
+    const courseToEventLessonIds = new Map<string, string[]>();
+    for (const l of eventLessons) {
+      const list = courseToEventLessonIds.get(l.courseId) ?? [];
+      list.push(l.lessonId);
+      courseToEventLessonIds.set(l.courseId, list);
+    }
+
+    const allEventLessonIds = eventLessons.map((l) => l.lessonId);
+    let completedEventLessonIds = new Set<string>();
+
+    if (allEventLessonIds.length > 0) {
+      const completed = await this.lessonTrackRepository.find({
+        where: {
+          userId: dto.userId,
+          lessonId: In(allEventLessonIds),
+          status: TrackingStatus.COMPLETED,
+          tenantId,
+          organisationId,
+        },
+        select: ['lessonId'],
+      });
+      completedEventLessonIds = new Set(completed.map((r) => r.lessonId));
+    }
+
+    const resultCourses: UserJourneyItemDto[] = courses.map((course) => {
+      const eventLessonIds = courseToEventLessonIds.get(course.courseId) ?? [];
+      const totalEventLessons = eventLessonIds.length;
+      const isAttendedOneEvent = totalEventLessons > 0 && eventLessonIds.some((id) => completedEventLessonIds.has(id));
+      const track = courseTrackByCourseId.get(course.courseId);
+      const noOfLessons = track?.noOfLessons ?? 0;
+      const completedLessons = track?.completedLessons ?? 0;
+      const progressPct = noOfLessons > 0 ? Math.round((completedLessons / noOfLessons) * 100) : 0;
+      const courseTrackStatus = track?.status ?? TrackingStatus.NOT_STARTED;
+      const progressDetail = {
+        courseTrackStatus,
+        completedLessons,
+        noOfLessons,
+        progress: progressPct,
+        lastAccessedDate: track?.lastAccessedDate?.toISOString() ?? null,
+        certificateIssued: track?.certificateIssued ?? false,
+      };
+      return {
+        courseId: course.courseId,
+        name: course.title,
+        title: course.title,
+        alias: course.alias,
+        shortDescription: course.shortDescription,
+        description: course.description,
+        image: course.image,
+        status: courseTrackStatus,
+        progress: progressPct,
+        params: course.params,
+        ordering: course.ordering,
+        totalEventLessons,
+        isAttendedOneEvent,
+        progressDetail,
+      };
+    });
+
+    return {
+      courses: resultCourses,
+      totalElements,
+      offset,
+      limit,
+    };
   }
 
   /**
