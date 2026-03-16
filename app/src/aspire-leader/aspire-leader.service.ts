@@ -1509,10 +1509,16 @@ const courses = await queryBuilder.getMany();
         }
 
         case AttemptsGradeMethod.LAST_ATTEMPT:
-        default:
-          // Pick the highest attempt number
-          selectedAttempt = attempts.at(-1);
+        default: {
+          // Pick the last COMPLETED attempt if it exists
+          selectedAttempt = [...attempts].reverse().find(a => a.status === TrackingStatus.COMPLETED);
+          
+          // Fallback to the absolute latest attempt if no completed attempt is found
+          if (!selectedAttempt) {
+            selectedAttempt = attempts.at(-1);
+          }
           break;
+        }
       }
 
       if (selectedAttempt) {
