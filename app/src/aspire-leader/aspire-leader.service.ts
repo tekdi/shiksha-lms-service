@@ -1081,13 +1081,8 @@ export class AspireLeaderService {
               },
             })
           : [],
-        lessonIds.length
-          ? this.lessonTrackRepository.find({
-              where: {
-                lessonId: In(lessonIds),
-                ...trackWhereBase,
-              },
-            })
+        lessonIds.length && trackWhereBase.userId
+          ? this.getGradedLessonTracks(lessonIds, trackWhereBase.userId, effectiveTenantId as string, effectiveOrganisationId as string)
           : [],
       ]);
       const { courseTrackMap, moduleTrackMap, lessonTrackMap } = this.buildTrackingMaps(
@@ -1206,6 +1201,9 @@ const courses = await queryBuilder.getMany();
         resume: true,
         ordering: true,
         checkedOut: true,
+        attemptsGrade: true,
+        totalMarks: true,
+        passingMarks: true,
         media: {
           mediaId: true,
           format: true,
@@ -1248,12 +1246,9 @@ const courses = await queryBuilder.getMany();
           ...trackWhereBase,
         },
       }),
-      this.lessonTrackRepository.find({
-        where: {
-          lessonId: In(allLessons.map((l) => l.lessonId)),
-          ...trackWhereBase,
-        },
-      }),
+      (allLessons.length && trackWhereBase.userId)
+        ? this.getGradedLessonTracks(allLessons, trackWhereBase.userId, effectiveTenantId as string, effectiveOrganisationId as string)
+        : [],
     ]);
 
     const { courseTrackMap, moduleTrackMap, lessonTrackMap } = this.buildTrackingMaps(
@@ -1439,6 +1434,92 @@ const courses = await queryBuilder.getMany();
     return {
       courses: coursesList,
     };
+  }
+
+  /**
+   * Helper method to get the "best" or "specified" attempt per lesson for a user based on attemptsGrade configuration.
+   */
+  private async getGradedLessonTracks(lessons: any[], userId: string, tenantId: string, organisationId: string): Promise<any[]> {
+    if (!lessons || lessons.length === 0) return [];
+
+    let lessonRules = lessons;
+    // If we only have IDs, or missing required fields (like in CACHE HIT scenario with old cache), fetch them
+    if (typeof lessons[0] === 'string' || !lessons[0].attemptsGrade) {
+      const ids = typeof lessons[0] === 'string' ? lessons : lessons.map(l => l.lessonId);
+      lessonRules = await this.lessonRepository.find({
+        where: { lessonId: In(ids), tenantId, organisationId },
+        select: ['lessonId', 'attemptsGrade', 'totalMarks', 'passingMarks']
+      });
+    }
+
+    const lessonIds = lessonRules.map(l => l.lessonId);
+    // Fetch all attempts for these lessons and user, sorted by attempt number
+    const allTracks = await this.lessonTrackRepository.find({
+      where: {
+        lessonId: In(lessonIds),
+        userId,
+        tenantId,
+        organisationId,
+      },
+      order: {
+        attempt: 'ASC',
+      },
+    });
+
+    // Group attempts by lessonId
+    const tracksByLesson = new Map<string, any[]>();
+    allTracks.forEach(track => {
+      if (!tracksByLesson.has(track.lessonId)) {
+        tracksByLesson.set(track.lessonId, []);
+      }
+      tracksByLesson.get(track.lessonId)?.push(track);
+    });
+
+    const bestTracks: any[] = [];
+    for (const lesson of lessonRules) {
+      const attempts = tracksByLesson.get(lesson.lessonId) || [];
+      if (attempts.length === 0) continue;
+
+      let selectedAttempt: any = null;
+      const gradeMethod = lesson.attemptsGrade || AttemptsGradeMethod.LAST_ATTEMPT;
+
+      switch (gradeMethod) {
+        case AttemptsGradeMethod.FIRST_ATTEMPT:
+          selectedAttempt = attempts.find(a => a.attempt === 1);
+          break;
+
+        case AttemptsGradeMethod.HIGHEST:
+          // Find the attempt with the highest score
+          selectedAttempt = attempts.reduce((prev, current) => {
+            return (prev.score > current.score) ? prev : current;
+          });
+          break;
+
+        case AttemptsGradeMethod.AVERAGE:
+          // Calculate average score across all attempts
+          const totalScore = attempts.reduce((sum, a) => sum + (a.score || 0), 0);
+          const averageScore = totalScore / attempts.length;
+          // Use the latest attempt as the base structure but update the score to the average
+          const latestForAvg = attempts[attempts.length - 1];
+          selectedAttempt = { 
+            ...latestForAvg, 
+            score: Math.round(averageScore * 100) / 100 // Round to 2 decimal places
+          };
+          break;
+
+        case AttemptsGradeMethod.LAST_ATTEMPT:
+        default:
+          // Pick the highest attempt number
+          selectedAttempt = attempts[attempts.length - 1];
+          break;
+      }
+
+      if (selectedAttempt) {
+        bestTracks.push(selectedAttempt);
+      }
+    }
+
+    return bestTracks;
   }
 
   /**
