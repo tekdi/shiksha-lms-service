@@ -1492,25 +1492,26 @@ const courses = await queryBuilder.getMany();
           // Find the attempt with the highest score
           selectedAttempt = attempts.reduce((prev, current) => {
             return (prev.score > current.score) ? prev : current;
-          });
+          }, attempts[0]);
           break;
 
-        case AttemptsGradeMethod.AVERAGE:
+        case AttemptsGradeMethod.AVERAGE: {
           // Calculate average score across all attempts
           const totalScore = attempts.reduce((sum, a) => sum + (a.score || 0), 0);
           const averageScore = totalScore / attempts.length;
           // Use the latest attempt as the base structure but update the score to the average
-          const latestForAvg = attempts[attempts.length - 1];
+          const latestForAvg = attempts.at(-1);
           selectedAttempt = { 
             ...latestForAvg, 
             score: Math.round(averageScore * 100) / 100 // Round to 2 decimal places
           };
           break;
+        }
 
         case AttemptsGradeMethod.LAST_ATTEMPT:
         default:
           // Pick the highest attempt number
-          selectedAttempt = attempts[attempts.length - 1];
+          selectedAttempt = attempts.at(-1);
           break;
       }
 
