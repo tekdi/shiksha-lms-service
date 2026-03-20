@@ -346,6 +346,24 @@ export class CacheService {
     );
   }
 
+  async getCourseEventLessons(courseId: string): Promise<string[] | null> {
+    if (!this.cacheEnabled) {
+      return null;
+    }
+    return this.get<string[]>(this.cacheConfig.getCourseEventLessonsKey(courseId));
+  }
+
+  async setCourseEventLessons(courseId: string, lessonIds: string[]): Promise<void> {
+    if (!this.cacheEnabled) {
+      return;
+    }
+    await this.set(
+      this.cacheConfig.getCourseEventLessonsKey(courseId),
+      lessonIds,
+      this.cacheConfig.COURSE_TTL
+    );
+  }
+
   async invalidateCourse(courseId: string, tenantId: string, organisationId: string): Promise<void> {
     if (!this.cacheEnabled) {
       return;
@@ -356,6 +374,7 @@ export class CacheService {
       this.del(this.cacheConfig.getCourseHierarchyKey(courseId, tenantId, organisationId)),
       this.delByPattern(this.cacheConfig.getCourseModulesPattern(courseId, tenantId, organisationId)),
       this.delByPattern(`${this.cacheConfig.COURSE_PREFIX}search:${tenantId}:${organisationId}:*`),
+      this.del(this.cacheConfig.getCourseEventLessonsKey(courseId)),
     ]);
 
     // Invalidate course metadata cache (LMS-specific cache)
