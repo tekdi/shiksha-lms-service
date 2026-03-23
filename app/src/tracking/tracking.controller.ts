@@ -7,6 +7,8 @@ import {
   Query,
   ParseUUIDPipe,
   Patch,
+  HttpCode,
+  HttpStatus,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -36,6 +38,7 @@ export class TrackingController {
   constructor(private readonly trackingService: TrackingService) {}
 
   @Post('userjourney')
+  @HttpCode(HttpStatus.OK)
   @ApiId(API_IDS.GET_USER_JOURNEY)
   @ApiOperation({
     summary: 'Get user journey by user and cohort',
