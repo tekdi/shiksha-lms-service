@@ -69,7 +69,7 @@ export class AspireLeaderService {
   ): Promise<any> {
     const startTime = Date.now();
     this.logger.log(
-      `Generating course report for courseId: ${reportDto.courseId}, cohortId: ${reportDto.cohortId}`,
+     `Generating course report for courseId: ${reportDto.courseId}, cohortId: ${reportDto.cohortId ?? 'n/a'}, pathwayId: ${reportDto.pathwayId ?? 'n/a'}`,
     );
 
     // Validate course exists
