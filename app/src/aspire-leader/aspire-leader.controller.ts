@@ -40,7 +40,8 @@ export class AspireLeaderController {
     description: 'Generate course-level or lesson-level reports with user progress and activity data. Include lessonId for lesson-level report, omit for course-level report. Requires Authorization header for external API calls.'
   })
   @ApiQuery({ name: 'courseId', type: 'string', description: 'Target course ID', required: true })
-  @ApiQuery({ name: 'cohortId', type: 'string', description: 'Associated cohort ID', required: true })
+  @ApiQuery({ name: 'cohortId', type: 'string', description: 'Associated cohort ID (optional for pathway-only exports)', required: false })
+  @ApiQuery({ name: 'pathwayId', type: 'string', description: 'Pathway ID when export is pathway-scoped', required: false })
   @ApiQuery({ name: 'lessonId', type: 'string', description: 'Required only for content-level report', required: false })
   @ApiQuery({ name: 'offset', type: 'number', description: 'For pagination (default: 0)', required: false })
   @ApiQuery({ name: 'limit', type: 'number', description: 'For pagination (default: 10)', required: false })
