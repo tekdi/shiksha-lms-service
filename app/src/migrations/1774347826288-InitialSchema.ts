@@ -1,0 +1,128 @@
+import { MigrationInterface, QueryRunner } from "typeorm";
+
+export class InitialSchema1774347826288 implements MigrationInterface {
+    name = 'InitialSchema1774347826288'
+
+    public async up(queryRunner: QueryRunner): Promise<void> {
+        await queryRunner.query(`CREATE TABLE "module_track" ("moduleTrackId" uuid NOT NULL DEFAULT uuid_generate_v4(), "tenantId" uuid NOT NULL, "organisationId" uuid NOT NULL, "moduleId" uuid NOT NULL, "userId" uuid NOT NULL, "status" character varying(40) NOT NULL DEFAULT 'incomplete', "completedLessons" integer NOT NULL DEFAULT '0', "totalLessons" integer NOT NULL DEFAULT '0', "progress" integer NOT NULL DEFAULT '0', "badgeGenDate" TIMESTAMP WITH TIME ZONE, CONSTRAINT "PK_e64c1064d02d6439f685aca5953" PRIMARY KEY ("moduleTrackId"))`);
+        await queryRunner.query(`CREATE INDEX "IDX_964e69154add5ae12b6553b9f0" ON "module_track" ("tenantId") `);
+        await queryRunner.query(`CREATE INDEX "IDX_f6a8093198c656ca928f73bdd7" ON "module_track" ("organisationId") `);
+        await queryRunner.query(`CREATE INDEX "IDX_674cbd384c9afd2c82b8c504e9" ON "module_track" ("moduleId") `);
+        await queryRunner.query(`CREATE INDEX "IDX_36517941be4b98b453929fa701" ON "module_track" ("userId") `);
+        await queryRunner.query(`CREATE TABLE "associated_files" ("associatedFilesId" uuid NOT NULL DEFAULT uuid_generate_v4(), "lessonId" uuid NOT NULL, "mediaId" uuid NOT NULL, "tenantId" uuid, "organisationId" uuid, "createdBy" character varying, "updatedBy" character varying, "createdAt" TIMESTAMP NOT NULL DEFAULT now(), "updatedAt" TIMESTAMP NOT NULL DEFAULT now(), CONSTRAINT "PK_1a9256c7459cf72cfb9186993d6" PRIMARY KEY ("associatedFilesId"))`);
+        await queryRunner.query(`CREATE INDEX "IDX_0642f6c028515d1220b685ab12" ON "associated_files" ("tenantId") `);
+        await queryRunner.query(`CREATE INDEX "IDX_1ebd6709bbb72239f622fde330" ON "associated_files" ("organisationId") `);
+        await queryRunner.query(`CREATE TABLE "media" ("mediaId" uuid NOT NULL DEFAULT uuid_generate_v4(), "tenantId" uuid, "organisationId" uuid, "format" character varying NOT NULL, "subFormat" character varying, "orgFilename" character varying, "path" character varying, "storage" character varying, "source" text, "params" jsonb, "status" character varying NOT NULL DEFAULT 'published', "createdAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(), "createdBy" uuid NOT NULL, "updatedAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(), "updatedBy" uuid NOT NULL, CONSTRAINT "PK_b59b16ab8334d41fd71dd9c9656" PRIMARY KEY ("mediaId"))`);
+        await queryRunner.query(`CREATE INDEX "IDX_0890b6f7e95be519162fdcd8c8" ON "media" ("tenantId") `);
+        await queryRunner.query(`CREATE INDEX "IDX_ad42aa1424e15b934dd746c7e2" ON "media" ("organisationId") `);
+        await queryRunner.query(`CREATE TABLE "lessons" ("lessonId" uuid NOT NULL DEFAULT uuid_generate_v4(), "parentId" uuid, "tenantId" uuid, "organisationId" uuid, "checkedOut" uuid, "checkedOutTime" TIMESTAMP WITH TIME ZONE, "title" character varying(255) NOT NULL, "alias" character varying(255), "status" character varying(255) NOT NULL DEFAULT 'unpublished', "description" text, "image" character varying(255), "startDatetime" TIMESTAMP WITH TIME ZONE, "endDatetime" TIMESTAMP WITH TIME ZONE, "storage" character varying(50), "noOfAttempts" integer, "allowResubmission" boolean NOT NULL DEFAULT false, "attemptsGrade" character varying(255), "format" character varying(255) NOT NULL, "subFormat" character varying(255) NOT NULL, "mediaId" uuid, "prerequisites" uuid array, "idealTime" integer, "resume" boolean NOT NULL DEFAULT false, "totalMarks" integer, "passingMarks" integer, "params" jsonb, "courseId" uuid, "moduleId" uuid, "sampleLesson" boolean NOT NULL DEFAULT false, "considerForPassing" boolean NOT NULL DEFAULT true, "ordering" integer NOT NULL DEFAULT '0', "createdAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(), "createdBy" uuid NOT NULL, "updatedAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(), "updatedBy" uuid NOT NULL, CONSTRAINT "PK_c5909f9f0de05aee83bd37ee5d9" PRIMARY KEY ("lessonId"))`);
+        await queryRunner.query(`CREATE INDEX "IDX_ecc275de1603feff9bda2f78dc" ON "lessons" ("tenantId") `);
+        await queryRunner.query(`CREATE INDEX "IDX_4b2d23649240f1ad813122e761" ON "lessons" ("organisationId") `);
+        await queryRunner.query(`CREATE INDEX "IDX_3dad32ba0ff20feee98b1b0c43" ON "lessons" ("title") `);
+        await queryRunner.query(`CREATE INDEX "IDX_1a9ff2409a84c76560ae8a9259" ON "lessons" ("courseId") `);
+        await queryRunner.query(`CREATE INDEX "IDX_16e7969589c0b789d986878225" ON "lessons" ("moduleId") `);
+        await queryRunner.query(`CREATE TABLE "modules" ("moduleId" uuid NOT NULL DEFAULT uuid_generate_v4(), "parentId" uuid, "courseId" uuid NOT NULL, "tenantId" uuid NOT NULL, "organisationId" uuid NOT NULL, "title" character varying(255) NOT NULL, "description" character varying, "image" character varying(255), "startDatetime" TIMESTAMP WITH TIME ZONE, "endDatetime" TIMESTAMP WITH TIME ZONE, "prerequisites" uuid array, "badgeTerm" jsonb, "badgeId" uuid, "ordering" integer NOT NULL DEFAULT '0', "status" character varying NOT NULL DEFAULT 'unpublished', "createdAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(), "createdBy" uuid NOT NULL, "updatedAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(), "updatedBy" uuid NOT NULL, CONSTRAINT "PK_7a5041f222dfb5bddc91bcae0bc" PRIMARY KEY ("moduleId"))`);
+        await queryRunner.query(`CREATE INDEX "IDX_a6637494664d871968306442f3" ON "modules" ("parentId") `);
+        await queryRunner.query(`CREATE INDEX "IDX_83489b37212a5a547bde8f8901" ON "modules" ("courseId") `);
+        await queryRunner.query(`CREATE INDEX "IDX_88b956937dfacd207d58554cea" ON "modules" ("tenantId") `);
+        await queryRunner.query(`CREATE INDEX "IDX_b3e896531b1b2b8875592035ac" ON "modules" ("organisationId") `);
+        await queryRunner.query(`CREATE INDEX "IDX_999e7ae1397e09021289ae3e0e" ON "modules" ("title") `);
+        await queryRunner.query(`CREATE TABLE "user_enrollments" ("enrollmentId" uuid NOT NULL DEFAULT uuid_generate_v4(), "courseId" uuid NOT NULL, "tenantId" uuid NOT NULL, "organisationId" uuid, "userId" uuid NOT NULL, "enrolledOnTime" TIMESTAMP WITH TIME ZONE, "endTime" TIMESTAMP WITH TIME ZONE, "status" character varying(255) NOT NULL DEFAULT 'published', "unlimitedPlan" boolean NOT NULL DEFAULT false, "beforeExpiryMail" boolean NOT NULL DEFAULT false, "afterExpiryMail" boolean NOT NULL DEFAULT false, "params" jsonb, "enrolledBy" uuid NOT NULL, "enrolledAt" TIMESTAMP NOT NULL DEFAULT now(), CONSTRAINT "PK_6e3d4d6cedb9e161f56b940803e" PRIMARY KEY ("enrollmentId"))`);
+        await queryRunner.query(`CREATE INDEX "IDX_4685c4359f8b931b656f23b554" ON "user_enrollments" ("courseId") `);
+        await queryRunner.query(`CREATE INDEX "IDX_08dc4f70f7de83767fdfbd4c0b" ON "user_enrollments" ("tenantId") `);
+        await queryRunner.query(`CREATE INDEX "IDX_2e7f6e153150b3c29fb19e5661" ON "user_enrollments" ("organisationId") `);
+        await queryRunner.query(`CREATE INDEX "IDX_5803cf23496199d63d39bb95e9" ON "user_enrollments" ("userId") `);
+        await queryRunner.query(`CREATE TABLE "courses" ("courseId" uuid NOT NULL DEFAULT uuid_generate_v4(), "tenantId" uuid, "organisationId" uuid, "title" character varying(255) NOT NULL, "alias" text NOT NULL, "shortDescription" text, "description" text NOT NULL, "image" character varying(255), "featured" boolean NOT NULL DEFAULT false, "free" boolean NOT NULL DEFAULT false, "certificateTerm" jsonb, "rewardType" character varying(50), "templateId" uuid, "prerequisites" uuid array, "startDatetime" TIMESTAMP WITH TIME ZONE, "endDatetime" TIMESTAMP WITH TIME ZONE, "adminApproval" boolean NOT NULL DEFAULT false, "autoEnroll" boolean NOT NULL DEFAULT false, "status" character varying(255) NOT NULL DEFAULT 'unpublished', "params" jsonb, "pricing" jsonb, "certificateGenDateTime" TIMESTAMP WITH TIME ZONE, "ordering" integer NOT NULL DEFAULT '0', "createdBy" uuid NOT NULL, "createdAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(), "updatedBy" uuid NOT NULL, "updatedAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(), CONSTRAINT "PK_70d5a4a8bfdf595743eb9f81f82" PRIMARY KEY ("courseId"))`);
+        await queryRunner.query(`CREATE INDEX "IDX_61c9baadf12783792db0161320" ON "courses" ("tenantId") `);
+        await queryRunner.query(`CREATE INDEX "IDX_f16ef08ba58fe2cddf876218ea" ON "courses" ("organisationId") `);
+        await queryRunner.query(`CREATE INDEX "IDX_a01a7f0e38c6f16024d16058ab" ON "courses" ("title") `);
+        await queryRunner.query(`CREATE INDEX "IDX_4db2783b95fcdd83f2864985ff" ON "courses" ("alias") `);
+        await queryRunner.query(`CREATE TABLE "course_track" ("courseTrackId" uuid NOT NULL DEFAULT uuid_generate_v4(), "tenantId" uuid NOT NULL, "organisationId" uuid NOT NULL, "courseId" uuid NOT NULL, "userId" uuid NOT NULL, "startDatetime" TIMESTAMP WITH TIME ZONE, "endDatetime" TIMESTAMP WITH TIME ZONE, "noOfLessons" integer NOT NULL DEFAULT '0', "completedLessons" integer NOT NULL DEFAULT '0', "status" character varying(40) NOT NULL DEFAULT 'incomplete', "lastAccessedDate" TIMESTAMP WITH TIME ZONE, "certGenDate" TIMESTAMP WITH TIME ZONE, "certificateIssued" boolean NOT NULL DEFAULT false, CONSTRAINT "PK_15a2a390231b63bff38e608ad91" PRIMARY KEY ("courseTrackId"))`);
+        await queryRunner.query(`CREATE INDEX "IDX_44547b2fac2c09dca2dd6775f1" ON "course_track" ("tenantId") `);
+        await queryRunner.query(`CREATE INDEX "IDX_d57c57442eebdd7b32a6b62044" ON "course_track" ("organisationId") `);
+        await queryRunner.query(`CREATE INDEX "IDX_bdb9516577ee6965ef499010da" ON "course_track" ("courseId") `);
+        await queryRunner.query(`CREATE INDEX "IDX_f89735b87b4678a46bdf71dc9a" ON "course_track" ("userId") `);
+        await queryRunner.query(`CREATE UNIQUE INDEX "IDX_bc4a6669c8538ef435a77b486c" ON "course_track" ("userId", "courseId") `);
+        await queryRunner.query(`CREATE TABLE "lesson_track" ("lessontrackid" uuid NOT NULL DEFAULT uuid_generate_v4(), "lessonId" uuid NOT NULL, "courseId" uuid, "userId" uuid NOT NULL, "tenantId" uuid, "organisationId" uuid, "attempt" integer NOT NULL DEFAULT '1', "startDatetime" TIMESTAMP WITH TIME ZONE, "endDatetime" TIMESTAMP WITH TIME ZONE, "score" integer DEFAULT '0', "status" character varying(255) NOT NULL DEFAULT 'started', "totalContent" double precision NOT NULL DEFAULT '0', "currentPosition" double precision NOT NULL DEFAULT '0', "timeSpent" integer DEFAULT '0', "completionPercentage" double precision DEFAULT '0', "params" jsonb, "updatedBy" uuid, "updatedAt" TIMESTAMP NOT NULL DEFAULT now(), CONSTRAINT "PK_06bb2d7fd63d14ee3b76e7aef2d" PRIMARY KEY ("lessontrackid"))`);
+        await queryRunner.query(`CREATE INDEX "IDX_49ae44e49fcd50e4b8f11eeb8f" ON "lesson_track" ("lessonId") `);
+        await queryRunner.query(`CREATE INDEX "IDX_be91552279edb8e236a6b933ba" ON "lesson_track" ("courseId") `);
+        await queryRunner.query(`CREATE INDEX "IDX_ea805f877cfbbaf3ea7e430fd6" ON "lesson_track" ("userId") `);
+        await queryRunner.query(`CREATE INDEX "IDX_aa574417a9e7e37cc06b1e78d3" ON "lesson_track" ("tenantId") `);
+        await queryRunner.query(`CREATE INDEX "IDX_72ef6860e26a0a16f5206104c4" ON "lesson_track" ("organisationId") `);
+        await queryRunner.query(`CREATE UNIQUE INDEX "IDX_89aba58a100f715eedc7408a97" ON "lesson_track" ("userId", "lessonId", "courseId", "attempt") `);
+        await queryRunner.query(`ALTER TABLE "associated_files" ADD CONSTRAINT "FK_4f01216503959cedc5f9ae4705f" FOREIGN KEY ("lessonId") REFERENCES "lessons"("lessonId") ON DELETE NO ACTION ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "associated_files" ADD CONSTRAINT "FK_7783cf491d0eeab4fdc8020dfc9" FOREIGN KEY ("mediaId") REFERENCES "media"("mediaId") ON DELETE NO ACTION ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "lessons" ADD CONSTRAINT "FK_1a9ff2409a84c76560ae8a92590" FOREIGN KEY ("courseId") REFERENCES "courses"("courseId") ON DELETE NO ACTION ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "lessons" ADD CONSTRAINT "FK_16e7969589c0b789d9868782259" FOREIGN KEY ("moduleId") REFERENCES "modules"("moduleId") ON DELETE NO ACTION ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "lessons" ADD CONSTRAINT "FK_ee783444a8d1553bc61fe745c1f" FOREIGN KEY ("mediaId") REFERENCES "media"("mediaId") ON DELETE NO ACTION ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "lessons" ADD CONSTRAINT "FK_ece0b5b02985c7033bf0db088a5" FOREIGN KEY ("parentId") REFERENCES "lessons"("lessonId") ON DELETE NO ACTION ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "modules" ADD CONSTRAINT "FK_83489b37212a5a547bde8f89014" FOREIGN KEY ("courseId") REFERENCES "courses"("courseId") ON DELETE NO ACTION ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "modules" ADD CONSTRAINT "FK_a6637494664d871968306442f3b" FOREIGN KEY ("parentId") REFERENCES "modules"("moduleId") ON DELETE NO ACTION ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "user_enrollments" ADD CONSTRAINT "FK_4685c4359f8b931b656f23b5545" FOREIGN KEY ("courseId") REFERENCES "courses"("courseId") ON DELETE NO ACTION ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "course_track" ADD CONSTRAINT "FK_bdb9516577ee6965ef499010dac" FOREIGN KEY ("courseId") REFERENCES "courses"("courseId") ON DELETE NO ACTION ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "lesson_track" ADD CONSTRAINT "FK_49ae44e49fcd50e4b8f11eeb8f5" FOREIGN KEY ("lessonId") REFERENCES "lessons"("lessonId") ON DELETE NO ACTION ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "lesson_track" ADD CONSTRAINT "FK_be91552279edb8e236a6b933ba1" FOREIGN KEY ("courseId") REFERENCES "courses"("courseId") ON DELETE NO ACTION ON UPDATE NO ACTION`);
+    }
+
+    public async down(queryRunner: QueryRunner): Promise<void> {
+        await queryRunner.query(`ALTER TABLE "lesson_track" DROP CONSTRAINT "FK_be91552279edb8e236a6b933ba1"`);
+        await queryRunner.query(`ALTER TABLE "lesson_track" DROP CONSTRAINT "FK_49ae44e49fcd50e4b8f11eeb8f5"`);
+        await queryRunner.query(`ALTER TABLE "course_track" DROP CONSTRAINT "FK_bdb9516577ee6965ef499010dac"`);
+        await queryRunner.query(`ALTER TABLE "user_enrollments" DROP CONSTRAINT "FK_4685c4359f8b931b656f23b5545"`);
+        await queryRunner.query(`ALTER TABLE "modules" DROP CONSTRAINT "FK_a6637494664d871968306442f3b"`);
+        await queryRunner.query(`ALTER TABLE "modules" DROP CONSTRAINT "FK_83489b37212a5a547bde8f89014"`);
+        await queryRunner.query(`ALTER TABLE "lessons" DROP CONSTRAINT "FK_ece0b5b02985c7033bf0db088a5"`);
+        await queryRunner.query(`ALTER TABLE "lessons" DROP CONSTRAINT "FK_ee783444a8d1553bc61fe745c1f"`);
+        await queryRunner.query(`ALTER TABLE "lessons" DROP CONSTRAINT "FK_16e7969589c0b789d9868782259"`);
+        await queryRunner.query(`ALTER TABLE "lessons" DROP CONSTRAINT "FK_1a9ff2409a84c76560ae8a92590"`);
+        await queryRunner.query(`ALTER TABLE "associated_files" DROP CONSTRAINT "FK_7783cf491d0eeab4fdc8020dfc9"`);
+        await queryRunner.query(`ALTER TABLE "associated_files" DROP CONSTRAINT "FK_4f01216503959cedc5f9ae4705f"`);
+        await queryRunner.query(`DROP INDEX "public"."IDX_89aba58a100f715eedc7408a97"`);
+        await queryRunner.query(`DROP INDEX "public"."IDX_72ef6860e26a0a16f5206104c4"`);
+        await queryRunner.query(`DROP INDEX "public"."IDX_aa574417a9e7e37cc06b1e78d3"`);
+        await queryRunner.query(`DROP INDEX "public"."IDX_ea805f877cfbbaf3ea7e430fd6"`);
+        await queryRunner.query(`DROP INDEX "public"."IDX_be91552279edb8e236a6b933ba"`);
+        await queryRunner.query(`DROP INDEX "public"."IDX_49ae44e49fcd50e4b8f11eeb8f"`);
+        await queryRunner.query(`DROP TABLE "lesson_track"`);
+        await queryRunner.query(`DROP INDEX "public"."IDX_bc4a6669c8538ef435a77b486c"`);
+        await queryRunner.query(`DROP INDEX "public"."IDX_f89735b87b4678a46bdf71dc9a"`);
+        await queryRunner.query(`DROP INDEX "public"."IDX_bdb9516577ee6965ef499010da"`);
+        await queryRunner.query(`DROP INDEX "public"."IDX_d57c57442eebdd7b32a6b62044"`);
+        await queryRunner.query(`DROP INDEX "public"."IDX_44547b2fac2c09dca2dd6775f1"`);
+        await queryRunner.query(`DROP TABLE "course_track"`);
+        await queryRunner.query(`DROP INDEX "public"."IDX_4db2783b95fcdd83f2864985ff"`);
+        await queryRunner.query(`DROP INDEX "public"."IDX_a01a7f0e38c6f16024d16058ab"`);
+        await queryRunner.query(`DROP INDEX "public"."IDX_f16ef08ba58fe2cddf876218ea"`);
+        await queryRunner.query(`DROP INDEX "public"."IDX_61c9baadf12783792db0161320"`);
+        await queryRunner.query(`DROP TABLE "courses"`);
+        await queryRunner.query(`DROP INDEX "public"."IDX_5803cf23496199d63d39bb95e9"`);
+        await queryRunner.query(`DROP INDEX "public"."IDX_2e7f6e153150b3c29fb19e5661"`);
+        await queryRunner.query(`DROP INDEX "public"."IDX_08dc4f70f7de83767fdfbd4c0b"`);
+        await queryRunner.query(`DROP INDEX "public"."IDX_4685c4359f8b931b656f23b554"`);
+        await queryRunner.query(`DROP TABLE "user_enrollments"`);
+        await queryRunner.query(`DROP INDEX "public"."IDX_999e7ae1397e09021289ae3e0e"`);
+        await queryRunner.query(`DROP INDEX "public"."IDX_b3e896531b1b2b8875592035ac"`);
+        await queryRunner.query(`DROP INDEX "public"."IDX_88b956937dfacd207d58554cea"`);
+        await queryRunner.query(`DROP INDEX "public"."IDX_83489b37212a5a547bde8f8901"`);
+        await queryRunner.query(`DROP INDEX "public"."IDX_a6637494664d871968306442f3"`);
+        await queryRunner.query(`DROP TABLE "modules"`);
+        await queryRunner.query(`DROP INDEX "public"."IDX_16e7969589c0b789d986878225"`);
+        await queryRunner.query(`DROP INDEX "public"."IDX_1a9ff2409a84c76560ae8a9259"`);
+        await queryRunner.query(`DROP INDEX "public"."IDX_3dad32ba0ff20feee98b1b0c43"`);
+        await queryRunner.query(`DROP INDEX "public"."IDX_4b2d23649240f1ad813122e761"`);
+        await queryRunner.query(`DROP INDEX "public"."IDX_ecc275de1603feff9bda2f78dc"`);
+        await queryRunner.query(`DROP TABLE "lessons"`);
+        await queryRunner.query(`DROP INDEX "public"."IDX_ad42aa1424e15b934dd746c7e2"`);
+        await queryRunner.query(`DROP INDEX "public"."IDX_0890b6f7e95be519162fdcd8c8"`);
+        await queryRunner.query(`DROP TABLE "media"`);
+        await queryRunner.query(`DROP INDEX "public"."IDX_1ebd6709bbb72239f622fde330"`);
+        await queryRunner.query(`DROP INDEX "public"."IDX_0642f6c028515d1220b685ab12"`);
+        await queryRunner.query(`DROP TABLE "associated_files"`);
+        await queryRunner.query(`DROP INDEX "public"."IDX_36517941be4b98b453929fa701"`);
+        await queryRunner.query(`DROP INDEX "public"."IDX_674cbd384c9afd2c82b8c504e9"`);
+        await queryRunner.query(`DROP INDEX "public"."IDX_f6a8093198c656ca928f73bdd7"`);
+        await queryRunner.query(`DROP INDEX "public"."IDX_964e69154add5ae12b6553b9f0"`);
+        await queryRunner.query(`DROP TABLE "module_track"`);
+    }
+
+}

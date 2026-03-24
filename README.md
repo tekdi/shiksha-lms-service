@@ -34,19 +34,21 @@ A comprehensive Learning Management System (LMS) microservice built with NestJS.
 
 1. Copy the example environment file:
    ```bash
-   cp .env.example .env
+   cp app/env.example app/.env
    ```
 
-2. Update the environment variables in the `.env` file with your configuration.
+2. Update the environment variables in `app/.env` with your configuration.
 
 ### Installation
 
 ```bash
+cd app
+
 # Install dependencies
 npm install
 
-# Set up database and run migrations
-npm run db:setup
+# Create the database configured in app/.env, then run migrations
+npm run migration:run
 
 # Start the development server
 npm run start:dev
@@ -54,25 +56,17 @@ npm run start:dev
 
 ### Database Setup
 
-The application uses PostgreSQL with TypeORM migrations. For detailed migration instructions, see [MIGRATIONS.md](app/MIGRATIONS.md).
-
-Quick setup:
-```bash
-# Set up environment variables
-cp app/env.example app/.env
-# Edit app/.env with your database credentials
-
-# Run database setup (creates database, enables extensions, runs migrations)
-npm run db:setup
-```
+The application uses PostgreSQL with TypeORM migrations. Create the target database from `app/.env` first, then run the checked-in migrations from the `app` directory.
 
 Migration commands:
 ```bash
+cd app
+
 # Run pending migrations
 npm run migration:run
 
 # Generate new migration from entity changes
-npm run migration:generate -- src/migrations/MigrationName
+npm run migration:generate
 
 # Revert last migration
 npm run migration:revert
@@ -80,5 +74,3 @@ npm run migration:revert
 # Show migration status
 npm run migration:show
 ```
-
-.
