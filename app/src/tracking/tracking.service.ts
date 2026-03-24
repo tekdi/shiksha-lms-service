@@ -1245,10 +1245,21 @@ export class TrackingService {
     const offset = Math.max(0, dto.offset ?? 0);
     const limit = Math.min(100, Math.max(1, dto.limit ?? 10));
 
+    if (!dto.cohortId && !dto.pathwayId) {
+      throw new BadRequestException('Either cohortId or pathwayId must be provided.');
+    }
+
+    if (dto.cohortId && dto.pathwayId) {
+      throw new BadRequestException(
+        'Either cohortId or pathwayId must be provided, but not both.',
+      );
+    }
+
     const { courses, totalElements } = await this.enrollmentsService.usersEnrolledCourses(
       {
         userId: dto.userId,
         cohortId: dto.cohortId,
+        pathwayId: dto.pathwayId,
         limit,
         offset,
       },

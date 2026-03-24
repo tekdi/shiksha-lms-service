@@ -8,10 +8,15 @@ export class UserJourneyDto {
   @IsString()
   userId: string;
 
-  @ApiProperty({ description: 'Cohort ID (stored in course.params.cohortId)', example: '123e4567-e89b-12d3-a456-426614174000' })
-  @IsNotEmpty()
+  @ApiPropertyOptional({ description: 'Cohort ID (stored in course.params.cohortId)', example: '123e4567-e89b-12d3-a456-426614174000' })
+  @IsOptional()
   @IsString()
-  cohortId: string;
+  cohortId?: string;
+
+  @ApiPropertyOptional({ description: 'Pathway ID (stored in course.params.pathwayId)', example: '123e4567-e89b-12d3-a456-426614174000' })
+  @IsOptional()
+  @IsString()
+  pathwayId?: string;
 
   @ApiPropertyOptional({ description: 'Limit (default 10, max 100)', example: 10, minimum: 1 })
   @IsOptional()
@@ -27,6 +32,7 @@ export class UserJourneyDto {
   @Type(() => Number)
   offset?: number = 0;
 }
+
 
 export class UserJourneyProgressDto {
   @ApiProperty({ description: 'Course tracking status', enum: ['not_started', 'started', 'incomplete', 'submitted', 'completed', 'not_eligible'] })
