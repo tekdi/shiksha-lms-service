@@ -65,8 +65,8 @@ cd app
 # Run pending migrations
 npm run migration:run
 
-# Generate new migration from entity changes
-npm run migration:generate
+# Generate new migration from entity changes (pass name/path explicitly)
+npm run migration:generate -- src/migrations/YourMigrationName
 
 # Revert last migration
 npm run migration:revert

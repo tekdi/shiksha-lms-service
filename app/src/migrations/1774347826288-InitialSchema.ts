@@ -4,6 +4,7 @@ export class InitialSchema1774347826288 implements MigrationInterface {
     name = 'InitialSchema1774347826288'
 
     public async up(queryRunner: QueryRunner): Promise<void> {
+        await queryRunner.query(`CREATE EXTENSION IF NOT EXISTS "uuid-ossp"`);
         await queryRunner.query(`CREATE TABLE "module_track" ("moduleTrackId" uuid NOT NULL DEFAULT uuid_generate_v4(), "tenantId" uuid NOT NULL, "organisationId" uuid NOT NULL, "moduleId" uuid NOT NULL, "userId" uuid NOT NULL, "status" character varying(40) NOT NULL DEFAULT 'incomplete', "completedLessons" integer NOT NULL DEFAULT '0', "totalLessons" integer NOT NULL DEFAULT '0', "progress" integer NOT NULL DEFAULT '0', "badgeGenDate" TIMESTAMP WITH TIME ZONE, CONSTRAINT "PK_e64c1064d02d6439f685aca5953" PRIMARY KEY ("moduleTrackId"))`);
         await queryRunner.query(`CREATE INDEX "IDX_964e69154add5ae12b6553b9f0" ON "module_track" ("tenantId") `);
         await queryRunner.query(`CREATE INDEX "IDX_f6a8093198c656ca928f73bdd7" ON "module_track" ("organisationId") `);
