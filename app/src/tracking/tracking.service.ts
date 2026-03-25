@@ -9,9 +9,15 @@ import { Repository, FindOptionsWhere, Not, FindManyOptions, IsNull, In } from '
 import { CourseTrack, TrackingStatus } from './entities/course-track.entity';
 import { LessonTrack } from './entities/lesson-track.entity';
 import { Course, CourseStatus } from '../courses/entities/course.entity';
-import { Lesson, LessonStatus, AttemptsGradeMethod } from '../lessons/entities/lesson.entity';
+import { Lesson, LessonStatus, AttemptsGradeMethod, LessonFormat } from '../lessons/entities/lesson.entity';
 import { Module, ModuleStatus } from '../modules/entities/module.entity';
 import { RESPONSE_MESSAGES } from '../common/constants/response-messages.constant';
+import { EnrollmentsService } from '../enrollments/enrollments.service';
+import {
+  UserJourneyDto,
+  UserJourneyResponseDto,
+  UserJourneyItemDto,
+} from './dto/user-journey.dto';
 import { UpdateLessonTrackingDto } from './dto/update-lesson-tracking.dto';
 import { UpdateCourseTrackingDto } from './dto/update-course-tracking.dto';
 import { UpdateEventProgressDto } from './dto/update-event-progress.dto';
@@ -19,6 +25,7 @@ import { LessonStatusDto } from './dto/lesson-status.dto';
 import { ConfigService } from '@nestjs/config';
 import { ModuleTrack, ModuleTrackStatus } from './entities/module-track.entity';
 import { LessonsService } from '../lessons/lessons.service';
+import { CacheService } from '../cache/cache.service';
 
 @Injectable()
 export class TrackingService {
@@ -39,6 +46,8 @@ export class TrackingService {
     private readonly moduleTrackRepository: Repository<ModuleTrack>,
     private readonly configService: ConfigService,
     private readonly lessonsService: LessonsService,
+    private readonly enrollmentsService: EnrollmentsService,
+    private readonly cacheService: CacheService,
   ) {}
 
   /**
@@ -1221,5 +1230,179 @@ export class TrackingService {
       }
       throw new BadRequestException('Error recalculating progress');
     }
+  }
+
+  /**
+   * Get user journey: enrolled courses for user in cohort with event-attendance flags.
+   * Uses existing usersEnrolledCourses (limit/offset), then two batch queries:
+   * 1) event-type lessons per course, 2) user's completed lesson tracks for those lessons.
+   */
+  async getUserJourney(
+    dto: UserJourneyDto,
+    tenantId: string,
+    organisationId: string,
+  ): Promise<UserJourneyResponseDto> {
+    const offset = Math.max(0, dto.offset ?? 0);
+    const limit = Math.min(100, Math.max(1, dto.limit ?? 10));
+
+    if (!dto.cohortId && !dto.pathwayId) {
+      throw new BadRequestException('Either cohortId or pathwayId must be provided.');
+    }
+
+    if (dto.cohortId && dto.pathwayId) {
+      throw new BadRequestException(
+        'Either cohortId or pathwayId must be provided, but not both.',
+      );
+    }
+
+    const { courses, totalElements } = await this.enrollmentsService.usersEnrolledCourses(
+      {
+        userId: dto.userId,
+        cohortId: dto.cohortId,
+        pathwayId: dto.pathwayId,
+        limit,
+        offset,
+      },
+      tenantId,
+      organisationId,
+    );
+
+    if (courses.length === 0) {
+      return {
+        courses: [],
+        totalElements,
+        offset,
+        limit,
+      };
+    }
+
+    const courseIds = courses.map((c) => c.courseId);
+
+    // Batch fetch event lesson IDs from cache and user's course tracks in parallel
+    const [cachedEventLessonIdResults, courseTracks] = await Promise.all([
+      Promise.all(courseIds.map((id) => this.cacheService.getCourseEventLessons(id))),
+      this.courseTrackRepository.find({
+        where: {
+          userId: dto.userId,
+          courseId: In(courseIds),
+          tenantId,
+          organisationId,
+        },
+        select: [
+          'courseId',
+          'status',
+          'completedLessons',
+          'noOfLessons',
+          'lastAccessedDate',
+          'certificateIssued',
+        ],
+      }),
+    ]);
+
+    const courseToEventLessonIds = new Map<string, string[]>();
+    const courseIdsToFetch: string[] = [];
+
+    // Separate cached IDs from missing ones
+    courseIds.forEach((id, index) => {
+      const cached = cachedEventLessonIdResults[index];
+      if (cached) {
+        courseToEventLessonIds.set(id, cached);
+      } else {
+        courseIdsToFetch.push(id);
+      }
+    });
+
+    // Fetch missing event lesson IDs from DB
+    if (courseIdsToFetch.length > 0) {
+      const eventLessonsFromDb = await this.lessonRepository.find({
+        where: {
+          courseId: In(courseIdsToFetch),
+          format: LessonFormat.EVENT,
+          status: LessonStatus.PUBLISHED,
+          tenantId,
+          organisationId,
+        },
+        select: ['lessonId', 'courseId'],
+      });
+
+      // Group DB results by courseId
+      const freshCourseToEventLessonIds = new Map<string, string[]>();
+      for (const l of eventLessonsFromDb) {
+        const list = freshCourseToEventLessonIds.get(l.courseId) ?? [];
+        list.push(l.lessonId);
+        freshCourseToEventLessonIds.set(l.courseId, list);
+      }
+
+      // Populate main map and update cache for each fetched course
+      for (const id of courseIdsToFetch) {
+        const list = freshCourseToEventLessonIds.get(id) ?? [];
+        courseToEventLessonIds.set(id, list);
+        // Non-blocking cache update
+        this.cacheService.setCourseEventLessons(id, list).catch((err) => {
+          this.logger.warn(`Failed to set event lessons cache for course ${id}: ${err.message}`);
+        });
+      }
+    }
+
+    const courseTrackByCourseId = new Map(courseTracks.map((t) => [t.courseId, t]));
+
+    const allEventLessonIds = Array.from(courseToEventLessonIds.values()).flat();
+    let completedEventLessonIds = new Set<string>();
+
+    if (allEventLessonIds.length > 0) {
+      const completed = await this.lessonTrackRepository.find({
+        where: {
+          userId: dto.userId,
+          lessonId: In(allEventLessonIds),
+          status: TrackingStatus.COMPLETED,
+          tenantId,
+          organisationId,
+        },
+        select: ['lessonId'],
+      });
+      completedEventLessonIds = new Set(completed.map((r) => r.lessonId));
+    }
+
+    const resultCourses: UserJourneyItemDto[] = courses.map((course) => {
+      const eventLessonIds = courseToEventLessonIds.get(course.courseId) ?? [];
+      const totalEventLessons = eventLessonIds.length;
+      const isAttendedOneEvent = totalEventLessons > 0 && eventLessonIds.some((id) => completedEventLessonIds.has(id));
+      const track = courseTrackByCourseId.get(course.courseId);
+      const noOfLessons = track?.noOfLessons ?? 0;
+      const completedLessons = track?.completedLessons ?? 0;
+      const progressPct = noOfLessons > 0 ? Math.round((completedLessons / noOfLessons) * 100) : 0;
+      const courseTrackStatus = track?.status ?? TrackingStatus.NOT_STARTED;
+      const progressDetail = {
+        courseTrackStatus,
+        completedLessons,
+        noOfLessons,
+        progress: progressPct,
+        lastAccessedDate: track?.lastAccessedDate?.toISOString() ?? null,
+        certificateIssued: track?.certificateIssued ?? false,
+      };
+      return {
+        courseId: course.courseId,
+        name: course.title,
+        title: course.title,
+        alias: course.alias,
+        shortDescription: course.shortDescription,
+        description: course.description,
+        image: course.image,
+        status: courseTrackStatus,
+        progress: progressPct,
+        params: course.params,
+        ordering: course.ordering,
+        totalEventLessons,
+        isAttendedOneEvent,
+        progressDetail,
+      };
+    });
+
+    return {
+      courses: resultCourses,
+      totalElements,
+      offset,
+      limit,
+    };
   }
 }

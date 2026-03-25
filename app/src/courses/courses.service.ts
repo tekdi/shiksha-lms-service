@@ -1774,6 +1774,7 @@ export class CoursesService {
       this.cacheService.setCourse(savedCourse),
       this.cacheService.invalidateCourse(courseId, tenantId, organisationId),
       this.cacheService.invalidateCourseHierarchyCache(courseId),
+      this.cacheService.invalidateCourseMetaCache(courseId),
       // Invalidate course enrollment cache when course is updated
       this.cacheService.invalidateCourseEnrollments(
         courseId,

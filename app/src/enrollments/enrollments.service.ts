@@ -544,6 +544,14 @@ export class EnrollmentsService {
         );
       }
 
+      // Apply pathway filter if provided (filter by course params)
+      if (filters?.pathwayId) {
+        enrollmentQueryBuilder.andWhere(
+          "course.params->>'pathwayId' = :pathwayId",
+          { pathwayId: filters.pathwayId },
+        );
+      }
+
       // Get enrolled course IDs
       const enrollments = await enrollmentQueryBuilder.getMany();
       const enrolledCourseIds = [
@@ -568,7 +576,7 @@ export class EnrollmentsService {
       for (const courseId of enrolledCourseIds) {
         const cachedMeta = await this.cacheService.getCourseMetaCached(
           courseId,
-          filters?.cohortId,
+          filters?.cohortId || filters?.pathwayId,
         );
 
         if (cachedMeta) {
@@ -645,7 +653,7 @@ export class EnrollmentsService {
             await this.cacheService.setCourseMetaCached(
               course.courseId,
               courseMeta,
-              filters?.cohortId,
+              filters?.cohortId || filters?.pathwayId,
             );
           } catch (cacheError) {
             // Log cache write failure but don't break the request
