@@ -172,6 +172,8 @@ export class CoursesService {
       prerequisites: createCourseDto.prerequisites,
       certificateGenDateTime:
         createCourseDto.certificateGenDateTime || undefined,
+      certificateIssueDateTime:
+        createCourseDto.certificateIssueDateTime || undefined,
       ordering: nextOrdering,
       tenantId,
       organisationId,
