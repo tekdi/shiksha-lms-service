@@ -27,12 +27,20 @@ A comprehensive Learning Management System (LMS) microservice built with NestJS.
 - Node.js (v14+)
 - PostgreSQL (v12+)
 - Redis (v6+)
+- Optional: Docker and Docker Compose for containerized local setup
 
 ## Getting Started
 
 ### Environment Setup
 
-1. Copy the example environment file:
+1. Create `app/.env` from the checked-in example file.
+
+   PowerShell:
+   ```powershell
+   Copy-Item app/env.example app/.env
+   ```
+
+   Bash:
    ```bash
    cp app/env.example app/.env
    ```
@@ -47,8 +55,8 @@ cd app
 # Install dependencies
 npm install
 
-# Create the database configured in app/.env, then run migrations
-npm run migration:run
+# Create the database if needed, enable uuid-ossp, and run migrations
+npm run db:setup
 
 # Start the development server
 npm run start:dev
@@ -56,7 +64,23 @@ npm run start:dev
 
 ### Database Setup
 
-The application uses PostgreSQL with TypeORM migrations. Create the target database from `app/.env` first, then run the checked-in migrations from the `app` directory.
+The application uses PostgreSQL with TypeORM migrations. The migration files live in `app/src/migrations`, and the TypeORM data source is configured in `app/typeorm.config.ts`.
+
+Fresh local setup from scratch:
+```bash
+cd app
+npm install
+npm run db:setup
+```
+
+What `npm run db:setup` does:
+- Creates `app/.env` from `app/env.example` if it is missing
+- Connects to PostgreSQL using the `DB_*` values in `app/.env`
+- Creates the target database if it does not already exist
+- Enables the `uuid-ossp` extension
+- Runs all pending TypeORM migrations
+
+If you prefer to manage the database manually, create the target database from `app/.env` first and then run the checked-in migrations from the `app` directory.
 
 Migration commands:
 ```bash
@@ -74,3 +98,17 @@ npm run migration:revert
 # Show migration status
 npm run migration:show
 ```
+
+### Docker Setup
+
+If you want PostgreSQL and Redis locally without installing them directly:
+
+```bash
+cd app
+docker compose up -d postgres redis
+npm install
+npm run db:setup
+npm run start:dev
+```
+
+The application container is also defined in `app/docker-compose.yml`, but for day-to-day development it is usually simpler to run NestJS locally and use Docker only for PostgreSQL and Redis.
