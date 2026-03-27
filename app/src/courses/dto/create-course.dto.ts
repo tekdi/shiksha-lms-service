@@ -179,13 +179,4 @@ export class CreateCourseDto {
   @IsDateString()
   @Validate(ValidateCertificateDateTime)
   certificateGenDateTime?: string;
-
-  @ApiPropertyOptional({
-    description:
-      'Certificate issue date and time (ISO 8601); past or future dates are allowed',
-    example: '2025-01-01T12:00:00Z',
-  })
-  @IsOptional()
-  @IsDateString()
-  certificateIssueDateTime?: string;
 }
