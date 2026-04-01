@@ -27,6 +27,8 @@ import { ModuleTrack, ModuleTrackStatus } from './entities/module-track.entity';
 import { LessonsService } from '../lessons/lessons.service';
 import { CacheService } from '../cache/cache.service';
 
+type FinalAssessmentOutcome = 'pass' | 'fail' | null;
+
 @Injectable()
 export class TrackingService {
   private readonly logger = new Logger(TrackingService.name);
@@ -1484,7 +1486,7 @@ export class TrackingService {
   private resolveFinalAssessmentOutcome(
     attempts: LessonTrack[],
     lesson: Lesson,
-  ): 'pass' | 'fail' | null {
+  ): FinalAssessmentOutcome {
     if (!attempts.length) {
       return null;
     }
@@ -1515,7 +1517,7 @@ export class TrackingService {
           const pct = (avgScore / lesson.totalMarks) * 100;
           return pct >= passPct ? 'pass' : 'fail';
         }
-        const latest = attempts[attempts.length - 1];
+        const latest = attempts.at(-1)!;
         return this.outcomeFromSingleAttempt(latest, lesson);
       }
       case AttemptsGradeMethod.LAST_ATTEMPT:
@@ -1524,7 +1526,7 @@ export class TrackingService {
           [...attempts]
             .reverse()
             .find((a) => a.status === TrackingStatus.COMPLETED) ??
-          attempts[attempts.length - 1];
+          attempts.at(-1)!;
         return this.outcomeFromSingleAttempt(graded, lesson);
       }
     }
@@ -1533,7 +1535,7 @@ export class TrackingService {
   private outcomeFromSingleAttempt(
     attempt: LessonTrack,
     lesson: Lesson,
-  ): 'pass' | 'fail' | null {
+  ): FinalAssessmentOutcome {
     if (this.isFailedAssessmentOutcome(attempt, lesson)) {
       return 'fail';
     }
@@ -1548,8 +1550,8 @@ export class TrackingService {
     courseIds: string[],
     tenantId: string,
     organisationId: string,
-  ): Promise<Map<string, 'pass' | 'fail' | null>> {
-    const out = new Map<string, 'pass' | 'fail' | null>();
+  ): Promise<Map<string, FinalAssessmentOutcome>> {
+    const out = new Map<string, FinalAssessmentOutcome>();
     for (const cid of courseIds) {
       out.set(cid, null);
     }
