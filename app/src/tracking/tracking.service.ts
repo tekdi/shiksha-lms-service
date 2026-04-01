@@ -1496,8 +1496,10 @@ export class TrackingService {
         return a ? this.outcomeFromSingleAttempt(a, lesson) : null;
       }
       case AttemptsGradeMethod.HIGHEST: {
-        const a = attempts.reduce((prev, cur) =>
-          (cur.score ?? 0) > (prev.score ?? 0) ? cur : prev,
+        const a = attempts.reduce(
+          (prev, cur) =>
+            (cur.score ?? 0) > (prev.score ?? 0) ? cur : prev,
+          attempts[0],
         );
         return this.outcomeFromSingleAttempt(a, lesson);
       }
