@@ -26,8 +26,17 @@ import { ConfigService } from '@nestjs/config';
 import { ModuleTrack, ModuleTrackStatus } from './entities/module-track.entity';
 import { LessonsService } from '../lessons/lessons.service';
 import { CacheService } from '../cache/cache.service';
+import axios from 'axios';
 
-type FinalAssessmentOutcome = 'pass' | 'fail' | null;
+type FinalAssessmentOutcome = 'pass' | 'fail' | 'submitted' | null;
+
+/** Latest row from assessment testAttempts (batch-outcome-summary). */
+type AssessmentLatestSummary = {
+  attemptStatus: string;
+  score: number | null;
+  result: string | null;
+  reviewStatus: string;
+};
 
 @Injectable()
 export class TrackingService {
@@ -1242,6 +1251,7 @@ export class TrackingService {
     dto: UserJourneyDto,
     tenantId: string,
     organisationId: string,
+    authorization?: string,
   ): Promise<UserJourneyResponseDto> {
     const offset = Math.max(0, dto.offset ?? 0);
     const limit = Math.min(100, Math.max(1, dto.limit ?? 10));
@@ -1303,6 +1313,7 @@ export class TrackingService {
           courseIds,
           tenantId,
           organisationId,
+          authorization,
         ),
       ]);
 
@@ -1412,12 +1423,22 @@ export class TrackingService {
     };
   }
 
-  private async loadFinalAssessmentLessonPerCourse(
+  private parseTestIdFromMediaSource(source: string | null | undefined): string | null {
+    if (source == null || typeof source !== 'string') {
+      return null;
+    }
+    const s = source.trim();
+    const uuidRe =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    return uuidRe.test(s) ? s : null;
+  }
+
+  private async loadFinalAssessmentContextPerCourse(
     courseIds: string[],
     tenantId: string,
     organisationId: string,
-  ): Promise<Map<string, Lesson>> {
-    const result = new Map<string, Lesson>();
+  ): Promise<Map<string, { lesson: Lesson; testId: string | null }>> {
+    const result = new Map<string, { lesson: Lesson; testId: string | null }>();
     if (courseIds.length === 0) {
       return result;
     }
@@ -1430,22 +1451,58 @@ export class TrackingService {
         organisationId,
         parentId: IsNull(),
       },
-      select: [
-        'lessonId',
-        'courseId',
-        'ordering',
-        'totalMarks',
-        'passingMarks',
-        'attemptsGrade',
-      ],
+      relations: ['media'],
     });
     for (const l of rows) {
       const cur = result.get(l.courseId);
-      if (!cur || (l.ordering ?? 0) > (cur.ordering ?? 0)) {
-        result.set(l.courseId, l);
+      if (!cur || (l.ordering ?? 0) > (cur.lesson.ordering ?? 0)) {
+        const testId = this.parseTestIdFromMediaSource(l.media?.source);
+        result.set(l.courseId, { lesson: l, testId });
       }
     }
     return result;
+  }
+
+  private async fetchAssessmentLatestByTestId(
+    userId: string,
+    testIds: string[],
+    tenantId: string,
+    organisationId: string,
+    authorization?: string,
+  ): Promise<Map<string, AssessmentLatestSummary | null>> {
+    const map = new Map<string, AssessmentLatestSummary | null>();
+    const unique = [...new Set(testIds.filter(Boolean))];
+    const base = this.configService.get<string>('ASSESSMENT_SERVICE_URL', '').replace(/\/$/, '');
+    if (!base || !authorization || unique.length === 0) {
+      return map;
+    }
+    try {
+      const { data } = await axios.post(
+        `${base}/attempts/batch-outcome-summary`,
+        { userId, testIds: unique },
+        {
+          headers: {
+            tenantId,
+            organisationId,
+            authorization,
+            userId,
+            'Content-Type': 'application/json',
+          },
+          timeout: 20000,
+        },
+      );
+      const payload = data?.result ?? data;
+      if (payload && typeof payload === 'object' && !Array.isArray(payload)) {
+        for (const [tid, row] of Object.entries(payload)) {
+          map.set(tid, row as AssessmentLatestSummary | null);
+        }
+      }
+    } catch (e: any) {
+      this.logger.warn(
+        `fetchAssessmentLatestByTestId failed: ${e?.message ?? e}`,
+      );
+    }
+    return map;
   }
 
   /**
@@ -1481,11 +1538,42 @@ export class TrackingService {
   }
 
   /**
-   * Same attempt-selection idea as aggregate-content (aspire-leader getGradedLessonTracks): LAST_ATTEMPT uses last COMPLETED, then latest row.
+   * When lesson_track is submitted, prefer assessment testAttempts: result P/F; else submitted if test row is S but result/score not set.
+   * assessmentLatest undefined = no testId on lesson (skip assessment API path).
+   */
+  private resolveOutcomeForGradedAttempt(
+    graded: LessonTrack,
+    lesson: Lesson,
+    assessmentLatest: AssessmentLatestSummary | null | undefined,
+  ): FinalAssessmentOutcome {
+    if (graded.status === TrackingStatus.COMPLETED) {
+      return 'pass';
+    }
+    if (graded.status === TrackingStatus.SUBMITTED && assessmentLatest !== undefined) {
+      if (assessmentLatest === null) {
+        return this.outcomeFromSingleAttempt(graded, lesson);
+      }
+      if (assessmentLatest.result === 'P') {
+        return 'pass';
+      }
+      if (assessmentLatest.result === 'F') {
+        return 'fail';
+      }
+      if (assessmentLatest.attemptStatus === 'S') {
+        return 'submitted';
+      }
+      return this.outcomeFromSingleAttempt(graded, lesson);
+    }
+    return this.outcomeFromSingleAttempt(graded, lesson);
+  }
+
+  /**
+   * Attempt selection: FIRST / HIGHEST as named; LAST_ATTEMPT and AVERAGE both use last COMPLETED else latest row (user journey does not compute average-of-attempts pass/fail).
    */
   private resolveFinalAssessmentOutcome(
     attempts: LessonTrack[],
     lesson: Lesson,
+    assessmentLatest: AssessmentLatestSummary | null | undefined,
   ): FinalAssessmentOutcome {
     if (!attempts.length) {
       return null;
@@ -1495,7 +1583,9 @@ export class TrackingService {
     switch (method) {
       case AttemptsGradeMethod.FIRST_ATTEMPT: {
         const a = attempts.find((x) => x.attempt === 1);
-        return a ? this.outcomeFromSingleAttempt(a, lesson) : null;
+        return a
+          ? this.resolveOutcomeForGradedAttempt(a, lesson, assessmentLatest)
+          : null;
       }
       case AttemptsGradeMethod.HIGHEST: {
         const a = attempts.reduce(
@@ -1503,31 +1593,17 @@ export class TrackingService {
             (cur.score ?? 0) > (prev.score ?? 0) ? cur : prev,
           attempts[0],
         );
-        return this.outcomeFromSingleAttempt(a, lesson);
-      }
-      case AttemptsGradeMethod.AVERAGE: {
-        if (
-          lesson.totalMarks &&
-          lesson.passingMarks != null &&
-          attempts.length > 0
-        ) {
-          const avgScore =
-            attempts.reduce((s, x) => s + (x.score || 0), 0) / attempts.length;
-          const passPct = (lesson.passingMarks / lesson.totalMarks) * 100;
-          const pct = (avgScore / lesson.totalMarks) * 100;
-          return pct >= passPct ? 'pass' : 'fail';
-        }
-        const latest = attempts.at(-1)!;
-        return this.outcomeFromSingleAttempt(latest, lesson);
+        return this.resolveOutcomeForGradedAttempt(a, lesson, assessmentLatest);
       }
       case AttemptsGradeMethod.LAST_ATTEMPT:
+      case AttemptsGradeMethod.AVERAGE:
       default: {
         const graded =
           [...attempts]
             .reverse()
             .find((a) => a.status === TrackingStatus.COMPLETED) ??
           attempts.at(-1)!;
-        return this.outcomeFromSingleAttempt(graded, lesson);
+        return this.resolveOutcomeForGradedAttempt(graded, lesson, assessmentLatest);
       }
     }
   }
@@ -1550,13 +1626,14 @@ export class TrackingService {
     courseIds: string[],
     tenantId: string,
     organisationId: string,
+    authorization?: string,
   ): Promise<Map<string, FinalAssessmentOutcome>> {
     const out = new Map<string, FinalAssessmentOutcome>();
     for (const cid of courseIds) {
       out.set(cid, null);
     }
 
-    const finalByCourse = await this.loadFinalAssessmentLessonPerCourse(
+    const finalByCourse = await this.loadFinalAssessmentContextPerCourse(
       courseIds,
       tenantId,
       organisationId,
@@ -1565,7 +1642,21 @@ export class TrackingService {
       return out;
     }
 
-    const lessonIds = [...finalByCourse.values()].map((l) => l.lessonId);
+    const testIds: string[] = [];
+    for (const ctx of finalByCourse.values()) {
+      if (ctx.testId) {
+        testIds.push(ctx.testId);
+      }
+    }
+    const assessmentByTestId = await this.fetchAssessmentLatestByTestId(
+      userId,
+      testIds,
+      tenantId,
+      organisationId,
+      authorization,
+    );
+
+    const lessonIds = [...finalByCourse.values()].map((c) => c.lesson.lessonId);
     const tracks = await this.lessonTrackRepository.find({
       where: {
         userId,
@@ -1584,9 +1675,16 @@ export class TrackingService {
       byLesson.get(t.lessonId)!.push(t);
     }
 
-    for (const [courseId, lesson] of finalByCourse) {
-      const attempts = byLesson.get(lesson.lessonId) ?? [];
-      const outcome = this.resolveFinalAssessmentOutcome(attempts, lesson);
+    for (const [courseId, ctx] of finalByCourse) {
+      const attempts = byLesson.get(ctx.lesson.lessonId) ?? [];
+      const assessmentEntry = ctx.testId
+        ? assessmentByTestId.get(ctx.testId) ?? null
+        : undefined;
+      const outcome = this.resolveFinalAssessmentOutcome(
+        attempts,
+        ctx.lesson,
+        assessmentEntry,
+      );
       if (outcome !== null) {
         out.set(courseId, outcome);
       }

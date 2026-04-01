@@ -49,11 +49,11 @@ export class UserJourneyProgressDto {
   certificateIssued: boolean;
   @ApiPropertyOptional({
     description:
-      'Outcome of the latest attempt on the course final assessment lesson (highest ordering, parent test lesson): pass, fail, or null if no assessment or no attempt / still in progress.',
-    enum: ['pass', 'fail'],
+      'Final assessment lesson outcome: pass/fail from assessment testAttempts.result (P/F) when lesson_track is submitted; submitted = test submitted but result/score not finalized in assessment DB; null if N/A or in progress on LMS.',
+    enum: ['pass', 'fail', 'submitted'],
     nullable: true,
   })
-  assessmentOutcome?: 'pass' | 'fail' | null;
+  assessmentOutcome?: 'pass' | 'fail' | 'submitted' | null;
 }
 
 export class UserJourneyItemDto {

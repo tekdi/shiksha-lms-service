@@ -9,6 +9,7 @@ import {
   Patch,
   HttpCode,
   HttpStatus,
+  Headers,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -43,7 +44,7 @@ export class TrackingController {
   @ApiOperation({
     summary: 'Get user journey by user and cohort',
     description:
-      'Returns enrolled courses for the user in the given cohort with totalEventLessons and isAttendedOneEvent (true if user completed at least one event-type lesson in that course). Uses limit/offset for pagination.',
+      'Returns enrolled courses for the user in the given cohort with totalEventLessons and isAttendedOneEvent. progressDetail.assessmentOutcome uses assessment service testAttempts (latest per testId from lesson media.source) when Authorization is sent. Uses limit/offset for pagination.',
   })
   @ApiBody({ type: UserJourneyDto })
   @ApiResponse({
@@ -55,11 +56,13 @@ export class TrackingController {
   async getUserJourney(
     @Body() userJourneyDto: UserJourneyDto,
     @TenantOrg() tenant: { tenantId: string; organisationId: string },
+    @Headers('authorization') authorization?: string,
   ): Promise<UserJourneyResponseDto> {
     return this.trackingService.getUserJourney(
       userJourneyDto,
       tenant.tenantId,
       tenant.organisationId,
+      authorization,
     );
   }
 
