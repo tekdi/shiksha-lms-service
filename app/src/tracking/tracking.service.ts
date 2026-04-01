@@ -1233,9 +1233,8 @@ export class TrackingService {
   }
 
   /**
-   * Get user journey: enrolled courses for user in cohort with event-attendance flags.
-   * Uses existing usersEnrolledCourses (limit/offset), then two batch queries:
-   * 1) event-type lessons per course, 2) user's completed lesson tracks for those lessons.
+   * Get user journey: enrolled courses for user in cohort with event-attendance flags
+   * and final-assessment pass/fail on progressDetail.assessmentOutcome.
    */
   async getUserJourney(
     dto: UserJourneyDto,
@@ -1278,31 +1277,36 @@ export class TrackingService {
 
     const courseIds = courses.map((c) => c.courseId);
 
-    // Batch fetch event lesson IDs from cache and user's course tracks in parallel
-    const [cachedEventLessonIdResults, courseTracks] = await Promise.all([
-      Promise.all(courseIds.map((id) => this.cacheService.getCourseEventLessons(id))),
-      this.courseTrackRepository.find({
-        where: {
-          userId: dto.userId,
-          courseId: In(courseIds),
+    const [cachedEventLessonIdResults, courseTracks, assessmentOutcomeByCourse] =
+      await Promise.all([
+        Promise.all(courseIds.map((id) => this.cacheService.getCourseEventLessons(id))),
+        this.courseTrackRepository.find({
+          where: {
+            userId: dto.userId,
+            courseId: In(courseIds),
+            tenantId,
+            organisationId,
+          },
+          select: [
+            'courseId',
+            'status',
+            'completedLessons',
+            'noOfLessons',
+            'lastAccessedDate',
+            'certificateIssued',
+          ],
+        }),
+        this.resolveAssessmentOutcomesByCourse(
+          dto.userId,
+          courseIds,
           tenantId,
           organisationId,
-        },
-        select: [
-          'courseId',
-          'status',
-          'completedLessons',
-          'noOfLessons',
-          'lastAccessedDate',
-          'certificateIssued',
-        ],
-      }),
-    ]);
+        ),
+      ]);
 
     const courseToEventLessonIds = new Map<string, string[]>();
     const courseIdsToFetch: string[] = [];
 
-    // Separate cached IDs from missing ones
     courseIds.forEach((id, index) => {
       const cached = cachedEventLessonIdResults[index];
       if (cached) {
@@ -1312,7 +1316,6 @@ export class TrackingService {
       }
     });
 
-    // Fetch missing event lesson IDs from DB
     if (courseIdsToFetch.length > 0) {
       const eventLessonsFromDb = await this.lessonRepository.find({
         where: {
@@ -1325,7 +1328,6 @@ export class TrackingService {
         select: ['lessonId', 'courseId'],
       });
 
-      // Group DB results by courseId
       const freshCourseToEventLessonIds = new Map<string, string[]>();
       for (const l of eventLessonsFromDb) {
         const list = freshCourseToEventLessonIds.get(l.courseId) ?? [];
@@ -1333,11 +1335,9 @@ export class TrackingService {
         freshCourseToEventLessonIds.set(l.courseId, list);
       }
 
-      // Populate main map and update cache for each fetched course
       for (const id of courseIdsToFetch) {
         const list = freshCourseToEventLessonIds.get(id) ?? [];
         courseToEventLessonIds.set(id, list);
-        // Non-blocking cache update
         this.cacheService.setCourseEventLessons(id, list).catch((err) => {
           this.logger.warn(`Failed to set event lessons cache for course ${id}: ${err.message}`);
         });
@@ -1366,11 +1366,14 @@ export class TrackingService {
     const resultCourses: UserJourneyItemDto[] = courses.map((course) => {
       const eventLessonIds = courseToEventLessonIds.get(course.courseId) ?? [];
       const totalEventLessons = eventLessonIds.length;
-      const isAttendedOneEvent = totalEventLessons > 0 && eventLessonIds.some((id) => completedEventLessonIds.has(id));
+      const isAttendedOneEvent =
+        totalEventLessons > 0 &&
+        eventLessonIds.some((id) => completedEventLessonIds.has(id));
       const track = courseTrackByCourseId.get(course.courseId);
       const noOfLessons = track?.noOfLessons ?? 0;
       const completedLessons = track?.completedLessons ?? 0;
-      const progressPct = noOfLessons > 0 ? Math.round((completedLessons / noOfLessons) * 100) : 0;
+      const progressPct =
+        noOfLessons > 0 ? Math.round((completedLessons / noOfLessons) * 100) : 0;
       const courseTrackStatus = track?.status ?? TrackingStatus.NOT_STARTED;
       const progressDetail = {
         courseTrackStatus,
@@ -1379,6 +1382,7 @@ export class TrackingService {
         progress: progressPct,
         lastAccessedDate: track?.lastAccessedDate?.toISOString() ?? null,
         certificateIssued: track?.certificateIssued ?? false,
+        assessmentOutcome: assessmentOutcomeByCourse.get(course.courseId) ?? null,
       };
       return {
         courseId: course.courseId,
@@ -1404,5 +1408,186 @@ export class TrackingService {
       offset,
       limit,
     };
+  }
+
+  private async loadFinalAssessmentLessonPerCourse(
+    courseIds: string[],
+    tenantId: string,
+    organisationId: string,
+  ): Promise<Map<string, Lesson>> {
+    const result = new Map<string, Lesson>();
+    if (courseIds.length === 0) {
+      return result;
+    }
+    const rows = await this.lessonRepository.find({
+      where: {
+        courseId: In(courseIds),
+        format: LessonFormat.ASSESSMENT,
+        status: LessonStatus.PUBLISHED,
+        tenantId,
+        organisationId,
+        parentId: IsNull(),
+      },
+      select: [
+        'lessonId',
+        'courseId',
+        'ordering',
+        'totalMarks',
+        'passingMarks',
+        'attemptsGrade',
+      ],
+    });
+    for (const l of rows) {
+      const cur = result.get(l.courseId);
+      if (!cur || (l.ordering ?? 0) > (cur.ordering ?? 0)) {
+        result.set(l.courseId, l);
+      }
+    }
+    return result;
+  }
+
+  /**
+   * Fail only when status matches Aspire updateTestProgress (FAIL → SUBMITTED) or a clear SUBMITTED under-pass.
+   * COMPLETED always counts as not-failed here — do not override with score vs passing (avoids false fails when score sync lags or scaling differs).
+   */
+  private isFailedAssessmentOutcome(
+    attempt: LessonTrack,
+    lesson: Lesson,
+  ): boolean {
+    if (attempt.status === TrackingStatus.COMPLETED) {
+      return false;
+    }
+    if (
+      attempt.status === TrackingStatus.SUBMITTED &&
+      (attempt.completionPercentage ?? 0) >= 100
+    ) {
+      return true;
+    }
+    if (
+      lesson.totalMarks &&
+      lesson.passingMarks != null &&
+      attempt.score != null &&
+      attempt.status === TrackingStatus.SUBMITTED
+    ) {
+      const pct = (attempt.score / lesson.totalMarks) * 100;
+      const passPct = (lesson.passingMarks / lesson.totalMarks) * 100;
+      if (pct < passPct) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Same attempt-selection idea as aggregate-content (aspire-leader getGradedLessonTracks): LAST_ATTEMPT uses last COMPLETED, then latest row.
+   */
+  private resolveFinalAssessmentOutcome(
+    attempts: LessonTrack[],
+    lesson: Lesson,
+  ): 'pass' | 'fail' | null {
+    if (!attempts.length) {
+      return null;
+    }
+    const method = lesson.attemptsGrade || AttemptsGradeMethod.LAST_ATTEMPT;
+
+    switch (method) {
+      case AttemptsGradeMethod.FIRST_ATTEMPT: {
+        const a = attempts.find((x) => x.attempt === 1);
+        return a ? this.outcomeFromSingleAttempt(a, lesson) : null;
+      }
+      case AttemptsGradeMethod.HIGHEST: {
+        const a = attempts.reduce((prev, cur) =>
+          (cur.score ?? 0) > (prev.score ?? 0) ? cur : prev,
+        );
+        return this.outcomeFromSingleAttempt(a, lesson);
+      }
+      case AttemptsGradeMethod.AVERAGE: {
+        if (
+          lesson.totalMarks &&
+          lesson.passingMarks != null &&
+          attempts.length > 0
+        ) {
+          const avgScore =
+            attempts.reduce((s, x) => s + (x.score || 0), 0) / attempts.length;
+          const passPct = (lesson.passingMarks / lesson.totalMarks) * 100;
+          const pct = (avgScore / lesson.totalMarks) * 100;
+          return pct >= passPct ? 'pass' : 'fail';
+        }
+        const latest = attempts[attempts.length - 1];
+        return this.outcomeFromSingleAttempt(latest, lesson);
+      }
+      case AttemptsGradeMethod.LAST_ATTEMPT:
+      default: {
+        const graded =
+          [...attempts]
+            .reverse()
+            .find((a) => a.status === TrackingStatus.COMPLETED) ??
+          attempts[attempts.length - 1];
+        return this.outcomeFromSingleAttempt(graded, lesson);
+      }
+    }
+  }
+
+  private outcomeFromSingleAttempt(
+    attempt: LessonTrack,
+    lesson: Lesson,
+  ): 'pass' | 'fail' | null {
+    if (this.isFailedAssessmentOutcome(attempt, lesson)) {
+      return 'fail';
+    }
+    if (attempt.status === TrackingStatus.COMPLETED) {
+      return 'pass';
+    }
+    return null;
+  }
+
+  private async resolveAssessmentOutcomesByCourse(
+    userId: string,
+    courseIds: string[],
+    tenantId: string,
+    organisationId: string,
+  ): Promise<Map<string, 'pass' | 'fail' | null>> {
+    const out = new Map<string, 'pass' | 'fail' | null>();
+    for (const cid of courseIds) {
+      out.set(cid, null);
+    }
+
+    const finalByCourse = await this.loadFinalAssessmentLessonPerCourse(
+      courseIds,
+      tenantId,
+      organisationId,
+    );
+    if (finalByCourse.size === 0) {
+      return out;
+    }
+
+    const lessonIds = [...finalByCourse.values()].map((l) => l.lessonId);
+    const tracks = await this.lessonTrackRepository.find({
+      where: {
+        userId,
+        lessonId: In(lessonIds),
+        tenantId,
+        organisationId,
+      },
+      order: { attempt: 'ASC' },
+    });
+
+    const byLesson = new Map<string, LessonTrack[]>();
+    for (const t of tracks) {
+      if (!byLesson.has(t.lessonId)) {
+        byLesson.set(t.lessonId, []);
+      }
+      byLesson.get(t.lessonId)!.push(t);
+    }
+
+    for (const [courseId, lesson] of finalByCourse) {
+      const attempts = byLesson.get(lesson.lessonId) ?? [];
+      const outcome = this.resolveFinalAssessmentOutcome(attempts, lesson);
+      if (outcome !== null) {
+        out.set(courseId, outcome);
+      }
+    }
+
+    return out;
   }
 }
