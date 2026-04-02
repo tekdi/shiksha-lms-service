@@ -30,14 +30,6 @@ import axios from 'axios';
 
 type FinalAssessmentOutcome = 'pass' | 'fail' | 'submitted' | null;
 
-/** Latest row from assessment testAttempts (batch-outcome-summary). */
-type AssessmentLatestSummary = {
-  attemptStatus: string;
-  score: number | null;
-  result: string | null;
-  reviewStatus: string;
-};
-
 @Injectable()
 export class TrackingService {
   private readonly logger = new Logger(TrackingService.name);
@@ -1308,7 +1300,7 @@ export class TrackingService {
             'certificateIssued',
           ],
         }),
-        this.resolveAssessmentOutcomesByCourse(
+        this.computeJourneyTestOutcomesByCourse(
           dto.userId,
           courseIds,
           tenantId,
@@ -1423,7 +1415,10 @@ export class TrackingService {
     };
   }
 
-  private parseTestIdFromMediaSource(source: string | null | undefined): string | null {
+  /**
+   * Returns the media `source` string when it is a bare UUID (used as external test id); otherwise null.
+   */
+  private extractUuidFromMediaSource(source: string | null | undefined): string | null {
     if (source == null || typeof source !== 'string') {
       return null;
     }
@@ -1433,7 +1428,11 @@ export class TrackingService {
     return uuidRe.test(s) ? s : null;
   }
 
-  private async loadFinalAssessmentContextPerCourse(
+  /**
+   * For each course, finds the published root assessment lesson with highest ordering and pairs it with
+   * the test id parsed from that lesson’s media source (end-of-course test used on user journey).
+   */
+  private async loadFinalTestLessonByCourse(
     courseIds: string[],
     tenantId: string,
     organisationId: string,
@@ -1456,71 +1455,69 @@ export class TrackingService {
     for (const l of rows) {
       const cur = result.get(l.courseId);
       if (!cur || (l.ordering ?? 0) > (cur.lesson.ordering ?? 0)) {
-        const testId = this.parseTestIdFromMediaSource(l.media?.source);
+        const testId = this.extractUuidFromMediaSource(l.media?.source);
         result.set(l.courseId, { lesson: l, testId });
       }
     }
     return result;
   }
 
-  private async fetchAssessmentLatestByTestId(
+  /**
+   * Calls the external service once per distinct test id (in parallel) to learn whether the latest
+   * attempt is fully reviewed with a final pass/fail (`isImported`). Requires base URL and auth.
+   */
+  private async fetchResultImportedPerTest(
     userId: string,
     testIds: string[],
     tenantId: string,
     organisationId: string,
     authorization?: string,
-  ): Promise<Map<string, AssessmentLatestSummary | null>> {
-    const map = new Map<string, AssessmentLatestSummary | null>();
+  ): Promise<Map<string, boolean>> {
+    const map = new Map<string, boolean>();
     const unique = [...new Set(testIds.filter(Boolean))];
     const base = this.configService.get<string>('ASSESSMENT_SERVICE_URL', '').replace(/\/$/, '');
     if (!base || !authorization || unique.length === 0) {
       return map;
     }
-    try {
-      const { data } = await axios.post(
-        `${base}/attempts/batch-outcome-summary`,
-        { userId, testIds: unique },
-        {
-          headers: {
-            tenantId,
-            organisationId,
-            authorization,
-            userId,
-            'Content-Type': 'application/json',
-          },
-          timeout: 20000,
-        },
-      );
-      const payload = data?.result ?? data;
-      if (payload && typeof payload === 'object' && !Array.isArray(payload)) {
-        for (const [tid, row] of Object.entries(payload)) {
-          map.set(tid, row as AssessmentLatestSummary | null);
+    const headers = {
+      tenantId,
+      organisationId,
+      authorization,
+      userId,
+      'Content-Type': 'application/json',
+    };
+    await Promise.all(
+      unique.map(async (testId) => {
+        try {
+          const { data } = await axios.post(
+            `${base}/attempts/import/resultstatus`,
+            { userId, testId },
+            { headers, timeout: 15000 },
+          );
+          const payload = data?.result ?? data;
+          if (payload && typeof payload.isImported === 'boolean') {
+            map.set(testId, payload.isImported);
+          }
+        } catch (e: any) {
+          this.logger.warn(
+            `fetchResultImportedPerTest testId=${testId}: ${e?.message ?? e}`,
+          );
         }
-      }
-    } catch (e: any) {
-      this.logger.warn(
-        `fetchAssessmentLatestByTestId failed: ${e?.message ?? e}`,
-      );
-    }
+      }),
+    );
     return map;
   }
 
   /**
-   * Fail only when status matches Aspire updateTestProgress (FAIL → SUBMITTED) or a clear SUBMITTED under-pass.
-   * COMPLETED always counts as not-failed here — do not override with score vs passing (avoids false fails when score sync lags or scaling differs).
+   * True when the lesson track is submitted and the stored score is below the lesson’s passing marks
+   * (used when a final result exists externally but pass/fail is not in the HTTP payload).
    */
-  private isFailedAssessmentOutcome(
+  private lessonTrackBelowPassingThreshold(
     attempt: LessonTrack,
     lesson: Lesson,
   ): boolean {
     if (attempt.status === TrackingStatus.COMPLETED) {
       return false;
-    }
-    if (
-      attempt.status === TrackingStatus.SUBMITTED &&
-      (attempt.completionPercentage ?? 0) >= 100
-    ) {
-      return true;
     }
     if (
       lesson.totalMarks &&
@@ -1538,81 +1535,59 @@ export class TrackingService {
   }
 
   /**
-   * When lesson_track is submitted, prefer assessment testAttempts: result P/F; else submitted if test row is S but result/score not set.
-   * assessmentLatest undefined = no testId on lesson (skip assessment API path).
+   * Maps one lesson_track row plus the external “result imported” flag to pass | fail | submitted | null.
+   * `assessmentIsImported`: undefined = no test id on lesson; null = HTTP miss; true/false from import/resultstatus.
    */
-  private resolveOutcomeForGradedAttempt(
+  private mergeTrackRowWithImportOutcome(
     graded: LessonTrack,
     lesson: Lesson,
-    assessmentLatest: AssessmentLatestSummary | null | undefined,
+    assessmentIsImported: boolean | null | undefined,
   ): FinalAssessmentOutcome {
     if (graded.status === TrackingStatus.COMPLETED) {
       return 'pass';
     }
-    if (graded.status === TrackingStatus.SUBMITTED && assessmentLatest !== undefined) {
-      if (assessmentLatest === null) {
-        return this.outcomeFromSingleAttempt(graded, lesson);
+    if (graded.status === TrackingStatus.SUBMITTED && assessmentIsImported !== undefined) {
+      if (assessmentIsImported === null) {
+        return this.outcomeFromLmsWithoutImport(graded, lesson);
       }
-      if (assessmentLatest.result === 'P') {
-        return 'pass';
-      }
-      if (assessmentLatest.result === 'F') {
-        return 'fail';
-      }
-      if (assessmentLatest.attemptStatus === 'S') {
+      if (assessmentIsImported === false) {
         return 'submitted';
       }
-      return this.outcomeFromSingleAttempt(graded, lesson);
+      if (this.lessonTrackBelowPassingThreshold(graded, lesson)) {
+        return 'fail';
+      }
+      return 'pass';
     }
-    return this.outcomeFromSingleAttempt(graded, lesson);
+    return this.outcomeFromLmsWithoutImport(graded, lesson);
   }
 
   /**
-   * Attempt selection: FIRST / HIGHEST as named; LAST_ATTEMPT and AVERAGE both use last COMPLETED else latest row (user journey does not compute average-of-attempts pass/fail).
+   * Chooses the journey outcome from all attempts for the lesson: any completed row → pass; else uses the
+   * latest attempt row with mergeTrackRowWithImportOutcome (tracks ordered by attempt ascending).
    */
-  private resolveFinalAssessmentOutcome(
+  private computeOutcomeFromLessonTracks(
     attempts: LessonTrack[],
     lesson: Lesson,
-    assessmentLatest: AssessmentLatestSummary | null | undefined,
+    assessmentIsImported: boolean | null | undefined,
   ): FinalAssessmentOutcome {
     if (!attempts.length) {
       return null;
     }
-    const method = lesson.attemptsGrade || AttemptsGradeMethod.LAST_ATTEMPT;
-
-    switch (method) {
-      case AttemptsGradeMethod.FIRST_ATTEMPT: {
-        const a = attempts.find((x) => x.attempt === 1);
-        return a
-          ? this.resolveOutcomeForGradedAttempt(a, lesson, assessmentLatest)
-          : null;
-      }
-      case AttemptsGradeMethod.HIGHEST: {
-        const a = attempts.reduce(
-          (prev, cur) =>
-            (cur.score ?? 0) > (prev.score ?? 0) ? cur : prev,
-          attempts[0],
-        );
-        return this.resolveOutcomeForGradedAttempt(a, lesson, assessmentLatest);
-      }
-      case AttemptsGradeMethod.LAST_ATTEMPT:
-      case AttemptsGradeMethod.AVERAGE:
-      default: {
-        const graded =
-          [...attempts]
-            .reverse()
-            .find((a) => a.status === TrackingStatus.COMPLETED) ??
-          attempts.at(-1)!;
-        return this.resolveOutcomeForGradedAttempt(graded, lesson, assessmentLatest);
-      }
+    if (attempts.some((a) => a.status === TrackingStatus.COMPLETED)) {
+      return 'pass';
     }
+    const graded = attempts.at(-1)!;
+    return this.mergeTrackRowWithImportOutcome(graded, lesson, assessmentIsImported);
   }
 
-  private outcomeFromSingleAttempt(
+  /**
+   * Outcome using only LMS lesson_track (no external import flag): fail if below passing, else pass if completed.
+   */
+  private outcomeFromLmsWithoutImport(
     attempt: LessonTrack,
     lesson: Lesson,
   ): FinalAssessmentOutcome {
-    if (this.isFailedAssessmentOutcome(attempt, lesson)) {
+    if (this.lessonTrackBelowPassingThreshold(attempt, lesson)) {
       return 'fail';
     }
     if (attempt.status === TrackingStatus.COMPLETED) {
@@ -1621,7 +1596,11 @@ export class TrackingService {
     return null;
   }
 
-  private async resolveAssessmentOutcomesByCourse(
+  /**
+   * Builds courseId → assessmentOutcome for user journey: final test lesson per course, parallel import checks,
+   * then computeOutcomeFromLessonTracks per course.
+   */
+  private async computeJourneyTestOutcomesByCourse(
     userId: string,
     courseIds: string[],
     tenantId: string,
@@ -1633,7 +1612,7 @@ export class TrackingService {
       out.set(cid, null);
     }
 
-    const finalByCourse = await this.loadFinalAssessmentContextPerCourse(
+    const finalByCourse = await this.loadFinalTestLessonByCourse(
       courseIds,
       tenantId,
       organisationId,
@@ -1648,7 +1627,7 @@ export class TrackingService {
         testIds.push(ctx.testId);
       }
     }
-    const assessmentByTestId = await this.fetchAssessmentLatestByTestId(
+    const assessmentByTestId = await this.fetchResultImportedPerTest(
       userId,
       testIds,
       tenantId,
@@ -1677,13 +1656,13 @@ export class TrackingService {
 
     for (const [courseId, ctx] of finalByCourse) {
       const attempts = byLesson.get(ctx.lesson.lessonId) ?? [];
-      const assessmentEntry = ctx.testId
+      const assessmentIsImported = ctx.testId
         ? assessmentByTestId.get(ctx.testId) ?? null
         : undefined;
-      const outcome = this.resolveFinalAssessmentOutcome(
+      const outcome = this.computeOutcomeFromLessonTracks(
         attempts,
         ctx.lesson,
-        assessmentEntry,
+        assessmentIsImported,
       );
       if (outcome !== null) {
         out.set(courseId, outcome);
