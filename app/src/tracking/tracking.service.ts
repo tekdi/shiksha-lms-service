@@ -1299,7 +1299,7 @@ export class TrackingService {
             'certificateIssued',
           ],
         }),
-        this.computeJourneyTestOutcomesByCourse(
+        this.determineCourseOutcomes(
           dto.userId,
           courseIds,
           tenantId,
@@ -1596,7 +1596,7 @@ export class TrackingService {
    * Builds courseId → assessmentOutcome for user journey: final test lesson per course, parallel import checks,
    * then determineLessonOutcomeFromAttempts per course.
    */
-  private async computeJourneyTestOutcomesByCourse(
+  private async determineCourseOutcomes(
     userId: string,
     courseIds: string[],
     tenantId: string,
