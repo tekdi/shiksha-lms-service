@@ -43,7 +43,7 @@ export class TrackingController {
   @ApiOperation({
     summary: 'Get user journey by user and cohort',
     description:
-      'Returns enrolled courses for the user in the given cohort with totalEventLessons and isAttendedOneEvent (true if user completed at least one event-type lesson in that course). Uses limit/offset for pagination.',
+      'Returns enrolled courses for the user in the given cohort with totalEventLessons and isAttendedOneEvent. progressDetail.assessmentOutcome combines lesson_track with assessment POST .../attempts/import/resultstatus per unique testId (deduped, parallel) when Authorization and ASSESSMENT_SERVICE_URL are set. Uses limit/offset for pagination.',
   })
   @ApiBody({ type: UserJourneyDto })
   @ApiResponse({

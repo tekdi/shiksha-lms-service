@@ -47,6 +47,13 @@ export class UserJourneyProgressDto {
   lastAccessedDate?: string | null;
   @ApiProperty({ description: 'Whether certificate has been issued' })
   certificateIssued: boolean;
+  @ApiPropertyOptional({
+    description:
+      'Final assessment lesson outcome: pass/fail from assessment testAttempts.result (P/F) when lesson_track is submitted; submitted = test submitted but result/score not finalized in assessment DB; null if N/A or in progress on LMS.',
+    enum: ['pass', 'fail', 'submitted'],
+    nullable: true,
+  })
+  assessmentOutcome?: 'pass' | 'fail' | 'submitted' | null;
 }
 
 export class UserJourneyItemDto {

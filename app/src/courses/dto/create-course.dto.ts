@@ -41,6 +41,9 @@ export class CreateCourseDto {
   })
   @IsOptional()
   @IsString({ message: VALIDATION_MESSAGES.COMMON.STRING('Short description') })
+  @MaxLength(255, {
+    message: VALIDATION_MESSAGES.COURSE.DESCRIPTION_MAX_LENGTH_255,
+  })
   shortDescription: string;
 
   @ApiProperty({ 
@@ -50,6 +53,9 @@ export class CreateCourseDto {
   })
   @IsNotEmpty({ message: VALIDATION_MESSAGES.COMMON.REQUIRED('Description') })
   @IsString({ message: VALIDATION_MESSAGES.COMMON.STRING('Description') })
+  @MaxLength(255, {
+    message: VALIDATION_MESSAGES.COURSE.DESCRIPTION_MAX_LENGTH_255,
+  })
   description: string;
 
   @ApiPropertyOptional({ 

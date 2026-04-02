@@ -26,6 +26,9 @@ import { ConfigService } from '@nestjs/config';
 import { ModuleTrack, ModuleTrackStatus } from './entities/module-track.entity';
 import { LessonsService } from '../lessons/lessons.service';
 import { CacheService } from '../cache/cache.service';
+import axios from 'axios';
+
+type FinalAssessmentOutcome = 'pass' | 'fail' | 'submitted' | null;
 
 @Injectable()
 export class TrackingService {
@@ -1233,9 +1236,8 @@ export class TrackingService {
   }
 
   /**
-   * Get user journey: enrolled courses for user in cohort with event-attendance flags.
-   * Uses existing usersEnrolledCourses (limit/offset), then two batch queries:
-   * 1) event-type lessons per course, 2) user's completed lesson tracks for those lessons.
+   * Get user journey: enrolled courses for user in cohort with event-attendance flags
+   * and final-assessment pass/fail on progressDetail.assessmentOutcome.
    */
   async getUserJourney(
     dto: UserJourneyDto,
@@ -1278,31 +1280,36 @@ export class TrackingService {
 
     const courseIds = courses.map((c) => c.courseId);
 
-    // Batch fetch event lesson IDs from cache and user's course tracks in parallel
-    const [cachedEventLessonIdResults, courseTracks] = await Promise.all([
-      Promise.all(courseIds.map((id) => this.cacheService.getCourseEventLessons(id))),
-      this.courseTrackRepository.find({
-        where: {
-          userId: dto.userId,
-          courseId: In(courseIds),
+    const [cachedEventLessonIdResults, courseTracks, assessmentOutcomeByCourse] =
+      await Promise.all([
+        Promise.all(courseIds.map((id) => this.cacheService.getCourseEventLessons(id))),
+        this.courseTrackRepository.find({
+          where: {
+            userId: dto.userId,
+            courseId: In(courseIds),
+            tenantId,
+            organisationId,
+          },
+          select: [
+            'courseId',
+            'status',
+            'completedLessons',
+            'noOfLessons',
+            'lastAccessedDate',
+            'certificateIssued',
+          ],
+        }),
+        this.determineCourseOutcomes(
+          dto.userId,
+          courseIds,
           tenantId,
           organisationId,
-        },
-        select: [
-          'courseId',
-          'status',
-          'completedLessons',
-          'noOfLessons',
-          'lastAccessedDate',
-          'certificateIssued',
-        ],
-      }),
-    ]);
+        ),
+      ]);
 
     const courseToEventLessonIds = new Map<string, string[]>();
     const courseIdsToFetch: string[] = [];
 
-    // Separate cached IDs from missing ones
     courseIds.forEach((id, index) => {
       const cached = cachedEventLessonIdResults[index];
       if (cached) {
@@ -1312,7 +1319,6 @@ export class TrackingService {
       }
     });
 
-    // Fetch missing event lesson IDs from DB
     if (courseIdsToFetch.length > 0) {
       const eventLessonsFromDb = await this.lessonRepository.find({
         where: {
@@ -1325,7 +1331,6 @@ export class TrackingService {
         select: ['lessonId', 'courseId'],
       });
 
-      // Group DB results by courseId
       const freshCourseToEventLessonIds = new Map<string, string[]>();
       for (const l of eventLessonsFromDb) {
         const list = freshCourseToEventLessonIds.get(l.courseId) ?? [];
@@ -1333,11 +1338,9 @@ export class TrackingService {
         freshCourseToEventLessonIds.set(l.courseId, list);
       }
 
-      // Populate main map and update cache for each fetched course
       for (const id of courseIdsToFetch) {
         const list = freshCourseToEventLessonIds.get(id) ?? [];
         courseToEventLessonIds.set(id, list);
-        // Non-blocking cache update
         this.cacheService.setCourseEventLessons(id, list).catch((err) => {
           this.logger.warn(`Failed to set event lessons cache for course ${id}: ${err.message}`);
         });
@@ -1366,11 +1369,14 @@ export class TrackingService {
     const resultCourses: UserJourneyItemDto[] = courses.map((course) => {
       const eventLessonIds = courseToEventLessonIds.get(course.courseId) ?? [];
       const totalEventLessons = eventLessonIds.length;
-      const isAttendedOneEvent = totalEventLessons > 0 && eventLessonIds.some((id) => completedEventLessonIds.has(id));
+      const isAttendedOneEvent =
+        totalEventLessons > 0 &&
+        eventLessonIds.some((id) => completedEventLessonIds.has(id));
       const track = courseTrackByCourseId.get(course.courseId);
       const noOfLessons = track?.noOfLessons ?? 0;
       const completedLessons = track?.completedLessons ?? 0;
-      const progressPct = noOfLessons > 0 ? Math.round((completedLessons / noOfLessons) * 100) : 0;
+      const progressPct =
+        noOfLessons > 0 ? Math.round((completedLessons / noOfLessons) * 100) : 0;
       const courseTrackStatus = track?.status ?? TrackingStatus.NOT_STARTED;
       const progressDetail = {
         courseTrackStatus,
@@ -1379,6 +1385,7 @@ export class TrackingService {
         progress: progressPct,
         lastAccessedDate: track?.lastAccessedDate?.toISOString() ?? null,
         certificateIssued: track?.certificateIssued ?? false,
+        assessmentOutcome: assessmentOutcomeByCourse.get(course.courseId) ?? null,
       };
       return {
         courseId: course.courseId,
@@ -1404,5 +1411,258 @@ export class TrackingService {
       offset,
       limit,
     };
+  }
+
+  /**
+   * Returns the media `source` string when it is a bare UUID (used as external test id); otherwise null.
+   */
+  private extractUuidFromMediaSource(source: string | null | undefined): string | null {
+    if (source == null || typeof source !== 'string') {
+      return null;
+    }
+    const s = source.trim();
+    const uuidRe =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    return uuidRe.test(s) ? s : null;
+  }
+
+  /**
+   * For each course, finds the published root assessment lesson with highest ordering and pairs it with
+   * the test id parsed from that lesson’s media source (end-of-course test used on user journey).
+   */
+  private async getAssessementLessonByCourse(
+    courseIds: string[],
+    tenantId: string,
+    organisationId: string,
+  ): Promise<Map<string, { lesson: Lesson; testId: string | null }>> {
+    const result = new Map<string, { lesson: Lesson; testId: string | null }>();
+    if (courseIds.length === 0) {
+      return result;
+    }
+    const rows = await this.lessonRepository.find({
+      where: {
+        courseId: In(courseIds),
+        format: LessonFormat.ASSESSMENT,
+        status: LessonStatus.PUBLISHED,
+        tenantId,
+        organisationId,
+        parentId: IsNull(),
+      },
+      relations: ['media'],
+    });
+    for (const l of rows) {
+      const cur = result.get(l.courseId);
+      if (!cur || (l.ordering ?? 0) > (cur.lesson.ordering ?? 0)) {
+        const testId = this.extractUuidFromMediaSource(l.media?.source);
+        result.set(l.courseId, { lesson: l, testId });
+      }
+    }
+    return result;
+  }
+
+  /**
+   * Calls the external service once per distinct test id (in parallel) to learn whether the latest
+   * attempt is fully reviewed with a final pass/fail (`isImported`). Requires base URL and auth.
+   */
+  private async getScoreByAssessmentTest(
+    userId: string,
+    testIds: string[],
+    tenantId: string,
+    organisationId: string,
+  ): Promise<Map<string, boolean>> {
+    const map = new Map<string, boolean>();
+    const unique = [...new Set(testIds.filter(Boolean))];
+    const base = this.configService.get<string>('ASSESSMENT_SERVICE_URL', '').replace(/\/$/, '');
+    if (!base || unique.length === 0) {
+      return map;
+    }
+    const headers = {
+      tenantId,
+      organisationId,
+      userId,
+      'Content-Type': 'application/json',
+    };
+    await Promise.all(
+      unique.map(async (testId) => {
+        try {
+          const { data } = await axios.post(
+            `${base}/attempts/import/resultstatus`,
+            { userId, testId },
+            { headers, timeout: 15000 },
+          );
+          const payload = data?.result ?? data;
+          if (payload && typeof payload.isImported === 'boolean') {
+            map.set(testId, payload.isImported);
+          }
+        } catch (e: any) {
+          this.logger.warn(
+            `getScoreByAssessmentTest testId=${testId}: ${e?.message ?? e}`,
+          );
+        }
+      }),
+    );
+    return map;
+  }
+
+  /**
+   * True when the lesson track is submitted and the stored score is below the lesson’s passing marks
+   * (used when a final result exists externally but pass/fail is not in the HTTP payload).
+   */
+  private isBelowPassingThreshold(
+    attempt: LessonTrack,
+    lesson: Lesson,
+  ): boolean {
+    if (attempt.status === TrackingStatus.COMPLETED) {
+      return false;
+    }
+    if (
+      lesson.totalMarks &&
+      lesson.passingMarks != null &&
+      attempt.score != null &&
+      attempt.status === TrackingStatus.SUBMITTED
+    ) {
+      const pct = (attempt.score / lesson.totalMarks) * 100;
+      const passPct = (lesson.passingMarks / lesson.totalMarks) * 100;
+      if (pct < passPct) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Maps one lesson_track row plus the external “result imported” flag to pass | fail | submitted | null.
+   * `assessmentIsImported`: undefined = no test id on lesson; null = HTTP miss; true/false from import/resultstatus.
+   */
+  private determineLessonPassStatus(
+    graded: LessonTrack,
+    lesson: Lesson,
+    assessmentIsImported: boolean | null | undefined,
+  ): FinalAssessmentOutcome {
+    if (graded.status === TrackingStatus.COMPLETED) {
+      return 'pass';
+    }
+    if (graded.status === TrackingStatus.SUBMITTED && assessmentIsImported !== undefined) {
+      if (assessmentIsImported === null) {
+        return this.evaluateAttemptOutcome(graded, lesson);
+      }
+      if (assessmentIsImported === false) {
+        return 'submitted';
+      }
+      if (this.isBelowPassingThreshold(graded, lesson)) {
+        return 'fail';
+      }
+      return 'pass';
+    }
+    return this.evaluateAttemptOutcome(graded, lesson);
+  }
+
+  /**
+   * Chooses the journey outcome from all attempts for the lesson: any completed row → pass; else uses the
+   * latest attempt row with determineLessonPassStatus (tracks ordered by attempt ascending).
+   */
+  private determineLessonOutcomeFromAttempts(
+    attempts: LessonTrack[],
+    lesson: Lesson,
+    assessmentIsImported: boolean | null | undefined,
+  ): FinalAssessmentOutcome {
+    if (!attempts.length) {
+      return null;
+    }
+    if (attempts.some((a) => a.status === TrackingStatus.COMPLETED)) {
+      return 'pass';
+    }
+    const graded = attempts.at(-1)!;
+    return this.determineLessonPassStatus(graded, lesson, assessmentIsImported);
+  }
+
+  /**
+   * Outcome using only LMS lesson_track (no external import flag): fail if below passing, else pass if completed.
+   */
+  private evaluateAttemptOutcome(
+    attempt: LessonTrack,
+    lesson: Lesson,
+  ): FinalAssessmentOutcome {
+    if (this.isBelowPassingThreshold(attempt, lesson)) {
+      return 'fail';
+    }
+    if (attempt.status === TrackingStatus.COMPLETED) {
+      return 'pass';
+    }
+    return null;
+  }
+
+  /**
+   * Builds courseId → assessmentOutcome for user journey: final test lesson per course, parallel import checks,
+   * then determineLessonOutcomeFromAttempts per course.
+   */
+  private async determineCourseOutcomes(
+    userId: string,
+    courseIds: string[],
+    tenantId: string,
+    organisationId: string,
+  ): Promise<Map<string, FinalAssessmentOutcome>> {
+    const out = new Map<string, FinalAssessmentOutcome>();
+    for (const cid of courseIds) {
+      out.set(cid, null);
+    }
+
+    const finalByCourse = await this.getAssessementLessonByCourse(
+      courseIds,
+      tenantId,
+      organisationId,
+    );
+    if (finalByCourse.size === 0) {
+      return out;
+    }
+
+    const testIds: string[] = [];
+    for (const ctx of finalByCourse.values()) {
+      if (ctx.testId) {
+        testIds.push(ctx.testId);
+      }
+    }
+    const assessmentByTestId = await this.getScoreByAssessmentTest(
+      userId,
+      testIds,
+      tenantId,
+      organisationId,
+    );
+
+    const lessonIds = [...finalByCourse.values()].map((c) => c.lesson.lessonId);
+    const tracks = await this.lessonTrackRepository.find({
+      where: {
+        userId,
+        lessonId: In(lessonIds),
+        tenantId,
+        organisationId,
+      },
+      order: { attempt: 'ASC' },
+    });
+
+    const byLesson = new Map<string, LessonTrack[]>();
+    for (const t of tracks) {
+      if (!byLesson.has(t.lessonId)) {
+        byLesson.set(t.lessonId, []);
+      }
+      byLesson.get(t.lessonId)!.push(t);
+    }
+
+    for (const [courseId, ctx] of finalByCourse) {
+      const attempts = byLesson.get(ctx.lesson.lessonId) ?? [];
+      const assessmentIsImported = ctx.testId
+        ? assessmentByTestId.get(ctx.testId) ?? null
+        : undefined;
+      const outcome = this.determineLessonOutcomeFromAttempts(
+        attempts,
+        ctx.lesson,
+        assessmentIsImported,
+      );
+      if (outcome !== null) {
+        out.set(courseId, outcome);
+      }
+    }
+
+    return out;
   }
 }
