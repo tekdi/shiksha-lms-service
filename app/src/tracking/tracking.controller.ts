@@ -9,7 +9,6 @@ import {
   Patch,
   HttpCode,
   HttpStatus,
-  Headers,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -56,13 +55,11 @@ export class TrackingController {
   async getUserJourney(
     @Body() userJourneyDto: UserJourneyDto,
     @TenantOrg() tenant: { tenantId: string; organisationId: string },
-    @Headers('authorization') authorization?: string,
   ): Promise<UserJourneyResponseDto> {
     return this.trackingService.getUserJourney(
       userJourneyDto,
       tenant.tenantId,
       tenant.organisationId,
-      authorization,
     );
   }
 

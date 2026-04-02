@@ -1243,7 +1243,6 @@ export class TrackingService {
     dto: UserJourneyDto,
     tenantId: string,
     organisationId: string,
-    authorization?: string,
   ): Promise<UserJourneyResponseDto> {
     const offset = Math.max(0, dto.offset ?? 0);
     const limit = Math.min(100, Math.max(1, dto.limit ?? 10));
@@ -1305,7 +1304,6 @@ export class TrackingService {
           courseIds,
           tenantId,
           organisationId,
-          authorization,
         ),
       ]);
 
@@ -1432,7 +1430,7 @@ export class TrackingService {
    * For each course, finds the published root assessment lesson with highest ordering and pairs it with
    * the test id parsed from that lesson’s media source (end-of-course test used on user journey).
    */
-  private async loadFinalTestLessonByCourse(
+  private async getAssessementLessonByCourse(
     courseIds: string[],
     tenantId: string,
     organisationId: string,
@@ -1466,23 +1464,21 @@ export class TrackingService {
    * Calls the external service once per distinct test id (in parallel) to learn whether the latest
    * attempt is fully reviewed with a final pass/fail (`isImported`). Requires base URL and auth.
    */
-  private async fetchResultImportedPerTest(
+  private async getScoreByAssessmentTest(
     userId: string,
     testIds: string[],
     tenantId: string,
     organisationId: string,
-    authorization?: string,
   ): Promise<Map<string, boolean>> {
     const map = new Map<string, boolean>();
     const unique = [...new Set(testIds.filter(Boolean))];
     const base = this.configService.get<string>('ASSESSMENT_SERVICE_URL', '').replace(/\/$/, '');
-    if (!base || !authorization || unique.length === 0) {
+    if (!base || unique.length === 0) {
       return map;
     }
     const headers = {
       tenantId,
       organisationId,
-      authorization,
       userId,
       'Content-Type': 'application/json',
     };
@@ -1500,7 +1496,7 @@ export class TrackingService {
           }
         } catch (e: any) {
           this.logger.warn(
-            `fetchResultImportedPerTest testId=${testId}: ${e?.message ?? e}`,
+            `getScoreByAssessmentTest testId=${testId}: ${e?.message ?? e}`,
           );
         }
       }),
@@ -1512,7 +1508,7 @@ export class TrackingService {
    * True when the lesson track is submitted and the stored score is below the lesson’s passing marks
    * (used when a final result exists externally but pass/fail is not in the HTTP payload).
    */
-  private lessonTrackBelowPassingThreshold(
+  private isBelowPassingThreshold(
     attempt: LessonTrack,
     lesson: Lesson,
   ): boolean {
@@ -1538,7 +1534,7 @@ export class TrackingService {
    * Maps one lesson_track row plus the external “result imported” flag to pass | fail | submitted | null.
    * `assessmentIsImported`: undefined = no test id on lesson; null = HTTP miss; true/false from import/resultstatus.
    */
-  private mergeTrackRowWithImportOutcome(
+  private determineLessonPassStatus(
     graded: LessonTrack,
     lesson: Lesson,
     assessmentIsImported: boolean | null | undefined,
@@ -1548,24 +1544,24 @@ export class TrackingService {
     }
     if (graded.status === TrackingStatus.SUBMITTED && assessmentIsImported !== undefined) {
       if (assessmentIsImported === null) {
-        return this.outcomeFromLmsWithoutImport(graded, lesson);
+        return this.evaluateAttemptOutcome(graded, lesson);
       }
       if (assessmentIsImported === false) {
         return 'submitted';
       }
-      if (this.lessonTrackBelowPassingThreshold(graded, lesson)) {
+      if (this.isBelowPassingThreshold(graded, lesson)) {
         return 'fail';
       }
       return 'pass';
     }
-    return this.outcomeFromLmsWithoutImport(graded, lesson);
+    return this.evaluateAttemptOutcome(graded, lesson);
   }
 
   /**
    * Chooses the journey outcome from all attempts for the lesson: any completed row → pass; else uses the
-   * latest attempt row with mergeTrackRowWithImportOutcome (tracks ordered by attempt ascending).
+   * latest attempt row with determineLessonPassStatus (tracks ordered by attempt ascending).
    */
-  private computeOutcomeFromLessonTracks(
+  private determineLessonOutcomeFromAttempts(
     attempts: LessonTrack[],
     lesson: Lesson,
     assessmentIsImported: boolean | null | undefined,
@@ -1577,17 +1573,17 @@ export class TrackingService {
       return 'pass';
     }
     const graded = attempts.at(-1)!;
-    return this.mergeTrackRowWithImportOutcome(graded, lesson, assessmentIsImported);
+    return this.determineLessonPassStatus(graded, lesson, assessmentIsImported);
   }
 
   /**
    * Outcome using only LMS lesson_track (no external import flag): fail if below passing, else pass if completed.
    */
-  private outcomeFromLmsWithoutImport(
+  private evaluateAttemptOutcome(
     attempt: LessonTrack,
     lesson: Lesson,
   ): FinalAssessmentOutcome {
-    if (this.lessonTrackBelowPassingThreshold(attempt, lesson)) {
+    if (this.isBelowPassingThreshold(attempt, lesson)) {
       return 'fail';
     }
     if (attempt.status === TrackingStatus.COMPLETED) {
@@ -1598,21 +1594,20 @@ export class TrackingService {
 
   /**
    * Builds courseId → assessmentOutcome for user journey: final test lesson per course, parallel import checks,
-   * then computeOutcomeFromLessonTracks per course.
+   * then determineLessonOutcomeFromAttempts per course.
    */
   private async computeJourneyTestOutcomesByCourse(
     userId: string,
     courseIds: string[],
     tenantId: string,
     organisationId: string,
-    authorization?: string,
   ): Promise<Map<string, FinalAssessmentOutcome>> {
     const out = new Map<string, FinalAssessmentOutcome>();
     for (const cid of courseIds) {
       out.set(cid, null);
     }
 
-    const finalByCourse = await this.loadFinalTestLessonByCourse(
+    const finalByCourse = await this.getAssessementLessonByCourse(
       courseIds,
       tenantId,
       organisationId,
@@ -1627,12 +1622,11 @@ export class TrackingService {
         testIds.push(ctx.testId);
       }
     }
-    const assessmentByTestId = await this.fetchResultImportedPerTest(
+    const assessmentByTestId = await this.getScoreByAssessmentTest(
       userId,
       testIds,
       tenantId,
       organisationId,
-      authorization,
     );
 
     const lessonIds = [...finalByCourse.values()].map((c) => c.lesson.lessonId);
@@ -1659,7 +1653,7 @@ export class TrackingService {
       const assessmentIsImported = ctx.testId
         ? assessmentByTestId.get(ctx.testId) ?? null
         : undefined;
-      const outcome = this.computeOutcomeFromLessonTracks(
+      const outcome = this.determineLessonOutcomeFromAttempts(
         attempts,
         ctx.lesson,
         assessmentIsImported,
