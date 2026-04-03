@@ -172,6 +172,8 @@ export class CoursesService {
       prerequisites: createCourseDto.prerequisites,
       certificateGenDateTime:
         createCourseDto.certificateGenDateTime || undefined,
+      certificateIssueDateTime:
+        createCourseDto.certificateIssueDateTime || undefined,
       ordering: nextOrdering,
       tenantId,
       organisationId,
@@ -1774,6 +1776,7 @@ export class CoursesService {
       this.cacheService.setCourse(savedCourse),
       this.cacheService.invalidateCourse(courseId, tenantId, organisationId),
       this.cacheService.invalidateCourseHierarchyCache(courseId),
+      this.cacheService.invalidateCourseMetaCache(courseId),
       // Invalidate course enrollment cache when course is updated
       this.cacheService.invalidateCourseEnrollments(
         courseId,

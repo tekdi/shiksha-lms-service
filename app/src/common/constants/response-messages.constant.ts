@@ -199,6 +199,8 @@ export const VALIDATION_MESSAGES = {
     TEMPLATE_ID: 'Template ID for the reward.',
     ELIGIBILITY_CRITERIA: 'Eligibility criteria for the course.',
     PARAMS: 'Additional parameters for the course.',
+    /** Matches DB varchar(255) limits where descriptions are still constrained */
+    DESCRIPTION_MAX_LENGTH_255: 'Short Description should not exceed 255 characters',
   },
   MODULE: {
     TITLE: 'Module title.',

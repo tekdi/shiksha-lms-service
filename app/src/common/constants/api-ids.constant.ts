@@ -63,6 +63,7 @@ export const API_IDS = {
   UPDATE_ATTEMPT_PROGRESS: 'api.lesson.attempt.update',
   UPDATE_EVENT_LESSON: 'api.lesson.event.update',
   RECALCULATE_PROGRESS: 'api.tracking.recalculate.progress',
+  GET_USER_JOURNEY: 'api.tracking.userjourney',
 
   // Aspire Leader Report APIs
   GET_COURSE_REPORT: 'api.course.report',

@@ -136,6 +136,14 @@ export class Course {
   @Column({ type: 'timestamptz', nullable: true })
   certificateGenDateTime: Date;
 
+  @ApiProperty({
+    description: 'Certificate issue date and time',
+    example: '2025-01-01T12:00:00Z',
+    required: false,
+  })
+  @Column({ type: 'timestamptz', nullable: true })
+  certificateIssueDateTime: Date;
+
   @ApiProperty({ 
     description: 'Course order within organization/tenant', 
     example: 1,

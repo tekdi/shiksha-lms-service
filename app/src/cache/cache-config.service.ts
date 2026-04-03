@@ -159,4 +159,12 @@ export class CacheConfigService {
       ? `course:meta:${courseId}:cohort:${cohortId}`
       : `course:meta:${courseId}`;
   }
-} 
+
+  /**
+   * Get cache key for event lesson IDs in a course
+   * @param courseId Course ID
+   */
+  getCourseEventLessonsKey(courseId: string): string {
+    return `${this.COURSE_PREFIX}event-lessons:${courseId}`;
+  }
+}
