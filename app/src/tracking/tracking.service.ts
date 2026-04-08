@@ -30,6 +30,26 @@ import axios from 'axios';
 
 type FinalAssessmentOutcome = 'pass' | 'fail' | 'submitted' | null;
 
+/**
+ * Controls how `progressDetail.assessmentOutcome` is computed for user journey (one “final” assessment
+ * lesson per course).
+ *
+ * - **formal_assessment** — Linked `tests.gradingType` is `assessment`. Use assessment-service
+ *   `isImported` plus pass / fail / submitted rules (reviewed attempt, passing marks, etc.).
+ * - **non_formal_grading** — Linked test is quiz, feedback, reflection.prompt, etc. This field is not
+ *   used like a formal end-of-module assessment: completed attempts → `null`; submitted → `submitted` only.
+ * - **fallback** — No test UUID on lesson media, metadata HTTP call failed, or `gradingType` missing on
+ *   the response. Uses the older combined path: LMS `lesson_track` plus `isImported` when present.
+ */
+const USER_OUTCOME_MODE = {
+  FORMAL_ASSESSMENT: 'formal_assessment',
+  NON_FORMAL_GRADING: 'non_formal_grading',
+  FALLBACK: 'fallback',
+} as const;
+
+type UserOutcomeMode =
+  (typeof USER_OUTCOME_MODE)[keyof typeof USER_OUTCOME_MODE];
+
 @Injectable()
 export class TrackingService {
   private readonly logger = new Logger(TrackingService.name);
@@ -1460,39 +1480,48 @@ export class TrackingService {
     return result;
   }
 
+  /** Assessment service `tests.gradingType` value that uses import/review outcome semantics. */
+  private static readonly USER_ASSESSMENT_GRADING_TYPE = 'assessment';
+
   /**
-   * Calls the external service once per distinct test id (in parallel) to learn whether the latest
-   * attempt is fully reviewed with a final pass/fail (`isImported`). Requires base URL and auth.
+   * Calls assessment internal `POST {ASSESSMENT_SERVICE_URL}/internal/attempts/user/result-status`
+   * (body: userId, testId, tenantId, organisationId; no auth headers). Must match assessment
+   * InternalUserResultController. Override with ASSESSMENT_USER_RESULT_PATH if the route differs.
+   * If this call fails, every course falls back to FALLBACK mode (any completed attempt → pass).
    */
   private async getScoreByAssessmentTest(
     userId: string,
     testIds: string[],
     tenantId: string,
     organisationId: string,
-  ): Promise<Map<string, boolean>> {
-    const map = new Map<string, boolean>();
+  ): Promise<Map<string, { isImported: boolean; gradingType: string | null }>> {
+    const map = new Map<string, { isImported: boolean; gradingType: string | null }>();
     const unique = [...new Set(testIds.filter(Boolean))];
     const base = this.configService.get<string>('ASSESSMENT_SERVICE_URL', '').replace(/\/$/, '');
+    const path = this.configService
+      .get<string>('ASSESSMENT_USER_RESULT_PATH', 'internal/attempts/user/result-status')
+      .replace(/^\/+/, '');
     if (!base || unique.length === 0) {
       return map;
     }
-    const headers = {
-      tenantId,
-      organisationId,
-      userId,
-      'Content-Type': 'application/json',
-    };
+    const url = `${base}/${path}`;
     await Promise.all(
       unique.map(async (testId) => {
         try {
           const { data } = await axios.post(
-            `${base}/attempts/import/resultstatus`,
-            { userId, testId },
-            { headers, timeout: 15000 },
+            url,
+            { userId, testId, tenantId, organisationId },
+            { headers: { 'Content-Type': 'application/json' }, timeout: 15000 },
           );
           const payload = data?.result ?? data;
           if (payload && typeof payload.isImported === 'boolean') {
-            map.set(testId, payload.isImported);
+            const gradingType =
+              payload.gradingType != null &&
+              typeof payload.gradingType === 'string' &&
+              payload.gradingType.length > 0
+                ? payload.gradingType
+                : null;
+            map.set(testId, { isImported: payload.isImported, gradingType });
           }
         } catch (e: any) {
           this.logger.warn(
@@ -1531,8 +1560,10 @@ export class TrackingService {
   }
 
   /**
-   * Maps one lesson_track row plus the external “result imported” flag to pass | fail | submitted | null.
-   * `assessmentIsImported`: undefined = no test id on lesson; null = HTTP miss; true/false from import/resultstatus.
+   * Maps one lesson_track row plus assessment `isImported` to pass | fail | submitted | null.
+   * Used for `formal_assessment` and `fallback` outcome modes (see USER_OUTCOME_MODE); not used on the
+   * non_formal_grading submitted-only path. `assessmentIsImported`: undefined skips import branch; null =
+   * unknown fetch; boolean from assessment service for formal tests.
    */
   private determineLessonPassStatus(
     graded: LessonTrack,
@@ -1558,17 +1589,31 @@ export class TrackingService {
   }
 
   /**
-   * Chooses the journey outcome from all attempts for the lesson: any completed row → pass; else uses the
-   * latest attempt row with determineLessonPassStatus (tracks ordered by attempt ascending).
+   * Chooses journey `assessmentOutcome` from attempts; see USER_OUTCOME_MODE.
    */
   private determineLessonOutcomeFromAttempts(
     attempts: LessonTrack[],
     lesson: Lesson,
     assessmentIsImported: boolean | null | undefined,
+    mode: UserOutcomeMode,
   ): FinalAssessmentOutcome {
     if (!attempts.length) {
       return null;
     }
+
+    // Quiz-like tests: do not surface pass/fail here (see USER_OUTCOME_MODE.non_formal_grading).
+    if (mode === USER_OUTCOME_MODE.NON_FORMAL_GRADING) {
+      if (attempts.some((a) => a.status === TrackingStatus.COMPLETED)) {
+        return null;
+      }
+      const graded = attempts.at(-1)!;
+      if (graded.status === TrackingStatus.SUBMITTED) {
+        return 'submitted';
+      }
+      return null;
+    }
+
+    // formal_assessment + fallback: any completed row → pass, else import-aware rules.
     if (attempts.some((a) => a.status === TrackingStatus.COMPLETED)) {
       return 'pass';
     }
@@ -1593,8 +1638,8 @@ export class TrackingService {
   }
 
   /**
-   * Builds courseId → assessmentOutcome for user journey: final test lesson per course, parallel import checks,
-   * then determineLessonOutcomeFromAttempts per course.
+   * Builds courseId → assessmentOutcome: picks final assessment lesson per course, calls assessment
+   * internal result-status in parallel, then branches on USER_OUTCOME_MODE.
    */
   private async determineCourseOutcomes(
     userId: string,
@@ -1650,13 +1695,39 @@ export class TrackingService {
 
     for (const [courseId, ctx] of finalByCourse) {
       const attempts = byLesson.get(ctx.lesson.lessonId) ?? [];
-      const assessmentIsImported = ctx.testId
-        ? assessmentByTestId.get(ctx.testId) ?? null
-        : undefined;
+      let assessmentIsImported: boolean | null | undefined;
+      let mode: UserOutcomeMode;
+      if (ctx.testId) {
+        const meta = assessmentByTestId.get(ctx.testId);
+        if (meta) {
+          if (meta.gradingType === TrackingService.USER_ASSESSMENT_GRADING_TYPE) {
+            // Formal graded assessment: use import + pass/fail/submitted pipeline.
+            assessmentIsImported = meta.isImported;
+            mode = USER_OUTCOME_MODE.FORMAL_ASSESSMENT;
+          } else if (meta.gradingType != null && meta.gradingType !== '') {
+            // Quiz / feedback / reflection — not the same semantics as formal assessment outcome.
+            assessmentIsImported = undefined;
+            mode = USER_OUTCOME_MODE.NON_FORMAL_GRADING;
+          } else {
+            // Response had no usable gradingType string; keep prior combined behavior.
+            assessmentIsImported = meta.isImported;
+            mode = USER_OUTCOME_MODE.FALLBACK;
+          }
+        } else {
+          // Assessment call failed or returned nothing for this testId.
+          assessmentIsImported = null;
+          mode = USER_OUTCOME_MODE.FALLBACK;
+        }
+      } else {
+        // Lesson media has no UUID test link; LMS-only side of rules.
+        assessmentIsImported = undefined;
+        mode = USER_OUTCOME_MODE.FALLBACK;
+      }
       const outcome = this.determineLessonOutcomeFromAttempts(
         attempts,
         ctx.lesson,
         assessmentIsImported,
+        mode,
       );
       if (outcome !== null) {
         out.set(courseId, outcome);
