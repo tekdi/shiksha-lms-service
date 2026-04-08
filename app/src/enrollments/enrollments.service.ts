@@ -525,8 +525,8 @@ export class EnrollmentsService {
         .andWhere('enrollment.status = :enrollmentStatus', {
           enrollmentStatus: EnrollmentStatus.PUBLISHED,
         })
-        .andWhere('course.status != :archivedStatus', {
-          archivedStatus: CourseStatus.ARCHIVED,
+        .andWhere('course.status = :coursePublishedStatus', {
+          coursePublishedStatus: CourseStatus.PUBLISHED,
         });
 
       // Apply user filter if provided
@@ -616,8 +616,8 @@ export class EnrollmentsService {
           .andWhere('course.organisationId = :organisationId', {
             organisationId,
           })
-          .andWhere('course.status != :archivedStatus', {
-            archivedStatus: CourseStatus.ARCHIVED,
+          .andWhere('course.status = :coursePublishedStatus', {
+            coursePublishedStatus: CourseStatus.PUBLISHED,
           });
 
         // Note: Cohort filter already applied in enrollment query, so courses are pre-filtered
@@ -667,13 +667,18 @@ export class EnrollmentsService {
         }
       }
 
+      // Exclude unpublished/archived if cache metadata is stale
+      const publishedOnly = courses.filter(
+        (c) => c.status === CourseStatus.PUBLISHED,
+      );
+
       // STEP 4: Apply sorting and pagination
       // Sort by ordering (ascending)
-      courses.sort((a, b) => (a.ordering || 0) - (b.ordering || 0));
+      publishedOnly.sort((a, b) => (a.ordering || 0) - (b.ordering || 0));
 
       // Apply pagination
-      const total = courses.length;
-      const paginatedCourses = courses.slice(offset, offset + limit);
+      const total = publishedOnly.length;
+      const paginatedCourses = publishedOnly.slice(offset, offset + limit);
 
       // STEP 5: Build response
       // Note: We do NOT cache the full response because it contains user-specific enrollment data

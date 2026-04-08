@@ -1460,39 +1460,47 @@ export class TrackingService {
     return result;
   }
 
+  /** Assessment service `tests.gradingType` value that uses import/review outcome semantics. */
+  private static readonly USER_JOURNEY_ASSESSMENT_GRADING_TYPE = 'assessment';
+
   /**
-   * Calls the external service once per distinct test id (in parallel) to learn whether the latest
-   * attempt is fully reviewed with a final pass/fail (`isImported`). Requires base URL and auth.
+   * Calls assessment internal `POST .../internal/attempts/user-journey/result-status` (no auth headers;
+   * tenant/org/user in JSON). Override path with ASSESSMENT_USER_JOURNEY_RESULT_PATH. LMS uses
+   * `isImported` only when gradingType is `assessment`; quiz / feedback / reflection use LMS-only logic.
    */
   private async getScoreByAssessmentTest(
     userId: string,
     testIds: string[],
     tenantId: string,
     organisationId: string,
-  ): Promise<Map<string, boolean>> {
-    const map = new Map<string, boolean>();
+  ): Promise<Map<string, { isImported: boolean; gradingType: string | null }>> {
+    const map = new Map<string, { isImported: boolean; gradingType: string | null }>();
     const unique = [...new Set(testIds.filter(Boolean))];
     const base = this.configService.get<string>('ASSESSMENT_SERVICE_URL', '').replace(/\/$/, '');
+    const path = this.configService
+      .get<string>('ASSESSMENT_USER_JOURNEY_RESULT_PATH', 'internal/attempts/user-journey/result-status')
+      .replace(/^\/+/, '');
     if (!base || unique.length === 0) {
       return map;
     }
-    const headers = {
-      tenantId,
-      organisationId,
-      userId,
-      'Content-Type': 'application/json',
-    };
+    const url = `${base}/${path}`;
     await Promise.all(
       unique.map(async (testId) => {
         try {
           const { data } = await axios.post(
-            `${base}/attempts/import/resultstatus`,
-            { userId, testId },
-            { headers, timeout: 15000 },
+            url,
+            { userId, testId, tenantId, organisationId },
+            { headers: { 'Content-Type': 'application/json' }, timeout: 15000 },
           );
           const payload = data?.result ?? data;
           if (payload && typeof payload.isImported === 'boolean') {
-            map.set(testId, payload.isImported);
+            const gradingType =
+              payload.gradingType != null &&
+              typeof payload.gradingType === 'string' &&
+              payload.gradingType.length > 0
+                ? payload.gradingType
+                : null;
+            map.set(testId, { isImported: payload.isImported, gradingType });
           }
         } catch (e: any) {
           this.logger.warn(
@@ -1532,7 +1540,8 @@ export class TrackingService {
 
   /**
    * Maps one lesson_track row plus the external “result imported” flag to pass | fail | submitted | null.
-   * `assessmentIsImported`: undefined = no test id on lesson; null = HTTP miss; true/false from import/resultstatus.
+   * `assessmentIsImported`: undefined = no test id or non-assessment gradingType (quiz, etc.); null = HTTP miss;
+   * true/false from import/resultstatus when tests.gradingType is assessment.
    */
   private determineLessonPassStatus(
     graded: LessonTrack,
@@ -1558,17 +1567,31 @@ export class TrackingService {
   }
 
   /**
-   * Chooses the journey outcome from all attempts for the lesson: any completed row → pass; else uses the
-   * latest attempt row with determineLessonPassStatus (tracks ordered by attempt ascending).
+   * Chooses journey assessmentOutcome. `mode`: formal assessment (import + pass/fail/submitted), legacy
+   * (LMS + import when available), or other gradingType (quiz etc.) — no pass/fail in that field: completed →
+   * null, submitted → submitted.
    */
   private determineLessonOutcomeFromAttempts(
     attempts: LessonTrack[],
     lesson: Lesson,
     assessmentIsImported: boolean | null | undefined,
+    mode: 'assessment' | 'other' | 'legacy',
   ): FinalAssessmentOutcome {
     if (!attempts.length) {
       return null;
     }
+
+    if (mode === 'other') {
+      if (attempts.some((a) => a.status === TrackingStatus.COMPLETED)) {
+        return null;
+      }
+      const graded = attempts.at(-1)!;
+      if (graded.status === TrackingStatus.SUBMITTED) {
+        return 'submitted';
+      }
+      return null;
+    }
+
     if (attempts.some((a) => a.status === TrackingStatus.COMPLETED)) {
       return 'pass';
     }
@@ -1593,8 +1616,9 @@ export class TrackingService {
   }
 
   /**
-   * Builds courseId → assessmentOutcome for user journey: final test lesson per course, parallel import checks,
-   * then determineLessonOutcomeFromAttempts per course.
+   * Builds courseId → assessmentOutcome for user journey: final test lesson per course, parallel
+   * import/resultstatus calls (includes gradingType). Import/review semantics apply only when
+   * gradingType === assessment; otherwise outcome uses LMS lesson_track only.
    */
   private async determineCourseOutcomes(
     userId: string,
@@ -1650,13 +1674,32 @@ export class TrackingService {
 
     for (const [courseId, ctx] of finalByCourse) {
       const attempts = byLesson.get(ctx.lesson.lessonId) ?? [];
-      const assessmentIsImported = ctx.testId
-        ? assessmentByTestId.get(ctx.testId) ?? null
-        : undefined;
+      let assessmentIsImported: boolean | null | undefined;
+      let mode: 'assessment' | 'other' | 'legacy';
+      if (!ctx.testId) {
+        assessmentIsImported = undefined;
+        mode = 'legacy';
+      } else {
+        const meta = assessmentByTestId.get(ctx.testId);
+        if (!meta) {
+          assessmentIsImported = null;
+          mode = 'legacy';
+        } else if (meta.gradingType === TrackingService.USER_JOURNEY_ASSESSMENT_GRADING_TYPE) {
+          assessmentIsImported = meta.isImported;
+          mode = 'assessment';
+        } else if (meta.gradingType != null && meta.gradingType !== '') {
+          assessmentIsImported = undefined;
+          mode = 'other';
+        } else {
+          assessmentIsImported = meta.isImported;
+          mode = 'legacy';
+        }
+      }
       const outcome = this.determineLessonOutcomeFromAttempts(
         attempts,
         ctx.lesson,
         assessmentIsImported,
+        mode,
       );
       if (outcome !== null) {
         out.set(courseId, outcome);
