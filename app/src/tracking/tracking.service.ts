@@ -1484,9 +1484,10 @@ export class TrackingService {
   private static readonly USER_JOURNEY_ASSESSMENT_GRADING_TYPE = 'assessment';
 
   /**
-   * Calls assessment internal `POST .../internal/attempts/user/result-status` (no auth headers;
-   * tenant/org/user in JSON). Override path with ASSESSMENT_USER_RESULT_PATH. LMS uses
-   * `isImported` only when gradingType is `assessment`; quiz / feedback / reflection use LMS-only logic.
+   * Calls assessment internal `POST {ASSESSMENT_SERVICE_URL}/internal/attempts/user/result-status`
+   * (body: userId, testId, tenantId, organisationId; no auth headers). Must match assessment
+   * InternalUserResultController. Override with ASSESSMENT_USER_RESULT_PATH if the route differs.
+   * If this call fails, every course falls back to FALLBACK mode (any completed attempt → pass).
    */
   private async getScoreByAssessmentTest(
     userId: string,

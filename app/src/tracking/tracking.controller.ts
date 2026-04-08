@@ -43,7 +43,7 @@ export class TrackingController {
   @ApiOperation({
     summary: 'Get user journey by user and cohort',
     description:
-      'Returns enrolled courses for the user in the given cohort with totalEventLessons and isAttendedOneEvent. progressDetail.assessmentOutcome uses assessment internal POST .../internal/attempts/user-journey/result-status (body: userId, testId, tenantId, organisationId; no auth headers) when ASSESSMENT_SERVICE_URL is set; isImported/submitted only for tests.gradingType assessment. Quiz and other types use LMS lesson_track only. Deduped per testId, parallel. Uses limit/offset for pagination.',
+      'Returns enrolled courses for the user in the given cohort with totalEventLessons and isAttendedOneEvent. progressDetail.assessmentOutcome uses assessment internal POST .../internal/attempts/user/result-status (body: userId, testId, tenantId, organisationId; no auth headers) when ASSESSMENT_SERVICE_URL is set; isImported/submitted only for tests.gradingType assessment. Override path with ASSESSMENT_USER_RESULT_PATH if needed. Deduped per testId, parallel. Uses limit/offset for pagination.',
   })
   @ApiBody({ type: UserJourneyDto })
   @ApiResponse({
