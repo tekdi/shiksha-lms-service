@@ -1676,24 +1676,26 @@ export class TrackingService {
       const attempts = byLesson.get(ctx.lesson.lessonId) ?? [];
       let assessmentIsImported: boolean | null | undefined;
       let mode: 'assessment' | 'other' | 'legacy';
-      if (!ctx.testId) {
-        assessmentIsImported = undefined;
-        mode = 'legacy';
-      } else {
+      if (ctx.testId) {
         const meta = assessmentByTestId.get(ctx.testId);
-        if (!meta) {
+        if (meta) {
+          if (meta.gradingType === TrackingService.USER_JOURNEY_ASSESSMENT_GRADING_TYPE) {
+            assessmentIsImported = meta.isImported;
+            mode = 'assessment';
+          } else if (meta.gradingType != null && meta.gradingType !== '') {
+            assessmentIsImported = undefined;
+            mode = 'other';
+          } else {
+            assessmentIsImported = meta.isImported;
+            mode = 'legacy';
+          }
+        } else {
           assessmentIsImported = null;
           mode = 'legacy';
-        } else if (meta.gradingType === TrackingService.USER_JOURNEY_ASSESSMENT_GRADING_TYPE) {
-          assessmentIsImported = meta.isImported;
-          mode = 'assessment';
-        } else if (meta.gradingType != null && meta.gradingType !== '') {
-          assessmentIsImported = undefined;
-          mode = 'other';
-        } else {
-          assessmentIsImported = meta.isImported;
-          mode = 'legacy';
         }
+      } else {
+        assessmentIsImported = undefined;
+        mode = 'legacy';
       }
       const outcome = this.determineLessonOutcomeFromAttempts(
         attempts,
