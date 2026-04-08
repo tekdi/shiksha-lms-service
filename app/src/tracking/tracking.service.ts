@@ -30,6 +30,26 @@ import axios from 'axios';
 
 type FinalAssessmentOutcome = 'pass' | 'fail' | 'submitted' | null;
 
+/**
+ * Controls how `progressDetail.assessmentOutcome` is computed for user journey (one “final” assessment
+ * lesson per course).
+ *
+ * - **formal_assessment** — Linked `tests.gradingType` is `assessment`. Use assessment-service
+ *   `isImported` plus pass / fail / submitted rules (reviewed attempt, passing marks, etc.).
+ * - **non_formal_grading** — Linked test is quiz, feedback, reflection.prompt, etc. This field is not
+ *   used like a formal end-of-module assessment: completed attempts → `null`; submitted → `submitted` only.
+ * - **fallback** — No test UUID on lesson media, metadata HTTP call failed, or `gradingType` missing on
+ *   the response. Uses the older combined path: LMS `lesson_track` plus `isImported` when present.
+ */
+const USER_OUTCOME_MODE = {
+  FORMAL_ASSESSMENT: 'formal_assessment',
+  NON_FORMAL_GRADING: 'non_formal_grading',
+  FALLBACK: 'fallback',
+} as const;
+
+type UserOutcomeMode =
+  (typeof USER_OUTCOME_MODE)[keyof typeof USER_OUTCOME_MODE];
+
 @Injectable()
 export class TrackingService {
   private readonly logger = new Logger(TrackingService.name);
@@ -1464,8 +1484,8 @@ export class TrackingService {
   private static readonly USER_JOURNEY_ASSESSMENT_GRADING_TYPE = 'assessment';
 
   /**
-   * Calls assessment internal `POST .../internal/attempts/user-journey/result-status` (no auth headers;
-   * tenant/org/user in JSON). Override path with ASSESSMENT_USER_JOURNEY_RESULT_PATH. LMS uses
+   * Calls assessment internal `POST .../internal/attempts/user/result-status` (no auth headers;
+   * tenant/org/user in JSON). Override path with ASSESSMENT_USER_RESULT_PATH. LMS uses
    * `isImported` only when gradingType is `assessment`; quiz / feedback / reflection use LMS-only logic.
    */
   private async getScoreByAssessmentTest(
@@ -1478,7 +1498,7 @@ export class TrackingService {
     const unique = [...new Set(testIds.filter(Boolean))];
     const base = this.configService.get<string>('ASSESSMENT_SERVICE_URL', '').replace(/\/$/, '');
     const path = this.configService
-      .get<string>('ASSESSMENT_USER_JOURNEY_RESULT_PATH', 'internal/attempts/user-journey/result-status')
+      .get<string>('ASSESSMENT_USER_RESULT_PATH', 'internal/attempts/user/result-status')
       .replace(/^\/+/, '');
     if (!base || unique.length === 0) {
       return map;
@@ -1539,9 +1559,10 @@ export class TrackingService {
   }
 
   /**
-   * Maps one lesson_track row plus the external “result imported” flag to pass | fail | submitted | null.
-   * `assessmentIsImported`: undefined = no test id or non-assessment gradingType (quiz, etc.); null = HTTP miss;
-   * true/false from import/resultstatus when tests.gradingType is assessment.
+   * Maps one lesson_track row plus assessment `isImported` to pass | fail | submitted | null.
+   * Used for `formal_assessment` and `fallback` outcome modes (see USER_OUTCOME_MODE); not used on the
+   * non_formal_grading submitted-only path. `assessmentIsImported`: undefined skips import branch; null =
+   * unknown fetch; boolean from assessment service for formal tests.
    */
   private determineLessonPassStatus(
     graded: LessonTrack,
@@ -1567,21 +1588,20 @@ export class TrackingService {
   }
 
   /**
-   * Chooses journey assessmentOutcome. `mode`: formal assessment (import + pass/fail/submitted), legacy
-   * (LMS + import when available), or other gradingType (quiz etc.) — no pass/fail in that field: completed →
-   * null, submitted → submitted.
+   * Chooses journey `assessmentOutcome` from attempts; see USER_OUTCOME_MODE.
    */
   private determineLessonOutcomeFromAttempts(
     attempts: LessonTrack[],
     lesson: Lesson,
     assessmentIsImported: boolean | null | undefined,
-    mode: 'assessment' | 'other' | 'legacy',
+    mode: UserOutcomeMode,
   ): FinalAssessmentOutcome {
     if (!attempts.length) {
       return null;
     }
 
-    if (mode === 'other') {
+    // Quiz-like tests: do not surface pass/fail here (see USER_OUTCOME_MODE.non_formal_grading).
+    if (mode === USER_OUTCOME_MODE.NON_FORMAL_GRADING) {
       if (attempts.some((a) => a.status === TrackingStatus.COMPLETED)) {
         return null;
       }
@@ -1592,6 +1612,7 @@ export class TrackingService {
       return null;
     }
 
+    // formal_assessment + fallback: any completed row → pass, else import-aware rules.
     if (attempts.some((a) => a.status === TrackingStatus.COMPLETED)) {
       return 'pass';
     }
@@ -1616,9 +1637,8 @@ export class TrackingService {
   }
 
   /**
-   * Builds courseId → assessmentOutcome for user journey: final test lesson per course, parallel
-   * import/resultstatus calls (includes gradingType). Import/review semantics apply only when
-   * gradingType === assessment; otherwise outcome uses LMS lesson_track only.
+   * Builds courseId → assessmentOutcome: picks final assessment lesson per course, calls assessment
+   * internal result-status in parallel, then branches on USER_OUTCOME_MODE.
    */
   private async determineCourseOutcomes(
     userId: string,
@@ -1675,27 +1695,32 @@ export class TrackingService {
     for (const [courseId, ctx] of finalByCourse) {
       const attempts = byLesson.get(ctx.lesson.lessonId) ?? [];
       let assessmentIsImported: boolean | null | undefined;
-      let mode: 'assessment' | 'other' | 'legacy';
+      let mode: UserOutcomeMode;
       if (ctx.testId) {
         const meta = assessmentByTestId.get(ctx.testId);
         if (meta) {
           if (meta.gradingType === TrackingService.USER_JOURNEY_ASSESSMENT_GRADING_TYPE) {
+            // Formal graded assessment: use import + pass/fail/submitted pipeline.
             assessmentIsImported = meta.isImported;
-            mode = 'assessment';
+            mode = USER_OUTCOME_MODE.FORMAL_ASSESSMENT;
           } else if (meta.gradingType != null && meta.gradingType !== '') {
+            // Quiz / feedback / reflection — not the same semantics as formal assessment outcome.
             assessmentIsImported = undefined;
-            mode = 'other';
+            mode = USER_OUTCOME_MODE.NON_FORMAL_GRADING;
           } else {
+            // Response had no usable gradingType string; keep prior combined behavior.
             assessmentIsImported = meta.isImported;
-            mode = 'legacy';
+            mode = USER_OUTCOME_MODE.FALLBACK;
           }
         } else {
+          // Assessment call failed or returned nothing for this testId.
           assessmentIsImported = null;
-          mode = 'legacy';
+          mode = USER_OUTCOME_MODE.FALLBACK;
         }
       } else {
+        // Lesson media has no UUID test link; LMS-only side of rules.
         assessmentIsImported = undefined;
-        mode = 'legacy';
+        mode = USER_OUTCOME_MODE.FALLBACK;
       }
       const outcome = this.determineLessonOutcomeFromAttempts(
         attempts,
