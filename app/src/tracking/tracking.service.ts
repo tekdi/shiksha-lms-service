@@ -1481,7 +1481,7 @@ export class TrackingService {
   }
 
   /** Assessment service `tests.gradingType` value that uses import/review outcome semantics. */
-  private static readonly USER_JOURNEY_ASSESSMENT_GRADING_TYPE = 'assessment';
+  private static readonly USER_ASSESSMENT_GRADING_TYPE = 'assessment';
 
   /**
    * Calls assessment internal `POST {ASSESSMENT_SERVICE_URL}/internal/attempts/user/result-status`
@@ -1700,7 +1700,7 @@ export class TrackingService {
       if (ctx.testId) {
         const meta = assessmentByTestId.get(ctx.testId);
         if (meta) {
-          if (meta.gradingType === TrackingService.USER_JOURNEY_ASSESSMENT_GRADING_TYPE) {
+          if (meta.gradingType === TrackingService.USER_ASSESSMENT_GRADING_TYPE) {
             // Formal graded assessment: use import + pass/fail/submitted pipeline.
             assessmentIsImported = meta.isImported;
             mode = USER_OUTCOME_MODE.FORMAL_ASSESSMENT;
