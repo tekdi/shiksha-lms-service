@@ -72,25 +72,73 @@ export class EnrollmentsService {
   ) {}
 
   /**
-   * Enroll a user for a course
-   * @param createEnrollmentDto The enrollment data
-   * @param organisationId The organization ID for data isolation
+   * Enroll a user for multiple courses in bulk
    */
   async enroll(
     createEnrollmentDto: CreateEnrollmentDto,
     userId: string,
     tenantId: string,
     organisationId: string,
-  ): Promise<UserEnrollment> {
-    this.logger.log(`Enrolling user: ${JSON.stringify(createEnrollmentDto)}`);
+  ): Promise<{
+    successfullyEnrolled: UserEnrollment[];
+    alreadyEnrolledCourseIds: string[];
+    failedCourseIds: string[];
+  }> {
+    this.logger.log(`Enrolling user in bulk: ${JSON.stringify(createEnrollmentDto)}`);
+    const successfullyEnrolled: UserEnrollment[] = [];
+    const alreadyEnrolledCourseIds: string[] = [];
+    const failedCourseIds: string[] = [];
+    
+    const courseIds = createEnrollmentDto.courseId || [];
+    
+    for (const courseId of courseIds) {
+      try {
+        const enrollment = await this.enrollSingleCourse(
+          courseId,
+          createEnrollmentDto,
+          userId,
+          tenantId,
+          organisationId,
+        );
+        successfullyEnrolled.push(enrollment);
+      } catch (error) {
+        if (error instanceof ConflictException) {
+          this.logger.warn(`User ${createEnrollmentDto.learnerId} already enrolled in course ${courseId}.`);
+          alreadyEnrolledCourseIds.push(courseId);
+          continue;
+        }
+        this.logger.error(`Failed to enroll user ${createEnrollmentDto.learnerId} in course ${courseId}: ${error.message}`);
+        failedCourseIds.push(courseId);
+        continue;
+      }
+    }
+    
+    return {
+      successfullyEnrolled,
+      alreadyEnrolledCourseIds,
+      failedCourseIds,
+    };
+  }
 
+  /**
+   * Enroll a user for a single course
+   * @param courseId The specific course ID
+   * @param createEnrollmentDto The enrollment data
+   * @param organisationId The organization ID for data isolation
+   */
+  private async enrollSingleCourse(
+    courseId: string,
+    createEnrollmentDto: CreateEnrollmentDto,
+    userId: string,
+    tenantId: string,
+    organisationId: string,
+  ): Promise<UserEnrollment> {
     // Create a query runner for transaction
     const queryRunner = this.dataSource.createQueryRunner();
 
     try {
       await queryRunner.connect();
       await queryRunner.startTransaction();
-      const { courseId } = createEnrollmentDto;
 
       // Build where clause for course validation with data isolation
       const courseWhereClause: FindOptionsWhere<Course> = {
@@ -337,6 +385,49 @@ export class EnrollmentsService {
       // Release the query runner
       await queryRunner.release();
     }
+  }
+
+  /**
+   * Enroll a user in all active courses for a given cohort
+   */
+  async enrollByCohort(
+    learnerId: string,
+    cohortId: string,
+    userId: string,
+    tenantId: string,
+    organisationId: string,
+  ): Promise<{
+    successfullyEnrolled: UserEnrollment[];
+    alreadyEnrolledCourseIds: string[];
+    failedCourseIds: string[];
+  }> {
+    this.logger.log(`Enrolling learner ${learnerId} by cohort ${cohortId}`);
+
+    // Find all published courses for the cohort
+    const courses = await this.courseRepository
+      .createQueryBuilder('course')
+      .select('course.courseId')
+      .where('course.tenantId = :tenantId', { tenantId })
+      .andWhere('course.organisationId = :organisationId', { organisationId })
+      .andWhere('course.status = :status', { status: CourseStatus.PUBLISHED })
+      .andWhere("course.params->>'cohortId' = :cohortId", { cohortId })
+      .getMany();
+
+    if (!courses || courses.length === 0) {
+      this.logger.log(`No active courses found for cohort ${cohortId}`);
+      return { successfullyEnrolled: [], alreadyEnrolledCourseIds: [], failedCourseIds: [] };
+    }
+
+    const courseIds = courses.map((course) => course.courseId);
+
+    // Call the bulk enroll method
+    const createEnrollmentDto: CreateEnrollmentDto = {
+      learnerId,
+      courseId: courseIds,
+      status: EnrollmentStatus.PUBLISHED,
+    };
+
+    return this.enroll(createEnrollmentDto, userId, tenantId, organisationId);
   }
 
   /**
