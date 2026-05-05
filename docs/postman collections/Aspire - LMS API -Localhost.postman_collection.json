@@ -1,0 +1,4081 @@
+{
+	"info": {
+		"_postman_id": "4a3d6b40-3823-4f92-96d4-5a4275824d82",
+		"name": "Aspire - LMS API -Localhost",
+		"description": "API collection for managing courses in the LMS system",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "25088737",
+		"_collection_link": "https://restless-station-447428.postman.co/workspace/New-Team-Workspace~d482b4e0-4ee8-4441-8405-9ed0684e9ca4/collection/25088737-4a3d6b40-3823-4f92-96d4-5a4275824d82?action=share&source=collection_link&creator=25088737"
+	},
+	"item": [
+		{
+			"name": "Modules",
+			"item": [
+				{
+					"name": "Create Module",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{AccessToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "multipart/form-data",
+								"disabled": true
+							},
+							{
+								"key": "tenantid",
+								"value": "{{tenantId}}",
+								"type": "text"
+							},
+							{
+								"key": "organisationid",
+								"value": "{{organisationId}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"title\": \"Module 1\",\n//   \"startDatetime\": \"2024-01-01T00:00:00Z\",\n//   \"endDatetime\": \"2024-12-31T23:59:59Z\",\n  \"shortDescription\": \"Aspire Leaders Program -Module 1\",\n  \"description\": \"<section id='module-1-overview' style='font-family: Manrope, Arial, sans-serif; line-height: 1.6; max-width: 800px; margin: auto; padding: 20px;'>\\n\\n  <!-- Welcome Message -->\\n  <h2 style='text-align: center;'>Welcome to Aspire!</h2>\\n  <p>\\n    Congratulations on your acceptance! We are thrilled to have you join the Aspire community and excited to support your growth throughout the program.\\n  </p>\\n\\n  <!-- Module 1 Intro -->\\n  <h3>Getting Started with Module 1</h3>\\n  <p>\\n    Your journey begins with <strong>Module 1</strong>. Over the course of three weeks, you will\\n    <strong style='color: #980000;'>focus on building self-awareness and fostering personal and professional growth</strong>.\\n    During this module, you will:\\n  </p>\\n\\n  <ul>\\n    <li>Discover and refine your individual strengths.</li>\\n    <li>Develop your professional skills: resumes, cover letters, interviews, and LinkedIn networking.</li>\\n    <li>Build soft skills — behaviors and attitudes that enhance how you work with others.</li>\\n    <li>Engage in a global community and build cultural awareness through peer interactions.</li>\\n  </ul>\\n\\n  <p>\\n    This foundation will guide you in achieving your personal and professional goals.\\n  </p>\\n\\n  <!-- Embedded YouTube Video -->\\n  <div style='margin: 30px 0;'>\\n    <h3 style='text-align: center;'>Watch: Getting Started with Module 1</h3>\\n    <div style='position: relative; padding-bottom: 56.25%; height: 0; overflow: hidden;'>\\n      <iframe\\n        src='https://www.youtube.com/embed/wAA-dKIpLKo'\\n        title='Getting Started with Module 1 2025'\\n        frameborder='0'\\n        allowfullscreen\\n        style='position: absolute; top: 0; left: 0; width: 100%; height: 100%;'>\\n      </iframe>\\n    </div>\\n  </div>\\n\\n  <!-- Syllabus Link -->\\n  <div style='text-align: center;'>\\n    <h3>Module 1 Syllabus</h3>\\n    <p>\\n      <strong>Access the syllabus here:</strong><br>\\n      <a\\n        href='https://docs.google.com/document/d/1YT59iYL2Rk0xULkzpI2CNSa6n9KqdTMlUDkcRJyNe6I/edit?usp=sharing'\\n        target='_blank'\\n        style='color: #1a73e8; text-decoration: underline;'>\\n        View Module 1 Syllabus (Google Docs)\\n      </a>\\n    </p>\\n  </div>\\n\\n</section>\",\n  \"featured\": false,\n  \"free\": false,\n  \"status\": \"unpublished\",\n  \"params\": {\n    \"cohortId\": \"066e2079-6edd-42f3-88ed-204ac1038d5e\"\n  }\n}\n",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/courses",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"courses"
+							],
+							"query": [
+								{
+									"key": "userId",
+									"value": "{{userId}}",
+									"disabled": true
+								}
+							]
+						},
+						"description": "Create a new course with optional image upload"
+					},
+					"response": [
+						{
+							"name": "Success Response",
+							"originalRequest": {
+								"method": "POST",
+								"header": [],
+								"body": {
+									"mode": "formdata",
+									"formdata": []
+								},
+								"url": {
+									"raw": ""
+								}
+							},
+							"status": "Created",
+							"code": 201,
+							"_postman_previewlanguage": "json",
+							"header": [],
+							"cookie": [],
+							"body": ""
+						}
+					]
+				},
+				{
+					"name": "Search Modules",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{AccessToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [
+							{
+								"key": "tenantid",
+								"value": "{{tenantId}}",
+								"type": "text"
+							},
+							{
+								"key": "organisationid",
+								"value": "{{organisationId}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/courses/search?status=published&cohortId=066e2079-6edd-42f3-88ed-204ac1038d5e",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"courses",
+								"search"
+							],
+							"query": [
+								{
+									"key": "page",
+									"value": "0",
+									"disabled": true
+								},
+								{
+									"key": "limit",
+									"value": "10",
+									"disabled": true
+								},
+								{
+									"key": "status",
+									"value": "published"
+								},
+								{
+									"key": "featured",
+									"value": "true",
+									"disabled": true
+								},
+								{
+									"key": "cohortId",
+									"value": "066e2079-6edd-42f3-88ed-204ac1038d5e"
+								}
+							]
+						},
+						"description": "Search and filter courses with pagination"
+					},
+					"response": [
+						{
+							"name": "Success Response",
+							"originalRequest": {
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": ""
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"header": [],
+							"cookie": [],
+							"body": ""
+						}
+					]
+				},
+				{
+					"name": "Get Modules by ID",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{AccessToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [
+							{
+								"key": "tenantid",
+								"value": "{{tenantId}}",
+								"type": "text"
+							},
+							{
+								"key": "organisationid",
+								"value": "{{organisationId}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/courses/{{courseId}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"courses",
+								"{{courseId}}"
+							]
+						},
+						"description": "Get a specific course by its ID"
+					},
+					"response": [
+						{
+							"name": "Success Response",
+							"originalRequest": {
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": ""
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"header": [],
+							"cookie": [],
+							"body": ""
+						}
+					]
+				},
+				{
+					"name": "Get Modules Hierarchy",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{AccessToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [
+							{
+								"key": "tenantid",
+								"value": "{{tenantId}}",
+								"type": "text"
+							},
+							{
+								"key": "organisationid",
+								"value": "{{organisationId}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/courses/{{courseId}}/hierarchy",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"courses",
+								"{{courseId}}",
+								"hierarchy"
+							]
+						},
+						"description": "Get course hierarchy including modules and lessons"
+					},
+					"response": [
+						{
+							"name": "Success Response",
+							"originalRequest": {
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": ""
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"header": [],
+							"cookie": [],
+							"body": ""
+						}
+					]
+				},
+				{
+					"name": "Get Module Hierarchy with Tracking",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{AccessToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [
+							{
+								"key": "tenantid",
+								"value": "{{tenantId}}",
+								"type": "text"
+							},
+							{
+								"key": "organisationid",
+								"value": "{{organisationId}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/courses/{{courseId}}/hierarchy/tracking/{{userId}}?type=lesson&moduleId=fd127860-5efa-4b4b-b8ae-d855fc71158f",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"courses",
+								"{{courseId}}",
+								"hierarchy",
+								"tracking",
+								"{{userId}}"
+							],
+							"query": [
+								{
+									"key": "type",
+									"value": "lesson"
+								},
+								{
+									"key": "moduleId",
+									"value": "fd127860-5efa-4b4b-b8ae-d855fc71158f"
+								}
+							]
+						},
+						"description": "Get course hierarchy with user tracking information"
+					},
+					"response": [
+						{
+							"name": "Success Response",
+							"originalRequest": {
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": ""
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"header": [],
+							"cookie": [],
+							"body": ""
+						}
+					]
+				},
+				{
+					"name": "Update Module",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{AccessToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "multipart/form-data",
+								"disabled": true
+							},
+							{
+								"key": "tenantid",
+								"value": "{{tenantId}}",
+								"type": "text"
+							},
+							{
+								"key": "organisationid",
+								"value": "{{organisationId}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"status\": \"published\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/courses/{{courseId}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"courses",
+								"{{courseId}}"
+							],
+							"query": [
+								{
+									"key": "userId",
+									"value": "{{userId}}",
+									"disabled": true
+								}
+							]
+						},
+						"description": "Update an existing course"
+					},
+					"response": [
+						{
+							"name": "Success Response",
+							"originalRequest": {
+								"method": "PATCH",
+								"header": [],
+								"body": {
+									"mode": "formdata",
+									"formdata": []
+								},
+								"url": {
+									"raw": ""
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"header": [],
+							"cookie": [],
+							"body": ""
+						}
+					]
+				},
+				{
+					"name": "Delete Module",
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "tenantid",
+								"value": "{{tenantId}}",
+								"type": "text"
+							},
+							{
+								"key": "organisationid",
+								"value": "{{organisationId}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/courses/{{courseId}}?userId={{userId}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"courses",
+								"{{courseId}}"
+							],
+							"query": [
+								{
+									"key": "userId",
+									"value": "{{userId}}"
+								}
+							]
+						},
+						"description": "Delete a course by ID"
+					},
+					"response": [
+						{
+							"name": "Success Response",
+							"originalRequest": {
+								"method": "DELETE",
+								"header": [],
+								"url": {
+									"raw": ""
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"header": [],
+							"cookie": [],
+							"body": ""
+						}
+					]
+				},
+				{
+					"name": "localhost:4000/lms-service/v1/courses/order/structure",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "academicyearid",
+								"value": "9a9e0daa-50dd-4d0e-8d10-36e7bc808f88"
+							},
+							{
+								"key": "accept",
+								"value": "application/json, text/plain, */*"
+							},
+							{
+								"key": "accept-language",
+								"value": "en-GB,en-US;q=0.9,en;q=0.8"
+							},
+							{
+								"key": "authorization",
+								"value": "Bearer eyJhbGciOiJSUzI1NiIsInR5cCIgOiAiSldUIiwia2lkIiA6ICJKQWV0Z1E5d1c1X1ktaHBwV0lsb3pxb0ExZ3ctNnhvMi1MVzExNjlSblljIn0.eyJleHAiOjE3NjI4NDEzNDUsImlhdCI6MTc2Mjc1NDk0NSwianRpIjoiMTdkZWE0NDUtNGU2YS00ZjE0LWFlNWUtODRkNmVmMGIzYTdiIiwiaXNzIjoiaHR0cHM6Ly9rZXljbG9hay1xYS5hc3BpcmVsZWFkZXJzLm9yZy9hdXRoL3JlYWxtcy9Bc3BpcmVMZWFkZXJEZXYiLCJzdWIiOiJmYTAyM2U0NC03YmNmLTQzZmMtOTA5OS03Y2E0MTkzYTk4NWYiLCJ0eXAiOiJCZWFyZXIiLCJhenAiOiJBc3BpcmVMZWFkZXJEZXYiLCJzZXNzaW9uX3N0YXRlIjoiMzNiZTI5ZDAtN2RkNi00YmQxLWJmMjctMzBhZDdkNTQ5NjQzIiwiYWNyIjoiMSIsImFsbG93ZWQtb3JpZ2lucyI6WyIvKiJdLCJyZWFsbV9hY2Nlc3MiOnsicm9sZXMiOlsib2ZmbGluZV9hY2Nlc3MiLCJ1bWFfYXV0aG9yaXphdGlvbiIsImRlZmF1bHQtcm9sZXMtcHJhdGhhbSJdfSwic2NvcGUiOiJzc28tbWV0YWRhdGEgZW1haWwgcHJvZmlsZSBwcmF0aGFtLXJvbGUiLCJzaWQiOiIzM2JlMjlkMC03ZGQ2LTRiZDEtYmYyNy0zMGFkN2Q1NDk2NDMiLCJlbWFpbF92ZXJpZmllZCI6ZmFsc2UsIm5hbWUiOiJNYWhlc2ggTWFoYWphbiIsInByZWZlcnJlZF91c2VybmFtZSI6Im1haGVzaC5tYWhhamFuKzExK0B0ZWtkaXRlY2hub2xvZ2llcy5jb20iLCJnaXZlbl9uYW1lIjoiTWFoZXNoIiwiZmFtaWx5X25hbWUiOiJNYWhhamFuIiwiZW1haWwiOiJtYWhlc2gubWFoYWphbisxMStAdGVrZGl0ZWNobm9sb2dpZXMuY29tIn0.K2wUrh3sV7ogrOGVdKjqY9UGvSFr1zKu_sQa0w4DRikEu-X16BTJsounmSZEnToz8Ynz4JKY7zDDj9B2xcQB5hSwBBlJIDqnHFoDLG5O0Z12iQyYfflWOgPT1ENSF_vdfuVYzi5xYvMczt09DJTym9s9w7YgEFaU5nDe_y5jvIQiuSu0mTRIWnTh9V3szQFRhwtKfkNDZO2IVc0qy2Pz4kenm3FWE88X1U1nTcfEqKvPY8GB44WH4VwXEOvttFZ5P9GuSn7dTVCUpP6vQe6l4NoP5D_yI8Iy2j1Fk_9IhJB9Mmg3Q8xrlWnFCD_9i7HRF9efHH_omkBOgpvd5h1wyg"
+							},
+							{
+								"key": "content-type",
+								"value": "application/json"
+							},
+							{
+								"key": "organisationid",
+								"value": "d36d9079-0f42-4ba3-be03-26c9e79509ee"
+							},
+							{
+								"key": "origin",
+								"value": "http://localhost:3002"
+							},
+							{
+								"key": "priority",
+								"value": "u=1, i"
+							},
+							{
+								"key": "referer",
+								"value": "http://localhost:3002/"
+							},
+							{
+								"key": "sec-ch-ua",
+								"value": "\"Chromium\";v=\"134\", \"Not:A-Brand\";v=\"24\", \"Google Chrome\";v=\"134\""
+							},
+							{
+								"key": "sec-ch-ua-mobile",
+								"value": "?0"
+							},
+							{
+								"key": "sec-ch-ua-platform",
+								"value": "\"Linux\""
+							},
+							{
+								"key": "sec-fetch-dest",
+								"value": "empty"
+							},
+							{
+								"key": "sec-fetch-mode",
+								"value": "cors"
+							},
+							{
+								"key": "sec-fetch-site",
+								"value": "cross-site"
+							},
+							{
+								"key": "tenantid",
+								"value": "ef99949b-7f3a-4a5f-806a-e67e683e38f3"
+							},
+							{
+								"key": "user-agent",
+								"value": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"courses\": [\n        {\n            \"courseId\": \"6409e76a-48f1-42b3-abf2-c79b8170cf96\",\n            \"order\": 4\n        },\n        {\n            \"courseId\": \"e8ac2333-a1d3-4466-82e4-dee15a5fc262\",\n            \"order\": 3\n        },\n        {\n            \"courseId\": \"3a7adea0-305f-401e-886e-a8453d1ead3e\",\n            \"order\": 8\n        },\n        {\n            \"courseId\": \"a6b1b8cf-7271-4a18-a268-a8447a9e1eca\",\n            \"order\": 12\n        },\n        {\n            \"courseId\": \"8c35d638-5cdb-4516-bcfe-a51d4474ca9b\",\n            \"order\": 16\n        },\n        {\n            \"courseId\": \"9f41ffc8-8a54-43f3-9029-0bedf3043a0f\",\n            \"order\": 20\n        },\n        {\n            \"courseId\": \"758df84e-f0fb-486b-b8f0-91dfe07bc3e9\",\n            \"order\": 21\n        },\n        {\n            \"courseId\": \"7c7c8e2b-5e56-461b-a0b8-0289284fae10\",\n            \"order\": 23\n        },\n        {\n            \"courseId\": \"c0c2f3c4-6fab-47f6-91c3-f78df7140f2a\",\n            \"order\": 25\n        }\n    ]\n}"
+						},
+						"url": {
+							"raw": "localhost:4000/lms-service/v1/courses/order/structure",
+							"host": [
+								"localhost"
+							],
+							"port": "4000",
+							"path": [
+								"lms-service",
+								"v1",
+								"courses",
+								"order",
+								"structure"
+							],
+							"query": [
+								{
+									"key": "userId",
+									"value": "fa023e44-7bcf-43fc-9099-7ca4193a985f",
+									"disabled": true
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Next Course/Module/Lesson",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{AccessToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [
+							{
+								"key": "tenantid",
+								"value": "{{tenantId}}",
+								"type": "text"
+							},
+							{
+								"key": "organisationid",
+								"value": "{{organisationId}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/courses/next-id?nextIdFor=course&id={{courseId}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"courses",
+								"next-id"
+							],
+							"query": [
+								{
+									"key": "nextIdFor",
+									"value": "course"
+								},
+								{
+									"key": "id",
+									"value": "{{courseId}}"
+								}
+							]
+						},
+						"description": "Get the next entity based on ordering fields, filtered by cohortId if applicable"
+					},
+					"response": []
+				},
+				{
+					"name": "Get Lesson Counts",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{AccessToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [
+							{
+								"key": "tenantid",
+								"value": "{{tenantId}}",
+								"type": "text"
+							},
+							{
+								"key": "organisationid",
+								"value": "{{organisationId}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/courses/lesson-counts?courseIds={{courseId}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"courses",
+								"lesson-counts"
+							],
+							"query": [
+								{
+									"key": "courseIds",
+									"value": "{{courseId}}"
+								}
+							]
+						},
+						"description": "Get video, document, and total lesson counts for one or more courses."
+					},
+					"response": []
+				},
+				{
+					"name": "Clone Course",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{AccessToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "tenantid",
+								"value": "{{tenantId}}",
+								"type": "text"
+							},
+							{
+								"key": "organisationid",
+								"value": "{{organisationId}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/courses/{{courseId}}/clone",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"courses",
+								"{{courseId}}",
+								"clone"
+							]
+						},
+						"description": "Creates a deep copy of the course including all modules, lessons, and associated media files",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"newCohortId\": \"\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Update Course Structure",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{AccessToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "PUT",
+						"header": [
+							{
+								"key": "tenantid",
+								"value": "{{tenantId}}",
+								"type": "text"
+							},
+							{
+								"key": "organisationid",
+								"value": "{{organisationId}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/courses/{{courseId}}/structure",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"courses",
+								"{{courseId}}",
+								"structure"
+							]
+						},
+						"description": "Update the entire course structure including module and lesson ordering, and moving lessons between modules",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"modules\": [\n    {\n      \"moduleId\": \"{{moduleId}}\",\n      \"order\": 1,\n      \"lessons\": [\n        {\n          \"lessonId\": \"{{lessonId}}\",\n          \"order\": 1\n        }\n      ]\n    }\n  ]\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Units",
+			"item": [
+				{
+					"name": "Search Unit",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{AccessToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [
+							{
+								"key": "tenantid",
+								"value": "{{tenantId}}",
+								"type": "text"
+							},
+							{
+								"key": "organisationid",
+								"value": "{{organisationId}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "http://localhost:4000/lms-service/v1/modules/search?limit=10&query=module&courseId=5903dca2-4cd1-4282-86cb-8dea57a07186&status=published&offset=0&sortBy=ordering&orderBy=ASC",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "4000",
+							"path": [
+								"lms-service",
+								"v1",
+								"modules",
+								"search"
+							],
+							"query": [
+								{
+									"key": "limit",
+									"value": "10"
+								},
+								{
+									"key": "query",
+									"value": "module"
+								},
+								{
+									"key": "courseId",
+									"value": "5903dca2-4cd1-4282-86cb-8dea57a07186"
+								},
+								{
+									"key": "parentId",
+									"value": null,
+									"disabled": true
+								},
+								{
+									"key": "status",
+									"value": "published"
+								},
+								{
+									"key": "offset",
+									"value": "0"
+								},
+								{
+									"key": "sortBy",
+									"value": "ordering",
+									"description": "CREATED_AT = 'createdAt',\n  UPDATED_AT = 'updatedAt',\n  TITLE = 'title',\n  START_DATETIME = 'startDatetime',\n  END_DATETIME = 'endDatetime',\n  ORDERING = 'ordering'"
+								},
+								{
+									"key": "orderBy",
+									"value": "ASC"
+								}
+							]
+						},
+						"description": "Search and filter courses with pagination"
+					},
+					"response": [
+						{
+							"name": "Success Response",
+							"originalRequest": {
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": ""
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"header": [],
+							"cookie": [],
+							"body": ""
+						}
+					]
+				},
+				{
+					"name": "Next Id",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{AccessToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [
+							{
+								"key": "tenantid",
+								"value": "{{tenantId}}",
+								"type": "text"
+							},
+							{
+								"key": "organisationid",
+								"value": "{{organisationId}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "http://localhost:4000/lms-service/v1/modules/search?limit=10&query=module&courseId=5903dca2-4cd1-4282-86cb-8dea57a07186&status=published&offset=0&sortBy=ordering&orderBy=ASC",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "4000",
+							"path": [
+								"lms-service",
+								"v1",
+								"modules",
+								"search"
+							],
+							"query": [
+								{
+									"key": "limit",
+									"value": "10"
+								},
+								{
+									"key": "query",
+									"value": "module"
+								},
+								{
+									"key": "courseId",
+									"value": "5903dca2-4cd1-4282-86cb-8dea57a07186"
+								},
+								{
+									"key": "parentId",
+									"value": null,
+									"disabled": true
+								},
+								{
+									"key": "status",
+									"value": "published"
+								},
+								{
+									"key": "offset",
+									"value": "0"
+								},
+								{
+									"key": "sortBy",
+									"value": "ordering",
+									"description": "CREATED_AT = 'createdAt',\n  UPDATED_AT = 'updatedAt',\n  TITLE = 'title',\n  START_DATETIME = 'startDatetime',\n  END_DATETIME = 'endDatetime',\n  ORDERING = 'ordering'"
+								},
+								{
+									"key": "orderBy",
+									"value": "ASC"
+								}
+							]
+						},
+						"description": "Search and filter courses with pagination"
+					},
+					"response": [
+						{
+							"name": "Success Response",
+							"originalRequest": {
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": ""
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"header": [],
+							"cookie": [],
+							"body": ""
+						}
+					]
+				},
+				{
+					"name": "Create Unit",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{AccessToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "multipart/form-data"
+							},
+							{
+								"key": "tenantid",
+								"value": "{{tenantId}}",
+								"type": "text"
+							},
+							{
+								"key": "organisationid",
+								"value": "{{organisationId}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "title",
+									"value": "Week 1 - Discover",
+									"type": "text"
+								},
+								{
+									"key": "alias",
+									"value": "intro-html",
+									"type": "text",
+									"disabled": true
+								},
+								{
+									"key": "courseId",
+									"value": "{{courseId}}",
+									"type": "text"
+								},
+								{
+									"key": "description",
+									"value": "<section style='font-family: Manrope, Arial, sans-serif; max-width: 800px; margin: 20px auto; padding: 20px; background-color: #fafafa; border-radius: 8px; box-shadow: 0 0 10px rgba(0, 0, 0, 0.05);'><ul style='list-style-type: square; padding-left: 20px; color: #434343; font-size: 14px; line-height: 1.5; margin: 0;'><li style='margin-bottom: 12px;'>Access your Discord Group to begin global peer-to-peer networking.</li><li style='margin-bottom: 12px;'>Take the strengths-based leadership skills assessment to understand yourself as a leader.</li><li style='margin-bottom: 12px;'>Complete personal reflection prompts and community discussion posts to enrich your learning experience.</li></ul></section>",
+									"type": "text"
+								},
+								{
+									"key": "image",
+									"value": "lms/modules/week1.png",
+									"type": "text"
+								},
+								{
+									"key": "ordering",
+									"value": "1",
+									"type": "text"
+								},
+								{
+									"key": "status",
+									"value": "published",
+									"type": "text"
+								}
+							]
+						},
+						"url": {
+							"raw": "{{baseUrl}}/modules",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"modules"
+							],
+							"query": [
+								{
+									"key": "userId",
+									"value": "{{userId}}",
+									"disabled": true
+								}
+							]
+						},
+						"description": "Create a new module with optional image upload"
+					},
+					"response": [
+						{
+							"name": "Success Response",
+							"originalRequest": {
+								"method": "POST",
+								"header": [],
+								"body": {
+									"mode": "formdata",
+									"formdata": []
+								},
+								"url": {
+									"raw": ""
+								}
+							},
+							"status": "Created",
+							"code": 201,
+							"_postman_previewlanguage": "json",
+							"header": [],
+							"cookie": [],
+							"body": ""
+						}
+					]
+				},
+				{
+					"name": "Get Unit by ID",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{AccessToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [
+							{
+								"key": "tenantid",
+								"value": "{{tenantId}}",
+								"type": "text"
+							},
+							{
+								"key": "organisationid",
+								"value": "{{organisationId}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/modules/{{moduleId}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"modules",
+								"{{moduleId}}"
+							]
+						},
+						"description": "Get a specific module by its ID"
+					},
+					"response": [
+						{
+							"name": "Success Response",
+							"originalRequest": {
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": ""
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"header": [],
+							"cookie": [],
+							"body": ""
+						}
+					]
+				},
+				{
+					"name": "Update Module",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{AccessToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "multipart/form-data",
+								"disabled": true
+							},
+							{
+								"key": "tenantid",
+								"value": "{{tenantId}}",
+								"type": "text"
+							},
+							{
+								"key": "organisationid",
+								"value": "{{organisationId}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"status\": \"unpublished\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/modules/{{moduleId1}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"modules",
+								"{{moduleId1}}"
+							],
+							"query": [
+								{
+									"key": "userId",
+									"value": "{{userId}}",
+									"disabled": true
+								}
+							]
+						},
+						"description": "Update an existing module"
+					},
+					"response": [
+						{
+							"name": "Success Response",
+							"originalRequest": {
+								"method": "PUT",
+								"header": [],
+								"body": {
+									"mode": "formdata",
+									"formdata": []
+								},
+								"url": {
+									"raw": ""
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"header": [],
+							"cookie": [],
+							"body": ""
+						}
+					]
+				},
+				{
+					"name": "Delete Module",
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "tenantid",
+								"value": "{{tenantId}}",
+								"type": "text"
+							},
+							{
+								"key": "organisationid",
+								"value": "{{organisationId}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/modules/{{moduleId}}?userId={{userId}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"modules",
+								"{{moduleId}}"
+							],
+							"query": [
+								{
+									"key": "userId",
+									"value": "{{userId}}"
+								}
+							]
+						},
+						"description": "Delete (archive) a module"
+					},
+					"response": [
+						{
+							"name": "Success Response",
+							"originalRequest": {
+								"method": "DELETE",
+								"header": [],
+								"url": {
+									"raw": ""
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"header": [],
+							"cookie": [],
+							"body": ""
+						}
+					]
+				},
+				{
+					"name": "Clone Module",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{AccessToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "tenantid",
+								"value": "{{tenantId}}",
+								"type": "text"
+							},
+							{
+								"key": "organisationid",
+								"value": "{{organisationId}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/modules/{{moduleId}}/clone",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"modules",
+								"{{moduleId}}",
+								"clone"
+							]
+						},
+						"description": "Clone a module with all its lessons and submodules",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"newCourseId\": \"{{courseId}}\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Lessons",
+			"item": [
+				{
+					"name": "Create Lesson",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{AccessToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "multipart/form-data",
+								"disabled": true
+							},
+							{
+								"key": "tenantid",
+								"value": "{{tenantId}}",
+								"type": "text"
+							},
+							{
+								"key": "organisationid",
+								"value": "{{organisationId}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"title\": \"The Key to Effective Leadership\",\n  \"format\": \"document\",\n  \"mediaContentSource\": \"https://docs.google.com/document/d/1YT59iYL2Rk0xULkzpI2CNSa6n9KqdTMlUDkcRJyNe6I/edit?usp=sharing\",\n  \"mediaContentPath\": \"https://docs.google.com/document/d/1YT59iYL2Rk0xULkzpI2CNSa6n9KqdTMlUDkcRJyNe6I/edit?usp=sharing\",\n  \"mediaContentSubFormat\": \"pdf\",\n  \"image\": \"/images/course-thumbnail.jpg\",\n  \"status\": \"published\",\n  \"description\": \"The Key to Effective Leadership\",\n  \"noOfAttempts\": 3,\n  \"attemptsGrade\": \"highest\",\n  \"idealTime\": 30,\n  \"resume\": true,\n  \"totalMarks\": 100,\n  \"passingMarks\": 60,\n  \"courseId\": \"{{courseId}}\",\n  \"moduleId\": \"{{moduleId}}\",\n  \"considerForPassing\": true\n}\n",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/lessons",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"lessons"
+							],
+							"query": [
+								{
+									"key": "userId",
+									"value": "{{userId}}",
+									"disabled": true
+								}
+							]
+						},
+						"description": "Create a new lesson with optional image upload"
+					},
+					"response": [
+						{
+							"name": "Success Response",
+							"originalRequest": {
+								"method": "POST",
+								"header": [],
+								"body": {
+									"mode": "formdata",
+									"formdata": []
+								},
+								"url": {
+									"raw": ""
+								}
+							},
+							"status": "Created",
+							"code": 201,
+							"_postman_previewlanguage": "json",
+							"header": [],
+							"cookie": [],
+							"body": ""
+						}
+					]
+				},
+				{
+					"name": "Get All Lessons",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{AccessToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [
+							{
+								"key": "tenantid",
+								"value": "{{tenantId}}",
+								"type": "text"
+							},
+							{
+								"key": "organisationid",
+								"value": "{{organisationId}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/lessons?page=1&limit=10",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"lessons"
+							],
+							"query": [
+								{
+									"key": "page",
+									"value": "1"
+								},
+								{
+									"key": "limit",
+									"value": "10"
+								},
+								{
+									"key": "status",
+									"value": "published",
+									"disabled": true
+								},
+								{
+									"key": "format",
+									"value": "video",
+									"disabled": true
+								}
+							]
+						},
+						"description": "Get all lessons with optional filtering and pagination"
+					},
+					"response": [
+						{
+							"name": "Success Response",
+							"originalRequest": {
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": ""
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"header": [],
+							"cookie": [],
+							"body": ""
+						}
+					]
+				},
+				{
+					"name": "Get Lesson by ID",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "tenantid",
+								"value": "{{tenantId}}",
+								"type": "text"
+							},
+							{
+								"key": "organisationid",
+								"value": "{{organisationId}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/lessons/{{lessonId}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"lessons",
+								"{{lessonId}}"
+							]
+						},
+						"description": "Get a specific lesson by its ID"
+					},
+					"response": [
+						{
+							"name": "Success Response",
+							"originalRequest": {
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": ""
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"header": [],
+							"cookie": [],
+							"body": ""
+						}
+					]
+				},
+				{
+					"name": "Get Lessons by Module",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "tenantid",
+								"value": "{{tenantId}}",
+								"type": "text"
+							},
+							{
+								"key": "organisationid",
+								"value": "{{organisationId}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/lessons/module/{{moduleId}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"lessons",
+								"module",
+								"{{moduleId}}"
+							]
+						},
+						"description": "Get all lessons for a specific module"
+					},
+					"response": [
+						{
+							"name": "Success Response",
+							"originalRequest": {
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": ""
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"header": [],
+							"cookie": [],
+							"body": ""
+						}
+					]
+				},
+				{
+					"name": "Update Lesson",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{AccessToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "multipart/form-data",
+								"disabled": true
+							},
+							{
+								"key": "tenantid",
+								"value": "{{tenantId}}",
+								"type": "text"
+							},
+							{
+								"key": "organisationid",
+								"value": "{{organisationId}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n      \"noOfAttempts\": 1\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/lessons/{{lessonId}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"lessons",
+								"{{lessonId}}"
+							],
+							"query": [
+								{
+									"key": "userId",
+									"value": "{{userId}}",
+									"disabled": true
+								}
+							]
+						},
+						"description": "Update an existing lesson"
+					},
+					"response": [
+						{
+							"name": "Success Response",
+							"originalRequest": {
+								"method": "PUT",
+								"header": [],
+								"body": {
+									"mode": "formdata",
+									"formdata": []
+								},
+								"url": {
+									"raw": ""
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"header": [],
+							"cookie": [],
+							"body": ""
+						}
+					]
+				},
+				{
+					"name": "Delete Lesson",
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "tenantid",
+								"value": "{{tenantId}}",
+								"type": "text"
+							},
+							{
+								"key": "organisationid",
+								"value": "{{organisationId}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/lessons/{{lessonId}}?userId={{userId}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"lessons",
+								"{{lessonId}}"
+							],
+							"query": [
+								{
+									"key": "userId",
+									"value": "{{userId}}"
+								}
+							]
+						},
+						"description": "Delete a lesson"
+					},
+					"response": [
+						{
+							"name": "Success Response",
+							"originalRequest": {
+								"method": "DELETE",
+								"header": [],
+								"url": {
+									"raw": ""
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"header": [],
+							"cookie": [],
+							"body": ""
+						}
+					]
+				},
+				{
+					"name": "Get Lesson by Test ID",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{AccessToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [
+							{
+								"key": "tenantid",
+								"value": "{{tenantId}}",
+								"type": "text"
+							},
+							{
+								"key": "organisationid",
+								"value": "{{organisationId}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/lessons/test/{{testId}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"lessons",
+								"test",
+								"{{testId}}"
+							]
+						},
+						"description": "Get lesson details by test ID (maps to media.source column)"
+					},
+					"response": []
+				},
+				{
+					"name": "Clone Lesson",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{AccessToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "tenantid",
+								"value": "{{tenantId}}",
+								"type": "text"
+							},
+							{
+								"key": "organisationid",
+								"value": "{{organisationId}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/lessons/{{lessonId}}/clone",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"lessons",
+								"{{lessonId}}",
+								"clone"
+							]
+						},
+						"description": "Clone a lesson with all its media and associated files",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"newCourseId\": \"{{courseId}}\",\n  \"newModuleId\": \"{{moduleId}}\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Media",
+			"item": [
+				{
+					"name": "Upload Media",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "multipart/form-data"
+							},
+							{
+								"key": "tenantid",
+								"value": "{{tenantId}}",
+								"type": "text"
+							},
+							{
+								"key": "organisationid",
+								"value": "{{organisationId}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "format",
+									"value": "video",
+									"type": "text"
+								},
+								{
+									"key": "file",
+									"type": "file",
+									"src": "/path/to/media/file"
+								}
+							]
+						},
+						"url": {
+							"raw": "{{baseUrl}}/media/upload?userId={{userId}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"media",
+								"upload"
+							],
+							"query": [
+								{
+									"key": "userId",
+									"value": "{{userId}}"
+								}
+							]
+						},
+						"description": "Upload a media file (video, document, etc.)"
+					},
+					"response": [
+						{
+							"name": "Success Response",
+							"originalRequest": {
+								"method": "POST",
+								"header": [],
+								"body": {
+									"mode": "formdata",
+									"formdata": []
+								},
+								"url": {
+									"raw": ""
+								}
+							},
+							"status": "Created",
+							"code": 201,
+							"_postman_previewlanguage": "json",
+							"header": [],
+							"cookie": [],
+							"body": ""
+						}
+					]
+				},
+				{
+					"name": "Get Media List",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "tenantid",
+								"value": "{{tenantId}}",
+								"type": "text"
+							},
+							{
+								"key": "organisationid",
+								"value": "{{organisationId}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/media?page=1&limit=10&format=video",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"media"
+							],
+							"query": [
+								{
+									"key": "page",
+									"value": "1"
+								},
+								{
+									"key": "limit",
+									"value": "10"
+								},
+								{
+									"key": "format",
+									"value": "video"
+								}
+							]
+						},
+						"description": "Get list of media files with optional filtering"
+					},
+					"response": [
+						{
+							"name": "Success Response",
+							"originalRequest": {
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": ""
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"header": [],
+							"cookie": [],
+							"body": ""
+						}
+					]
+				},
+				{
+					"name": "Get Media by ID",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "tenantid",
+								"value": "{{tenantId}}",
+								"type": "text"
+							},
+							{
+								"key": "organisationid",
+								"value": "{{organisationId}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/media/{{mediaId}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"media",
+								"{{mediaId}}"
+							]
+						},
+						"description": "Get a specific media file by ID"
+					},
+					"response": [
+						{
+							"name": "Success Response",
+							"originalRequest": {
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": ""
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"header": [],
+							"cookie": [],
+							"body": ""
+						}
+					]
+				},
+				{
+					"name": "Associate Media with Lesson",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "tenantid",
+								"value": "{{tenantId}}",
+								"type": "text"
+							},
+							{
+								"key": "organisationid",
+								"value": "{{organisationId}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/media/{{mediaId}}/associate/{{lessonId}}?userId={{userId}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"media",
+								"{{mediaId}}",
+								"associate",
+								"{{lessonId}}"
+							],
+							"query": [
+								{
+									"key": "userId",
+									"value": "{{userId}}"
+								}
+							]
+						},
+						"description": "Associate a media file with a lesson"
+					},
+					"response": [
+						{
+							"name": "Success Response",
+							"originalRequest": {
+								"method": "POST",
+								"header": [],
+								"url": {
+									"raw": ""
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"header": [],
+							"cookie": [],
+							"body": ""
+						}
+					]
+				},
+				{
+					"name": "Delete Media",
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "tenantid",
+								"value": "{{tenantId}}",
+								"type": "text"
+							},
+							{
+								"key": "organisationid",
+								"value": "{{organisationId}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/media/{{mediaId}}?userId={{userId}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"media",
+								"{{mediaId}}"
+							],
+							"query": [
+								{
+									"key": "userId",
+									"value": "{{userId}}"
+								}
+							]
+						},
+						"description": "Delete a media file"
+					},
+					"response": [
+						{
+							"name": "Success Response",
+							"originalRequest": {
+								"method": "DELETE",
+								"header": [],
+								"url": {
+									"raw": ""
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"header": [],
+							"cookie": [],
+							"body": ""
+						}
+					]
+				},
+				{
+					"name": "Remove Media Association",
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "tenantid",
+								"value": "{{tenantId}}",
+								"type": "text"
+							},
+							{
+								"key": "organisationid",
+								"value": "{{organisationId}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/media/{{mediaId}}/associate/{{lessonId}}?userId={{userId}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"media",
+								"{{mediaId}}",
+								"associate",
+								"{{lessonId}}"
+							],
+							"query": [
+								{
+									"key": "userId",
+									"value": "{{userId}}"
+								}
+							]
+						},
+						"description": "Remove media association from a lesson"
+					},
+					"response": [
+						{
+							"name": "Success Response",
+							"originalRequest": {
+								"method": "DELETE",
+								"header": [],
+								"url": {
+									"raw": ""
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"header": [],
+							"cookie": [],
+							"body": ""
+						}
+					]
+				}
+			]
+		},
+		{
+			"name": "Enrollments",
+			"item": [
+				{
+					"name": "Enroll User",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{AccessToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "tenantid",
+								"value": "{{tenantId}}",
+								"type": "text"
+							},
+							{
+								"key": "organisationid",
+								"value": "{{organisationId}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"courseId\": \"{{courseId}}\",\n  \"learnerId\": \"{{userId}}\",\n  \"status\": \"published\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/enrollments",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"enrollments"
+							],
+							"query": [
+								{
+									"key": "userId",
+									"value": "{{userId}}",
+									"disabled": true
+								}
+							]
+						},
+						"description": "Enroll a user for a course"
+					},
+					"response": [
+						{
+							"name": "Success Response",
+							"originalRequest": {
+								"method": "POST",
+								"header": [],
+								"body": {
+									"mode": "raw",
+									"raw": "{}"
+								},
+								"url": {
+									"raw": ""
+								}
+							},
+							"status": "Created",
+							"code": 201,
+							"_postman_previewlanguage": "json",
+							"header": [],
+							"cookie": [],
+							"body": ""
+						}
+					]
+				},
+				{
+					"name": "Create Enrollment",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{auth_token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"courseId\": \"{{course_id}}\",\n    \"learnerId\": \"{{user_id}}\",\n    \"status\": \"PUBLISHED\",\n    \"endTime\": \"2024-12-31T23:59:59Z\",\n    \"unlimitedPlan\": false,\n    \"beforeExpiryMail\": true,\n    \"afterExpiryMail\": true,\n    \"params\": {\n        \"source\": \"web\",\n        \"referral\": \"direct\"\n    },\n    \"enrolledBy\": \"{{user_id}}\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/enrollments?userId={{user_id}}&tenantId={{tenant_id}}&organisationId={{organisation_id}}",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"enrollments"
+							],
+							"query": [
+								{
+									"key": "userId",
+									"value": "{{user_id}}"
+								},
+								{
+									"key": "tenantId",
+									"value": "{{tenant_id}}"
+								},
+								{
+									"key": "organisationId",
+									"value": "{{organisation_id}}"
+								}
+							]
+						},
+						"description": "Enroll a user in a course"
+					},
+					"response": []
+				},
+				{
+					"name": "Get User Enrollments",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "tenantid",
+								"value": "{{tenantId}}",
+								"type": "text"
+							},
+							{
+								"key": "organisationid",
+								"value": "{{organisationId}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/enrollments?page=1&limit=10&learnerId={{userId}}&status=active",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"enrollments"
+							],
+							"query": [
+								{
+									"key": "page",
+									"value": "1"
+								},
+								{
+									"key": "limit",
+									"value": "10"
+								},
+								{
+									"key": "learnerId",
+									"value": "{{userId}}"
+								},
+								{
+									"key": "status",
+									"value": "active"
+								}
+							]
+						},
+						"description": "Get user enrollments with optional filtering"
+					},
+					"response": [
+						{
+							"name": "Success Response",
+							"originalRequest": {
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": ""
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"header": [],
+							"cookie": [],
+							"body": ""
+						}
+					]
+				},
+				{
+					"name": "Get Enrollment by ID",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "tenantid",
+								"value": "{{tenantId}}",
+								"type": "text"
+							},
+							{
+								"key": "organisationid",
+								"value": "{{organisationId}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/enrollments/{{enrollmentId}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"enrollments",
+								"{{enrollmentId}}"
+							]
+						},
+						"description": "Get a specific enrollment by ID"
+					},
+					"response": [
+						{
+							"name": "Success Response",
+							"originalRequest": {
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": ""
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"header": [],
+							"cookie": [],
+							"body": ""
+						}
+					]
+				},
+				{
+					"name": "Update Enrollment",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "tenantid",
+								"value": "{{tenantId}}",
+								"type": "text"
+							},
+							{
+								"key": "organisationid",
+								"value": "{{organisationId}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"status\": \"completed\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/enrollments/{{enrollmentId}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"enrollments",
+								"{{enrollmentId}}"
+							]
+						},
+						"description": "Update an enrollment"
+					},
+					"response": [
+						{
+							"name": "Success Response",
+							"originalRequest": {
+								"method": "PUT",
+								"header": [],
+								"body": {
+									"mode": "raw",
+									"raw": "{}"
+								},
+								"url": {
+									"raw": ""
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"header": [],
+							"cookie": [],
+							"body": ""
+						}
+					]
+				},
+				{
+					"name": "Get Users Enrolled Courses",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{AccessToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [
+							{
+								"key": "tenantid",
+								"value": "{{tenantId}}",
+								"type": "text"
+							},
+							{
+								"key": "organisationid",
+								"value": "{{organisationId}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/enrollments/users-courses?userId={{userId}}&status=active&cohortId={{cohortId}}&offset=0&limit=10",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"enrollments",
+								"users-courses"
+							],
+							"query": [
+								{
+									"key": "userId",
+									"value": "{{userId}}"
+								},
+								{
+									"key": "status",
+									"value": "active",
+									"disabled": true
+								},
+								{
+									"key": "cohortId",
+									"value": "{{cohortId}}",
+									"disabled": true
+								},
+								{
+									"key": "offset",
+									"value": "0",
+									"disabled": true
+								},
+								{
+									"key": "limit",
+									"value": "10",
+									"disabled": true
+								}
+							]
+						},
+						"description": "Get enrolled courses by user ID"
+					},
+					"response": []
+				},
+				{
+					"name": "Hard Delete Enrollment",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{AccessToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "tenantid",
+								"value": "{{tenantId}}",
+								"type": "text"
+							},
+							{
+								"key": "organisationid",
+								"value": "{{organisationId}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/enrollments",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"enrollments"
+							]
+						},
+						"description": "Hard delete enrollment and all related tracking records",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"courseId\": \"{{courseId}}\",\n  \"userId\": \"{{userId}}\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Tracking",
+			"item": [
+				{
+					"name": "Get Course Tracking",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{AccessToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [
+							{
+								"key": "tenantid",
+								"value": "{{tenantId}}",
+								"type": "text"
+							},
+							{
+								"key": "organisationid",
+								"value": "{{organisationId}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/tracking/course/{{courseId}}/{{userId}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"tracking",
+								"course",
+								"{{courseId}}",
+								"{{userId}}"
+							]
+						},
+						"description": "Get course tracking status for a user"
+					},
+					"response": [
+						{
+							"name": "Success Response",
+							"originalRequest": {
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": ""
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"header": [],
+							"cookie": [],
+							"body": ""
+						}
+					]
+				},
+				{
+					"name": "Start/Resume Lesson Attempt",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{AccessToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "tenantid",
+								"value": "{{tenantId}}",
+								"type": "text"
+							},
+							{
+								"key": "organisationid",
+								"value": "{{organisationId}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"courseId\": \"{{courseId}}\",\n  \"moduleId\": \"{{moduleId}}\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/tracking/lesson/attempt/:lessonId",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"tracking",
+								"lesson",
+								"attempt",
+								":lessonId"
+							],
+							"query": [
+								{
+									"key": "userId",
+									"value": "{{userId}}",
+									"disabled": true
+								},
+								{
+									"key": "eef4107e-80bb-45f4-8f78-988837c0bd16",
+									"value": "",
+									"disabled": true
+								}
+							],
+							"variable": [
+								{
+									"key": "lessonId",
+									"value": "{{lessonId}}"
+								}
+							]
+						},
+						"description": "Start a new lesson attempt or get existing incomplete attempt"
+					},
+					"response": [
+						{
+							"name": "Success Response",
+							"originalRequest": {
+								"method": "POST",
+								"header": [],
+								"body": {
+									"mode": "raw",
+									"raw": "{}"
+								},
+								"url": {
+									"raw": ""
+								}
+							},
+							"status": "Created",
+							"code": 201,
+							"_postman_previewlanguage": "json",
+							"header": [],
+							"cookie": [],
+							"body": ""
+						}
+					]
+				},
+				{
+					"name": "Get Lesson Status",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{AccessToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [
+							{
+								"key": "tenantid",
+								"value": "{{tenantId}}",
+								"type": "text"
+							},
+							{
+								"key": "organisationid",
+								"value": "{{organisationId}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/tracking/{{lessonId}}/users/{{userId}}/status",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"tracking",
+								"{{lessonId}}",
+								"users",
+								"{{userId}}",
+								"status"
+							]
+						},
+						"description": "Get lesson status for a user"
+					},
+					"response": [
+						{
+							"name": "Success Response",
+							"originalRequest": {
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": ""
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"header": [],
+							"cookie": [],
+							"body": ""
+						}
+					]
+				},
+				{
+					"name": "Get Attempt Details",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{AccessToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [
+							{
+								"key": "tenantid",
+								"value": "{{tenantId}}",
+								"type": "text"
+							},
+							{
+								"key": "organisationid",
+								"value": "{{organisationId}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/tracking/attempts/{{attemptId}}/{{userId}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"tracking",
+								"attempts",
+								"{{attemptId}}",
+								"{{userId}}"
+							]
+						},
+						"description": "Get attempt details"
+					},
+					"response": [
+						{
+							"name": "Success Response",
+							"originalRequest": {
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": ""
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"header": [],
+							"cookie": [],
+							"body": ""
+						}
+					]
+				},
+				{
+					"name": "Update Attempt Progress",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{AccessToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "tenantid",
+								"value": "{{tenantId}}",
+								"type": "text"
+							},
+							{
+								"key": "organisationid",
+								"value": "{{organisationId}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"status\": \"complete\",\n  \"lessonId\":\"{{lessonId}}\",\n  \"totalContent\" : 100,\n  \"currentPosition\" :100,\n  \"timeSpent\":10\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/tracking/attempts/progress/:attemptId",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"tracking",
+								"attempts",
+								"progress",
+								":attemptId"
+							],
+							"query": [
+								{
+									"key": "userId",
+									"value": "{{lerner}}",
+									"disabled": true
+								}
+							],
+							"variable": [
+								{
+									"key": "attemptId",
+									"value": "{{attemptId}}"
+								}
+							]
+						},
+						"description": "Update attempt progress"
+					},
+					"response": [
+						{
+							"name": "Success Response",
+							"originalRequest": {
+								"method": "PATCH",
+								"header": [],
+								"body": {
+									"mode": "raw",
+									"raw": "{}"
+								},
+								"url": {
+									"raw": ""
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"header": [],
+							"cookie": [],
+							"body": ""
+						}
+					]
+				},
+				{
+					"name": "recalculate-progress",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "tenantid",
+								"value": "ef99949b-7f3a-4a5f-806a-e67e683e38f3",
+								"type": "text"
+							},
+							{
+								"key": "organisationid",
+								"value": "d36d9079-0f42-4ba3-be03-26c9e79509ee",
+								"type": "text"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer eyJhbGciOiJSUzI1NiIsInR5cCIgOiAiSldUIiwia2lkIiA6ICJKQWV0Z1E5d1c1X1ktaHBwV0lsb3pxb0ExZ3ctNnhvMi1MVzExNjlSblljIn0.eyJleHAiOjE3NjcwNzQyNzEsImlhdCI6MTc2Njk4Nzg3MSwianRpIjoiODkzZjU4YWUtMjE1ZS00MGQ2LTgxMjMtN2E3OWMwYzhlOGY2IiwiaXNzIjoiaHR0cHM6Ly9rZXljbG9hay1xYS5hc3BpcmVsZWFkZXJzLm9yZy9hdXRoL3JlYWxtcy9Bc3BpcmVMZWFkZXJEZXYiLCJzdWIiOiJmYTAyM2U0NC03YmNmLTQzZmMtOTA5OS03Y2E0MTkzYTk4NWYiLCJ0eXAiOiJCZWFyZXIiLCJhenAiOiJBc3BpcmVMZWFkZXJEZXYiLCJzZXNzaW9uX3N0YXRlIjoiY2FmNTZiZGEtODBjNy00ZjFjLTkxZDYtMWJiNTc0Yzk5ZTIzIiwiYWNyIjoiMSIsImFsbG93ZWQtb3JpZ2lucyI6WyIvKiJdLCJyZWFsbV9hY2Nlc3MiOnsicm9sZXMiOlsib2ZmbGluZV9hY2Nlc3MiLCJ1bWFfYXV0aG9yaXphdGlvbiIsImRlZmF1bHQtcm9sZXMtcHJhdGhhbSJdfSwic2NvcGUiOiJzc28tbWV0YWRhdGEgZW1haWwgcHJvZmlsZSBwcmF0aGFtLXJvbGUiLCJzaWQiOiJjYWY1NmJkYS04MGM3LTRmMWMtOTFkNi0xYmI1NzRjOTllMjMiLCJlbWFpbF92ZXJpZmllZCI6ZmFsc2UsIm5hbWUiOiJNYWhlc2ggTWFoYWphbiIsInByZWZlcnJlZF91c2VybmFtZSI6Im1haGVzaC5tYWhhamFuKzExK0B0ZWtkaXRlY2hub2xvZ2llcy5jb20iLCJnaXZlbl9uYW1lIjoiTWFoZXNoIiwiZmFtaWx5X25hbWUiOiJNYWhhamFuIiwiZW1haWwiOiJtYWhlc2gubWFoYWphbisxMStAdGVrZGl0ZWNobm9sb2dpZXMuY29tIn0.I8q6W8vm6NU2ZSkcXs0jSk7MhIx9170LrDaeDy4qKi_XrTlnWGc60K2eRV4nkjgGAv6Bi4CscdtWy4_677f7xSq9kuLLspSjhvZF6qQ4j3Kcooh-4puE6EsdYqsF8JUoQotNTvNtfNeSziBg3AvPuYj1xzWTaZ2JNSZJFFKxjQbkqXz0BLhTpO43V23COvPGREQ6M1hqRGMQ3hmqLRqEf7edGZKEA_GvinMoN7h5qrYzME0CLhA9hGmqoaKZ18W6WcRRq8ZIYumnUYwpv9JMxHrYNwnBgDDNITltfjzSHHahX3_NKGLZtkvjh1eKWaUhGUHbjBe8oydWYRrYcUNH0A",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"courseId\": \"6409e76a-48f1-42b3-abf2-c79b8170cf96\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "localhost:4000/lms-service/v1/tracking/recalculate-progress",
+							"host": [
+								"localhost"
+							],
+							"port": "4000",
+							"path": [
+								"lms-service",
+								"v1",
+								"tracking",
+								"recalculate-progress"
+							]
+						}
+					},
+					"response": [
+						{
+							"name": "recalculate-progress",
+							"originalRequest": {
+								"method": "POST",
+								"header": [
+									{
+										"key": "tenantid",
+										"value": "ef99949b-7f3a-4a5f-806a-e67e683e38f3",
+										"type": "text"
+									},
+									{
+										"key": "organisationid",
+										"value": "d36d9079-0f42-4ba3-be03-26c9e79509ee",
+										"type": "text"
+									},
+									{
+										"key": "Authorization",
+										"value": "Bearer eyJhbGciOiJSUzI1NiIsInR5cCIgOiAiSldUIiwia2lkIiA6ICJKQWV0Z1E5d1c1X1ktaHBwV0lsb3pxb0ExZ3ctNnhvMi1MVzExNjlSblljIn0.eyJleHAiOjE3NjcwNzQyNzEsImlhdCI6MTc2Njk4Nzg3MSwianRpIjoiODkzZjU4YWUtMjE1ZS00MGQ2LTgxMjMtN2E3OWMwYzhlOGY2IiwiaXNzIjoiaHR0cHM6Ly9rZXljbG9hay1xYS5hc3BpcmVsZWFkZXJzLm9yZy9hdXRoL3JlYWxtcy9Bc3BpcmVMZWFkZXJEZXYiLCJzdWIiOiJmYTAyM2U0NC03YmNmLTQzZmMtOTA5OS03Y2E0MTkzYTk4NWYiLCJ0eXAiOiJCZWFyZXIiLCJhenAiOiJBc3BpcmVMZWFkZXJEZXYiLCJzZXNzaW9uX3N0YXRlIjoiY2FmNTZiZGEtODBjNy00ZjFjLTkxZDYtMWJiNTc0Yzk5ZTIzIiwiYWNyIjoiMSIsImFsbG93ZWQtb3JpZ2lucyI6WyIvKiJdLCJyZWFsbV9hY2Nlc3MiOnsicm9sZXMiOlsib2ZmbGluZV9hY2Nlc3MiLCJ1bWFfYXV0aG9yaXphdGlvbiIsImRlZmF1bHQtcm9sZXMtcHJhdGhhbSJdfSwic2NvcGUiOiJzc28tbWV0YWRhdGEgZW1haWwgcHJvZmlsZSBwcmF0aGFtLXJvbGUiLCJzaWQiOiJjYWY1NmJkYS04MGM3LTRmMWMtOTFkNi0xYmI1NzRjOTllMjMiLCJlbWFpbF92ZXJpZmllZCI6ZmFsc2UsIm5hbWUiOiJNYWhlc2ggTWFoYWphbiIsInByZWZlcnJlZF91c2VybmFtZSI6Im1haGVzaC5tYWhhamFuKzExK0B0ZWtkaXRlY2hub2xvZ2llcy5jb20iLCJnaXZlbl9uYW1lIjoiTWFoZXNoIiwiZmFtaWx5X25hbWUiOiJNYWhhamFuIiwiZW1haWwiOiJtYWhlc2gubWFoYWphbisxMStAdGVrZGl0ZWNobm9sb2dpZXMuY29tIn0.I8q6W8vm6NU2ZSkcXs0jSk7MhIx9170LrDaeDy4qKi_XrTlnWGc60K2eRV4nkjgGAv6Bi4CscdtWy4_677f7xSq9kuLLspSjhvZF6qQ4j3Kcooh-4puE6EsdYqsF8JUoQotNTvNtfNeSziBg3AvPuYj1xzWTaZ2JNSZJFFKxjQbkqXz0BLhTpO43V23COvPGREQ6M1hqRGMQ3hmqLRqEf7edGZKEA_GvinMoN7h5qrYzME0CLhA9hGmqoaKZ18W6WcRRq8ZIYumnUYwpv9JMxHrYNwnBgDDNITltfjzSHHahX3_NKGLZtkvjh1eKWaUhGUHbjBe8oydWYRrYcUNH0A",
+										"type": "text"
+									}
+								],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n  \"courseId\": \"6409e76a-48f1-42b3-abf2-c79b8170cf96\"\n}",
+									"options": {
+										"raw": {
+											"language": "json"
+										}
+									}
+								},
+								"url": {
+									"raw": "localhost:4000/lms-service/v1/tracking/recalculate-progress",
+									"host": [
+										"localhost"
+									],
+									"port": "4000",
+									"path": [
+										"lms-service",
+										"v1",
+										"tracking",
+										"recalculate-progress"
+									]
+								}
+							},
+							"status": "Created",
+							"code": 201,
+							"_postman_previewlanguage": "json",
+							"header": [
+								{
+									"key": "Vary",
+									"value": "Origin"
+								},
+								{
+									"key": "Access-Control-Allow-Credentials",
+									"value": "true"
+								},
+								{
+									"key": "Content-Security-Policy",
+									"value": "default-src 'self';base-uri 'self';font-src 'self' https: data:;form-action 'self';frame-ancestors 'self';img-src 'self' data:;object-src 'none';script-src 'self';script-src-attr 'none';style-src 'self' https: 'unsafe-inline';upgrade-insecure-requests"
+								},
+								{
+									"key": "Cross-Origin-Opener-Policy",
+									"value": "same-origin"
+								},
+								{
+									"key": "Cross-Origin-Resource-Policy",
+									"value": "same-origin"
+								},
+								{
+									"key": "Origin-Agent-Cluster",
+									"value": "?1"
+								},
+								{
+									"key": "Referrer-Policy",
+									"value": "no-referrer"
+								},
+								{
+									"key": "Strict-Transport-Security",
+									"value": "max-age=31536000; includeSubDomains"
+								},
+								{
+									"key": "X-Content-Type-Options",
+									"value": "nosniff"
+								},
+								{
+									"key": "X-DNS-Prefetch-Control",
+									"value": "off"
+								},
+								{
+									"key": "X-Download-Options",
+									"value": "noopen"
+								},
+								{
+									"key": "X-Frame-Options",
+									"value": "SAMEORIGIN"
+								},
+								{
+									"key": "X-Permitted-Cross-Domain-Policies",
+									"value": "none"
+								},
+								{
+									"key": "X-XSS-Protection",
+									"value": "0"
+								},
+								{
+									"key": "Content-Type",
+									"value": "application/json; charset=utf-8"
+								},
+								{
+									"key": "Content-Length",
+									"value": "388"
+								},
+								{
+									"key": "ETag",
+									"value": "W/\"184-NHmMYJOawkC0h5wm2FlWAOXccSs\""
+								},
+								{
+									"key": "Date",
+									"value": "Mon, 29 Dec 2025 06:34:08 GMT"
+								},
+								{
+									"key": "Connection",
+									"value": "keep-alive"
+								},
+								{
+									"key": "Keep-Alive",
+									"value": "timeout=5"
+								}
+							],
+							"cookie": [],
+							"body": "{\n    \"id\": \"api.tracking.recalculate.progress\",\n    \"ver\": \"1.0\",\n    \"ts\": \"2025-12-29T06:34:08.920Z\",\n    \"params\": {\n        \"resmsgid\": \"msg-218870-1766990048920\",\n        \"status\": \"successful\",\n        \"err\": null,\n        \"errmsg\": null\n    },\n    \"responseCode\": 201,\n    \"result\": {\n        \"success\": true,\n        \"message\": \"Progress recalculated successfully. Updated 17351 course track(s) and 103083 module track(s).\",\n        \"courseTrackUpdated\": 17351,\n        \"moduleTrackUpdated\": 103083\n    }\n}"
+						}
+					]
+				},
+				{
+					"name": "Get User Journey",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{AccessToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "tenantid",
+								"value": "{{tenantId}}",
+								"type": "text"
+							},
+							{
+								"key": "organisationid",
+								"value": "{{organisationId}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/tracking/userjourney",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"tracking",
+								"userjourney"
+							]
+						},
+						"description": "Get user journey by user and cohort. Returns enrolled courses with totalEventLessons and isAttendedOneEvent.",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"userId\": \"{{userId}}\",\n  \"cohortId\": \"{{cohortId}}\",\n  \"limit\": 10,\n  \"offset\": 0\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Update Course Tracking",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{AccessToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "tenantid",
+								"value": "{{tenantId}}",
+								"type": "text"
+							},
+							{
+								"key": "organisationid",
+								"value": "{{organisationId}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/tracking/course/{{courseId}}/{{userId}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"tracking",
+								"course",
+								"{{courseId}}",
+								"{{userId}}"
+							]
+						},
+						"description": "Update course tracking status",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"status\": \"completed\",\n  \"certificateUrl\": \"\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Lesson Attempt Details",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{AccessToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [
+							{
+								"key": "tenantid",
+								"value": "{{tenantId}}",
+								"type": "text"
+							},
+							{
+								"key": "organisationid",
+								"value": "{{organisationId}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/tracking/lesson/attempt/{{lessonId}}/{{userId}}?action=resume",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"tracking",
+								"lesson",
+								"attempt",
+								"{{lessonId}}",
+								"{{userId}}"
+							],
+							"query": [
+								{
+									"key": "action",
+									"value": "resume",
+									"disabled": true
+								}
+							]
+						},
+						"description": "Start over or resume a lesson attempt"
+					},
+					"response": []
+				},
+				{
+					"name": "Update Event Lesson Progress",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{AccessToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "tenantid",
+								"value": "{{tenantId}}",
+								"type": "text"
+							},
+							{
+								"key": "organisationid",
+								"value": "{{organisationId}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/tracking/event/{{eventId}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"tracking",
+								"event",
+								"{{eventId}}"
+							]
+						},
+						"description": "Update lesson completion by event ID. The eventId maps to lesson.media.source.",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"userId\": \"{{userId}}\",\n  \"isAttended\": true,\n  \"duration\": 0\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Configuration",
+			"item": [
+				{
+					"name": "External Configurations",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{AccessToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "tenantId",
+								"value": "{{tenantId}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/config/sync",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"config",
+								"sync"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Configurations",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{AccessToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [
+							{
+								"key": "tenantId",
+								"value": "{{tenantId}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/config",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"config"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "postman run",
+			"item": [
+				{
+					"name": "Enroll User Copy",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{AccessToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "tenantid",
+								"value": "{{tenantId}}",
+								"type": "text"
+							},
+							{
+								"key": "organisationid",
+								"value": "{{organisationId}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"courseId\": \"{{courseId}}\",\n  \"learnerId\": \"{{userId}}\",\n  \"status\": \"published\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/enrollments?userId={{userId}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"enrollments"
+							],
+							"query": [
+								{
+									"key": "userId",
+									"value": "{{userId}}"
+								}
+							]
+						},
+						"description": "Enroll a user for a course"
+					},
+					"response": [
+						{
+							"name": "Success Response",
+							"originalRequest": {
+								"method": "POST",
+								"header": [],
+								"body": {
+									"mode": "raw",
+									"raw": "{}"
+								},
+								"url": {
+									"raw": ""
+								}
+							},
+							"status": "Created",
+							"code": 201,
+							"_postman_previewlanguage": "json",
+							"header": [],
+							"cookie": [],
+							"body": ""
+						}
+					]
+				},
+				{
+					"name": "Start/Resume Lesson Attempt Copy",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{AccessToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "tenantid",
+								"value": "{{tenantId}}",
+								"type": "text"
+							},
+							{
+								"key": "organisationid",
+								"value": "{{organisationId}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"courseId\": \"{{courseId}}\",\n  \"moduleId\": \"{{moduleId}}\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/tracking/lesson/attempt/:lessonId?userId={{userId}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"tracking",
+								"lesson",
+								"attempt",
+								":lessonId"
+							],
+							"query": [
+								{
+									"key": "userId",
+									"value": "{{userId}}"
+								},
+								{
+									"key": "eef4107e-80bb-45f4-8f78-988837c0bd16",
+									"value": "",
+									"disabled": true
+								}
+							],
+							"variable": [
+								{
+									"key": "lessonId",
+									"value": "{{lessonId}}"
+								}
+							]
+						},
+						"description": "Start a new lesson attempt or get existing incomplete attempt"
+					},
+					"response": [
+						{
+							"name": "Success Response",
+							"originalRequest": {
+								"method": "POST",
+								"header": [],
+								"body": {
+									"mode": "raw",
+									"raw": "{}"
+								},
+								"url": {
+									"raw": ""
+								}
+							},
+							"status": "Created",
+							"code": 201,
+							"_postman_previewlanguage": "json",
+							"header": [],
+							"cookie": [],
+							"body": ""
+						}
+					]
+				}
+			]
+		},
+		{
+			"name": "Aspire Leader Reports",
+			"item": [
+				{
+					"name": "Get Course Report",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{AccessToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [
+							{
+								"key": "tenantid",
+								"value": "{{tenantId}}",
+								"type": "text"
+							},
+							{
+								"key": "organisationid",
+								"value": "{{organisationId}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/course/report?courseId={{courseId}}&cohortId={{cohortId}}&pathwayId=&lessonId=&offset=0&limit=10&sortBy=progress&orderBy=asc&status=&enrollmentStatus=&certificateIssued=false",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"course",
+								"report"
+							],
+							"query": [
+								{
+									"key": "courseId",
+									"value": "{{courseId}}"
+								},
+								{
+									"key": "cohortId",
+									"value": "{{cohortId}}",
+									"disabled": true
+								},
+								{
+									"key": "pathwayId",
+									"value": "",
+									"disabled": true
+								},
+								{
+									"key": "lessonId",
+									"value": "",
+									"disabled": true
+								},
+								{
+									"key": "offset",
+									"value": "0",
+									"disabled": true
+								},
+								{
+									"key": "limit",
+									"value": "10",
+									"disabled": true
+								},
+								{
+									"key": "sortBy",
+									"value": "progress",
+									"disabled": true
+								},
+								{
+									"key": "orderBy",
+									"value": "asc",
+									"disabled": true
+								},
+								{
+									"key": "status",
+									"value": "",
+									"disabled": true
+								},
+								{
+									"key": "enrollmentStatus",
+									"value": "",
+									"disabled": true
+								},
+								{
+									"key": "certificateIssued",
+									"value": "false",
+									"disabled": true
+								}
+							]
+						},
+						"description": "Generate course-level or lesson-level reports with user progress and activity data. Include lessonId for lesson-level report, omit for course-level report."
+					},
+					"response": []
+				},
+				{
+					"name": "Check Lesson Completion Status",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{AccessToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "tenantid",
+								"value": "{{tenantId}}",
+								"type": "text"
+							},
+							{
+								"key": "organisationid",
+								"value": "{{organisationId}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/course/lesson-completion-status",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"course",
+								"lesson-completion-status"
+							]
+						},
+						"description": "Check if a cohort meets the lesson completion criteria based on lesson format, sub-format, and minimum completion requirements.",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"cohortId\": \"{{cohortId}}\",\n  \"criteria\": [\n    {\n      \"lessonFormat\": \"video\",\n      \"lessonSubFormat\": \"\",\n      \"completionRule\": 1\n    }\n  ]\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Aggregated Content",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{AccessToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "tenantid",
+								"value": "{{tenantId}}",
+								"type": "text"
+							},
+							{
+								"key": "organisationid",
+								"value": "{{organisationId}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/course/aggregate-content",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"course",
+								"aggregate-content"
+							]
+						},
+						"description": "Returns courses (modules), modules (units), and lessons (contents) for a specific cohort. Can be filtered by contentType.",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"cohortId\": \"{{cohortId}}\",\n  \"contentType\": \"event\",\n  \"pathwayId\": \"\",\n  \"userId\": \"{{userId}}\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Update Test Progress",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{AccessToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "tenantid",
+								"value": "{{tenantId}}",
+								"type": "text"
+							},
+							{
+								"key": "organisationid",
+								"value": "{{organisationId}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/course/tracking/update_test_progress",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"course",
+								"tracking",
+								"update_test_progress"
+							]
+						},
+						"description": "Update lesson tracking progress based on test results. The testId maps to media.source column.",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"testId\": \"\",\n  \"userId\": \"{{userId}}\",\n  \"score\": 0,\n  \"totalScore\": 100,\n  \"status\": \"completed\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Health",
+			"item": [
+				{
+					"name": "Health Check",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{AccessToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [
+							{
+								"key": "tenantid",
+								"value": "{{tenantId}}",
+								"type": "text"
+							},
+							{
+								"key": "organisationid",
+								"value": "{{organisationId}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/health",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"health"
+							]
+						},
+						"description": "Check service health and database connection (readiness probe)"
+					},
+					"response": []
+				},
+				{
+					"name": "Liveness Probe",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{AccessToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [
+							{
+								"key": "tenantid",
+								"value": "{{tenantId}}",
+								"type": "text"
+							},
+							{
+								"key": "organisationid",
+								"value": "{{organisationId}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/health/live",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"health",
+								"live"
+							]
+						},
+						"description": "Liveness probe - checks if service is running (no DB check)"
+					},
+					"response": []
+				},
+				{
+					"name": "Readiness Probe",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{AccessToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [
+							{
+								"key": "tenantid",
+								"value": "{{tenantId}}",
+								"type": "text"
+							},
+							{
+								"key": "organisationid",
+								"value": "{{organisationId}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/health/ready",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"health",
+								"ready"
+							]
+						},
+						"description": "Readiness probe - checks if service and database are ready"
+					},
+					"response": []
+				}
+			]
+		}
+	],
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"type": "text/javascript",
+				"packages": {},
+				"exec": [
+					""
+				]
+			}
+		},
+		{
+			"listen": "test",
+			"script": {
+				"type": "text/javascript",
+				"packages": {},
+				"exec": [
+					""
+				]
+			}
+		}
+	],
+	"variable": [
+		{
+			"key": "baseUrl",
+			"value": "http://localhost:4000/lms-service/v1",
+			"type": "string"
+		},
+		{
+			"key": "tenantId",
+			"value": "ef99949b-7f3a-4a5f-806a-e67e683e38f3",
+			"type": "string"
+		},
+		{
+			"key": "organisationId",
+			"value": "d36d9079-0f42-4ba3-be03-26c9e79509ee",
+			"type": "string"
+		},
+		{
+			"key": "userId",
+			"value": "35113bfc-adce-47fc-b85d-871cbcb00bcc",
+			"type": "string"
+		},
+		{
+			"key": "courseId",
+			"value": "3e79f0af-6e77-464c-aae1-60117cdf5c72",
+			"type": "string"
+		},
+		{
+			"key": "moduleId3",
+			"value": "e645b71e-07df-4e6c-96c7-85e366febce7",
+			"type": "string"
+		},
+		{
+			"key": "lessonId",
+			"value": "615575da-a8fe-4759-8dee-7fb4be9fed8d",
+			"type": "string"
+		},
+		{
+			"key": "mediaId",
+			"value": "your-media-id",
+			"type": "string"
+		},
+		{
+			"key": "enrollmentId",
+			"value": "your-enrollment-id",
+			"type": "string"
+		},
+		{
+			"key": "attemptId",
+			"value": "676abc14-c4fd-49b1-af6e-287146e817aa",
+			"type": "string"
+		},
+		{
+			"key": "lerner",
+			"value": "e3fbd680-5b3a-489a-9e2e-2c28f0f3787f",
+			"type": "string"
+		},
+		{
+			"key": "AccessToken",
+			"value": "eyJhbGciOiJSUzI1NiIsInR5cCIgOiAiSldUIiwia2lkIiA6ICJKQWV0Z1E5d1c1X1ktaHBwV0lsb3pxb0ExZ3ctNnhvMi1MVzExNjlSblljIn0.eyJleHAiOjE3NTI1Nzc5MDAsImlhdCI6MTc1MjQ5MTUwMCwianRpIjoiOWI2YzliNWQtYWQyOC00MWY3LWI0YzMtYjRkZmM4YzQ2YWVjIiwiaXNzIjoiaHR0cHM6Ly9rZXljbG9hay1kZXYuYXNwaXJlbGVhZGVycy5vcmcvYXV0aC9yZWFsbXMvQXNwaXJlTGVhZGVyRGV2Iiwic3ViIjoiMzUxMTNiZmMtYWRjZS00N2ZjLWI4NWQtODcxY2JjYjAwYmNjIiwidHlwIjoiQmVhcmVyIiwiYXpwIjoiQXNwaXJlTGVhZGVyRGV2Iiwic2Vzc2lvbl9zdGF0ZSI6ImUyNjFiZTEyLWM2MjAtNDFlYS1iYjBjLWUyN2RkNTg4N2UyMSIsImFjciI6IjEiLCJhbGxvd2VkLW9yaWdpbnMiOlsiLyoiXSwicmVhbG1fYWNjZXNzIjp7InJvbGVzIjpbIm9mZmxpbmVfYWNjZXNzIiwidW1hX2F1dGhvcml6YXRpb24iLCJkZWZhdWx0LXJvbGVzLXByYXRoYW0iXX0sInNjb3BlIjoic3NvLW1ldGFkYXRhIGVtYWlsIHByb2ZpbGUgcHJhdGhhbS1yb2xlIiwic2lkIjoiZTI2MWJlMTItYzYyMC00MWVhLWJiMGMtZTI3ZGQ1ODg3ZTIxIiwiZW1haWxfdmVyaWZpZWQiOmZhbHNlLCJuYW1lIjoiVmluYXlhayBQIiwicHJlZmVycmVkX3VzZXJuYW1lIjoidmluYXlhay5wYXRpbEB0ZWtkaXRlY2hub2xvZ2llcy5jb20iLCJnaXZlbl9uYW1lIjoiVmluYXlhayIsImZhbWlseV9uYW1lIjoiUCIsImVtYWlsIjoidmluYXlhay5wYXRpbEB0ZWtkaXRlY2hub2xvZ2llcy5jb20ifQ.gaIDd2MDKHmZStASuvzn4k1sa-HaDfiEFuveeDFFhxD35jLOjTKJ1x9JxfSise6d8i7Qaf7qFDALxw3pQ2zosFRtqartC_T8P4QqTT3QDmaFlnLC6jqCuxp4-9MzCIsKRjai9QDK87N1DHPFNGkD1iFB0W_7IV5zKKaiF-AZpdKCZsA2cQEmUbHu_KVvi_skPuqmnt_8XZYunzRVc8aupCp-CauG0y4_T7AfUFfM7VxUG6aT3ft6w7lJSUmIBDpGhmHlSSVWaP3xR33pY8Gt4-60ZzALY39Ad_rAg40LQYNCdugu7LNKHb9xlqU6SJAHDZjOV3ccs1BvB5W-nkF2sg",
+			"type": "string"
+		},
+		{
+			"key": "localhost",
+			"value": "http://localhost:4000/lms-service/v1",
+			"type": "string"
+		},
+		{
+			"key": "aspireqa",
+			"value": "https://middleware-dev.aspireleaders.org/lms-service/v1",
+			"type": "string"
+		},
+		{
+			"key": "aspiredev",
+			"value": "https://middleware-dev.aspireleaders.org/lms-service/v1",
+			"type": "string"
+		},
+		{
+			"key": "tekdidev",
+			"value": "https://middleware-dev.tekdinext.com/lms-service/v1",
+			"type": "string"
+		},
+		{
+			"key": "localdevmiddleware",
+			"value": "http://localhost:5000/lms-service/v1",
+			"type": "string"
+		},
+		{
+			"key": "moduleId2",
+			"value": "793042f1-0e9e-4a82-b17b-b9b707ff62ee",
+			"type": "string"
+		},
+		{
+			"key": "moduleId",
+			"value": "4a77cb91-efac-4ccf-b0dd-9d9b665638e4",
+			"type": "string"
+		},
+		{
+			"key": "courseId2",
+			"value": "fd8429d5-f93c-448f-b83b-5a194efebc66",
+			"type": "string"
+		},
+		{
+			"key": "LAccessToken",
+			"value": "eyJhbGciOiJSUzI1NiIsInR5cCIgOiAiSldUIiwia2lkIiA6ICJKQWV0Z1E5d1c1X1ktaHBwV0lsb3pxb0ExZ3ctNnhvMi1MVzExNjlSblljIn0.eyJleHAiOjE3NTI2NTExNjIsImlhdCI6MTc1MjU2NDc2MiwianRpIjoiNzI2ZjkwYTktNjE5Mi00NmYzLTk1OWEtMmM4Nzc1MTJjY2E0IiwiaXNzIjoiaHR0cHM6Ly9rZXljbG9hay1kZXYuYXNwaXJlbGVhZGVycy5vcmcvYXV0aC9yZWFsbXMvQXNwaXJlTGVhZGVyRGV2Iiwic3ViIjoiODUyYTFjYTktYjNlNC00YTA0LTk1MjgtMWY3NmI3NjljZDk3IiwidHlwIjoiQmVhcmVyIiwiYXpwIjoiQXNwaXJlTGVhZGVyRGV2Iiwic2Vzc2lvbl9zdGF0ZSI6ImE3OTlkNGJmLWQ0NGItNDZmMi1iZmZiLWFkZTRmYmIzZDJiNyIsImFjciI6IjEiLCJhbGxvd2VkLW9yaWdpbnMiOlsiLyoiXSwicmVhbG1fYWNjZXNzIjp7InJvbGVzIjpbIm9mZmxpbmVfYWNjZXNzIiwidW1hX2F1dGhvcml6YXRpb24iLCJkZWZhdWx0LXJvbGVzLXByYXRoYW0iXX0sInNjb3BlIjoic3NvLW1ldGFkYXRhIGVtYWlsIHByb2ZpbGUgcHJhdGhhbS1yb2xlIiwic2lkIjoiYTc5OWQ0YmYtZDQ0Yi00NmYyLWJmZmItYWRlNGZiYjNkMmI3IiwiZW1haWxfdmVyaWZpZWQiOmZhbHNlLCJuYW1lIjoiQWxmYXogU2hhaWtoIiwicHJlZmVycmVkX3VzZXJuYW1lIjoiYWxmYXpAeW9wbWFpbC5jb20iLCJnaXZlbl9uYW1lIjoiQWxmYXoiLCJmYW1pbHlfbmFtZSI6IlNoYWlraCIsImVtYWlsIjoiYWxmYXpAeW9wbWFpbC5jb20ifQ.M3Zu1B_b8hVFJsGwO4c_DXhsQ7Y_4VlBK3Ea7vPh6JaCbnFw_litj4Z_Fxpw-39WRWj5ZcFStEcXk_n2S1JuRSo4eSurHPOqyEwz3zP1fhC4XXCW7sI6L2-zcFdzkKjHkwNlTLhHHcyenqWllTJJ19APXjXszGiGIqJLcqE00WsLd_QhAhRB-G2tCtsHattBd4obibTHJMD6xjZzruNEHtBg5Rzfs1M4duQc6In3Iei25xXZfofEacTyvHUO2EaqcHT2IOMTttyPfiNaigcHqn4bquCOA1Hzrbq365m4NOQ4irtMKyDyzoqqjSh2-DDXVPGF8hE-TqGakuz8ZVwAmA",
+			"type": "string"
+		},
+		{
+			"key": "LearnerId",
+			"value": "852a1ca9-b3e4-4a04-9528-1f76b769cd97",
+			"type": "string"
+		}
+	]
+}
