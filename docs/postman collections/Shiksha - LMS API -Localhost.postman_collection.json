@@ -1,7 +1,7 @@
 {
 	"info": {
 		"_postman_id": "4a3d6b40-3823-4f92-96d4-5a4275824d82",
-		"name": "Aspire - LMS API -Localhost",
+		"name": "Example - LMS API -Localhost",
 		"description": "API collection for managing courses in the LMS system",
 		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
 		"_exporter_id": "25088737",
@@ -44,7 +44,7 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n  \"title\": \"Module 1\",\n//   \"startDatetime\": \"2024-01-01T00:00:00Z\",\n//   \"endDatetime\": \"2024-12-31T23:59:59Z\",\n  \"shortDescription\": \"Aspire Leaders Program -Module 1\",\n  \"description\": \"<section id='module-1-overview' style='font-family: Manrope, Arial, sans-serif; line-height: 1.6; max-width: 800px; margin: auto; padding: 20px;'>\\n\\n  <!-- Welcome Message -->\\n  <h2 style='text-align: center;'>Welcome to Aspire!</h2>\\n  <p>\\n    Congratulations on your acceptance! We are thrilled to have you join the Aspire community and excited to support your growth throughout the program.\\n  </p>\\n\\n  <!-- Module 1 Intro -->\\n  <h3>Getting Started with Module 1</h3>\\n  <p>\\n    Your journey begins with <strong>Module 1</strong>. Over the course of three weeks, you will\\n    <strong style='color: #980000;'>focus on building self-awareness and fostering personal and professional growth</strong>.\\n    During this module, you will:\\n  </p>\\n\\n  <ul>\\n    <li>Discover and refine your individual strengths.</li>\\n    <li>Develop your professional skills: resumes, cover letters, interviews, and LinkedIn networking.</li>\\n    <li>Build soft skills — behaviors and attitudes that enhance how you work with others.</li>\\n    <li>Engage in a global community and build cultural awareness through peer interactions.</li>\\n  </ul>\\n\\n  <p>\\n    This foundation will guide you in achieving your personal and professional goals.\\n  </p>\\n\\n  <!-- Embedded YouTube Video -->\\n  <div style='margin: 30px 0;'>\\n    <h3 style='text-align: center;'>Watch: Getting Started with Module 1</h3>\\n    <div style='position: relative; padding-bottom: 56.25%; height: 0; overflow: hidden;'>\\n      <iframe\\n        src='https://www.youtube.com/embed/wAA-dKIpLKo'\\n        title='Getting Started with Module 1 2025'\\n        frameborder='0'\\n        allowfullscreen\\n        style='position: absolute; top: 0; left: 0; width: 100%; height: 100%;'>\\n      </iframe>\\n    </div>\\n  </div>\\n\\n  <!-- Syllabus Link -->\\n  <div style='text-align: center;'>\\n    <h3>Module 1 Syllabus</h3>\\n    <p>\\n      <strong>Access the syllabus here:</strong><br>\\n      <a\\n        href='https://docs.google.com/document/d/1YT59iYL2Rk0xULkzpI2CNSa6n9KqdTMlUDkcRJyNe6I/edit?usp=sharing'\\n        target='_blank'\\n        style='color: #1a73e8; text-decoration: underline;'>\\n        View Module 1 Syllabus (Google Docs)\\n      </a>\\n    </p>\\n  </div>\\n\\n</section>\",\n  \"featured\": false,\n  \"free\": false,\n  \"status\": \"unpublished\",\n  \"params\": {\n    \"cohortId\": \"066e2079-6edd-42f3-88ed-204ac1038d5e\"\n  }\n}\n",
+							"raw": "{\n  \"title\": \"Module 1\",\n//   \"startDatetime\": \"2024-01-01T00:00:00Z\",\n//   \"endDatetime\": \"2024-12-31T23:59:59Z\",\n  \"shortDescription\": \"Example Leaders Program -Module 1\",\n  \"description\": \"<section id='module-1-overview' style='font-family: Manrope, Arial, sans-serif; line-height: 1.6; max-width: 800px; margin: auto; padding: 20px;'>\\n\\n  <!-- Welcome Message -->\\n  <h2 style='text-align: center;'>Welcome to Example!</h2>\\n  <p>\\n    Congratulations on your acceptance! We are thrilled to have you join the Example community and excited to support your growth throughout the program.\\n  </p>\\n\\n  <!-- Module 1 Intro -->\\n  <h3>Getting Started with Module 1</h3>\\n  <p>\\n    Your journey begins with <strong>Module 1</strong>. Over the course of three weeks, you will\\n    <strong style='color: #980000;'>focus on building self-awareness and fostering personal and professional growth</strong>.\\n    During this module, you will:\\n  </p>\\n\\n  <ul>\\n    <li>Discover and refine your individual strengths.</li>\\n    <li>Develop your professional skills: resumes, cover letters, interviews, and LinkedIn networking.</li>\\n    <li>Build soft skills — behaviors and attitudes that enhance how you work with others.</li>\\n    <li>Engage in a global community and build cultural awareness through peer interactions.</li>\\n  </ul>\\n\\n  <p>\\n    This foundation will guide you in achieving your personal and professional goals.\\n  </p>\\n\\n  <!-- Embedded YouTube Video -->\\n  <div style='margin: 30px 0;'>\\n    <h3 style='text-align: center;'>Watch: Getting Started with Module 1</h3>\\n    <div style='position: relative; padding-bottom: 56.25%; height: 0; overflow: hidden;'>\\n      <iframe\\n        src='https://www.youtube.com/embed/wAA-dKIpLKo'\\n        title='Getting Started with Module 1 2025'\\n        frameborder='0'\\n        allowfullscreen\\n        style='position: absolute; top: 0; left: 0; width: 100%; height: 100%;'>\\n      </iframe>\\n    </div>\\n  </div>\\n\\n  <!-- Syllabus Link -->\\n  <div style='text-align: center;'>\\n    <h3>Module 1 Syllabus</h3>\\n    <p>\\n      <strong>Access the syllabus here:</strong><br>\\n      <a\\n        href='https://docs.google.com/document/d/1YT59iYL2Rk0xULkzpI2CNSa6n9KqdTMlUDkcRJyNe6I/edit?usp=sharing'\\n        target='_blank'\\n        style='color: #1a73e8; text-decoration: underline;'>\\n        View Module 1 Syllabus (Google Docs)\\n      </a>\\n    </p>\\n  </div>\\n\\n</section>\",\n  \"featured\": false,\n  \"free\": false,\n  \"status\": \"unpublished\",\n  \"params\": {\n    \"cohortId\": \"066e2079-6edd-42f3-88ed-204ac1038d5e\"\n  }\n}\n",
 							"options": {
 								"raw": {
 									"language": "json"
@@ -3571,255 +3571,6 @@
 			]
 		},
 		{
-			"name": "Aspire Leader Reports",
-			"item": [
-				{
-					"name": "Get Course Report",
-					"request": {
-						"auth": {
-							"type": "bearer",
-							"bearer": [
-								{
-									"key": "token",
-									"value": "{{AccessToken}}",
-									"type": "string"
-								}
-							]
-						},
-						"method": "GET",
-						"header": [
-							{
-								"key": "tenantid",
-								"value": "{{tenantId}}",
-								"type": "text"
-							},
-							{
-								"key": "organisationid",
-								"value": "{{organisationId}}",
-								"type": "text"
-							}
-						],
-						"url": {
-							"raw": "{{baseUrl}}/course/report?courseId={{courseId}}&cohortId={{cohortId}}&pathwayId=&lessonId=&offset=0&limit=10&sortBy=progress&orderBy=asc&status=&enrollmentStatus=&certificateIssued=false",
-							"host": [
-								"{{baseUrl}}"
-							],
-							"path": [
-								"course",
-								"report"
-							],
-							"query": [
-								{
-									"key": "courseId",
-									"value": "{{courseId}}"
-								},
-								{
-									"key": "cohortId",
-									"value": "{{cohortId}}",
-									"disabled": true
-								},
-								{
-									"key": "pathwayId",
-									"value": "",
-									"disabled": true
-								},
-								{
-									"key": "lessonId",
-									"value": "",
-									"disabled": true
-								},
-								{
-									"key": "offset",
-									"value": "0",
-									"disabled": true
-								},
-								{
-									"key": "limit",
-									"value": "10",
-									"disabled": true
-								},
-								{
-									"key": "sortBy",
-									"value": "progress",
-									"disabled": true
-								},
-								{
-									"key": "orderBy",
-									"value": "asc",
-									"disabled": true
-								},
-								{
-									"key": "status",
-									"value": "",
-									"disabled": true
-								},
-								{
-									"key": "enrollmentStatus",
-									"value": "",
-									"disabled": true
-								},
-								{
-									"key": "certificateIssued",
-									"value": "false",
-									"disabled": true
-								}
-							]
-						},
-						"description": "Generate course-level or lesson-level reports with user progress and activity data. Include lessonId for lesson-level report, omit for course-level report."
-					},
-					"response": []
-				},
-				{
-					"name": "Check Lesson Completion Status",
-					"request": {
-						"auth": {
-							"type": "bearer",
-							"bearer": [
-								{
-									"key": "token",
-									"value": "{{AccessToken}}",
-									"type": "string"
-								}
-							]
-						},
-						"method": "POST",
-						"header": [
-							{
-								"key": "tenantid",
-								"value": "{{tenantId}}",
-								"type": "text"
-							},
-							{
-								"key": "organisationid",
-								"value": "{{organisationId}}",
-								"type": "text"
-							}
-						],
-						"url": {
-							"raw": "{{baseUrl}}/course/lesson-completion-status",
-							"host": [
-								"{{baseUrl}}"
-							],
-							"path": [
-								"course",
-								"lesson-completion-status"
-							]
-						},
-						"description": "Check if a cohort meets the lesson completion criteria based on lesson format, sub-format, and minimum completion requirements.",
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"cohortId\": \"{{cohortId}}\",\n  \"criteria\": [\n    {\n      \"lessonFormat\": \"video\",\n      \"lessonSubFormat\": \"\",\n      \"completionRule\": 1\n    }\n  ]\n}",
-							"options": {
-								"raw": {
-									"language": "json"
-								}
-							}
-						}
-					},
-					"response": []
-				},
-				{
-					"name": "Get Aggregated Content",
-					"request": {
-						"auth": {
-							"type": "bearer",
-							"bearer": [
-								{
-									"key": "token",
-									"value": "{{AccessToken}}",
-									"type": "string"
-								}
-							]
-						},
-						"method": "POST",
-						"header": [
-							{
-								"key": "tenantid",
-								"value": "{{tenantId}}",
-								"type": "text"
-							},
-							{
-								"key": "organisationid",
-								"value": "{{organisationId}}",
-								"type": "text"
-							}
-						],
-						"url": {
-							"raw": "{{baseUrl}}/course/aggregate-content",
-							"host": [
-								"{{baseUrl}}"
-							],
-							"path": [
-								"course",
-								"aggregate-content"
-							]
-						},
-						"description": "Returns courses (modules), modules (units), and lessons (contents) for a specific cohort. Can be filtered by contentType.",
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"cohortId\": \"{{cohortId}}\",\n  \"contentType\": \"event\",\n  \"pathwayId\": \"\",\n  \"userId\": \"{{userId}}\"\n}",
-							"options": {
-								"raw": {
-									"language": "json"
-								}
-							}
-						}
-					},
-					"response": []
-				},
-				{
-					"name": "Update Test Progress",
-					"request": {
-						"auth": {
-							"type": "bearer",
-							"bearer": [
-								{
-									"key": "token",
-									"value": "{{AccessToken}}",
-									"type": "string"
-								}
-							]
-						},
-						"method": "PATCH",
-						"header": [
-							{
-								"key": "tenantid",
-								"value": "{{tenantId}}",
-								"type": "text"
-							},
-							{
-								"key": "organisationid",
-								"value": "{{organisationId}}",
-								"type": "text"
-							}
-						],
-						"url": {
-							"raw": "{{baseUrl}}/course/tracking/update_test_progress",
-							"host": [
-								"{{baseUrl}}"
-							],
-							"path": [
-								"course",
-								"tracking",
-								"update_test_progress"
-							]
-						},
-						"description": "Update lesson tracking progress based on test results. The testId maps to media.source column.",
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"testId\": \"\",\n  \"userId\": \"{{userId}}\",\n  \"score\": 0,\n  \"totalScore\": 100,\n  \"status\": \"completed\"\n}",
-							"options": {
-								"raw": {
-									"language": "json"
-								}
-							}
-						}
-					},
-					"response": []
-				}
-			]
-		},
-		{
 			"name": "Health",
 			"item": [
 				{
@@ -4033,13 +3784,13 @@
 			"type": "string"
 		},
 		{
-			"key": "aspireqa",
-			"value": "https://middleware-dev.aspireleaders.org/lms-service/v1",
+			"key": "exampleqa",
+			"value": "https://middleware-dev.exampleleaders.org/lms-service/v1",
 			"type": "string"
 		},
 		{
-			"key": "aspiredev",
-			"value": "https://middleware-dev.aspireleaders.org/lms-service/v1",
+			"key": "exampledev",
+			"value": "https://middleware-dev.exampleleaders.org/lms-service/v1",
 			"type": "string"
 		},
 		{
