@@ -1,5 +1,5 @@
 ---
-sidebar_position: 8
+sidebar_position: 9
 ---
 
 # Installation
@@ -9,7 +9,7 @@ sidebar_position: 8
 Before installing the LMS service, ensure you have the following installed:
 
 - **Node.js**: v20 or higher
-- **PostgreSQL**: v16 or higher (v15-alpine is used in Docker)
+- **PostgreSQL**: v15 or higher (v15-alpine is used in Docker)
 - **Redis**: Required for caching (v7-alpine is used in Docker)
 
 ## Steps to Install Locally for Development
