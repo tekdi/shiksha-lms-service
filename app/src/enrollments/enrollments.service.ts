@@ -72,52 +72,23 @@ export class EnrollmentsService {
   ) {}
 
   /**
-   * Enroll a user for multiple courses in bulk
+   * Enroll a user for a course
    */
   async enroll(
     createEnrollmentDto: CreateEnrollmentDto,
     userId: string,
     tenantId: string,
     organisationId: string,
-  ): Promise<{
-    successfullyEnrolled: UserEnrollment[];
-    alreadyEnrolledCourseIds: string[];
-    failedCourseIds: string[];
-  }> {
-    this.logger.log(`Enrolling user in bulk: ${JSON.stringify(createEnrollmentDto)}`);
-    const successfullyEnrolled: UserEnrollment[] = [];
-    const alreadyEnrolledCourseIds: string[] = [];
-    const failedCourseIds: string[] = [];
+  ): Promise<UserEnrollment> {
+    this.logger.log(`Enrolling user: ${JSON.stringify(createEnrollmentDto)}`);
     
-    const courseIds = createEnrollmentDto.courseId || [];
-    
-    for (const courseId of courseIds) {
-      try {
-        const enrollment = await this.enrollSingleCourse(
-          courseId,
-          createEnrollmentDto,
-          userId,
-          tenantId,
-          organisationId,
-        );
-        successfullyEnrolled.push(enrollment);
-      } catch (error) {
-        if (error instanceof ConflictException) {
-          this.logger.warn(`User ${createEnrollmentDto.learnerId} already enrolled in course ${courseId}.`);
-          alreadyEnrolledCourseIds.push(courseId);
-          continue;
-        }
-        this.logger.error(`Failed to enroll user ${createEnrollmentDto.learnerId} in course ${courseId}: ${error.message}`);
-        failedCourseIds.push(courseId);
-        continue;
-      }
-    }
-    
-    return {
-      successfullyEnrolled,
-      alreadyEnrolledCourseIds,
-      failedCourseIds,
-    };
+    return await this.enrollSingleCourse(
+      createEnrollmentDto.courseId,
+      createEnrollmentDto,
+      userId,
+      tenantId,
+      organisationId,
+    );
   }
 
   /**
@@ -387,48 +358,7 @@ export class EnrollmentsService {
     }
   }
 
-  /**
-   * Enroll a user in all active courses for a given cohort
-   */
-  async enrollByCohort(
-    learnerId: string,
-    cohortId: string,
-    userId: string,
-    tenantId: string,
-    organisationId: string,
-  ): Promise<{
-    successfullyEnrolled: UserEnrollment[];
-    alreadyEnrolledCourseIds: string[];
-    failedCourseIds: string[];
-  }> {
-    this.logger.log(`Enrolling learner ${learnerId} by cohort ${cohortId}`);
 
-    // Find all published courses for the cohort
-    const courses = await this.courseRepository
-      .createQueryBuilder('course')
-      .select('course.courseId')
-      .where('course.tenantId = :tenantId', { tenantId })
-      .andWhere('course.organisationId = :organisationId', { organisationId })
-      .andWhere('course.status = :status', { status: CourseStatus.PUBLISHED })
-      .andWhere("course.params->>'cohortId' = :cohortId", { cohortId })
-      .getMany();
-
-    if (!courses || courses.length === 0) {
-      this.logger.log(`No active courses found for cohort ${cohortId}`);
-      return { successfullyEnrolled: [], alreadyEnrolledCourseIds: [], failedCourseIds: [] };
-    }
-
-    const courseIds = courses.map((course) => course.courseId);
-
-    // Call the bulk enroll method
-    const createEnrollmentDto: CreateEnrollmentDto = {
-      learnerId,
-      courseId: courseIds,
-      status: EnrollmentStatus.PUBLISHED,
-    };
-
-    return this.enroll(createEnrollmentDto, userId, tenantId, organisationId);
-  }
 
   /**
    * Find all enrollments with pagination and filters

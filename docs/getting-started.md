@@ -1,18 +1,29 @@
 ---
-sidebar_position: 9
+sidebar_position: 3
 ---
 
-# Installation
+# Getting Started & Installation
+
+Follow these instructions to set up and run the LMS microservice locally.
+
+## Technology Stack
+
+The Shiksha LMS service is built using:
+
+- **Framework**: [NestJS](https://nestjs.com/) (Node.js)
+- **Database**: [PostgreSQL](https://www.postgresql.org/) v16+
+- **Caching**: [Redis](https://redis.io/) v7+
 
 ## Prerequisites
 
-Before installing the LMS service, ensure you have the following installed:
+Before you begin, ensure you have the following installed:
 
 - **Node.js**: v20 or higher
-- **PostgreSQL**: v15 or higher (v15-alpine is used in Docker)
+- **PostgreSQL**: v16 or higher (v15-alpine is used in Docker)
 - **Redis**: Required for caching (v7-alpine is used in Docker)
+- **Docker**: (Optional, for containerized setup)
 
-## Steps to Install Locally for Development
+## Local Installation
 
 ### 1. Clone Git Repository
 
@@ -30,9 +41,17 @@ Make sure you have PostgreSQL installed and running. Create a database for the L
 CREATE DATABASE shiksha_lms;
 ```
 
-#### Database Schema Setup
+#### Automated Database Setup (Recommended)
 
-If you need to set up the database schema manually, you can use the following queries. First, ensure the `uuid-ossp` extension is enabled:
+You can use the provided script to automatically enable necessary extensions and set up all tables:
+
+```bash
+npm run db:setup
+```
+
+#### Manual Database Schema Setup
+
+If you prefer to set up the database schema manually, you can use the following queries. First, ensure the `uuid-ossp` extension is enabled:
 
 ```sql
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
@@ -306,7 +325,7 @@ Create a `.env` file in the `app` directory and add the necessary environment va
 
 ```dotenv
 # Server Configuration
-PORT=4002
+PORT=4000
 NODE_ENV=development
 
 # Database Configuration
@@ -377,16 +396,11 @@ services:
     image: redis:7-alpine
     ports:
       - '6379:6379'
-
-  # Optional: Elasticsearch for advanced search capabilities
-  elasticsearch:
-    image: docker.elastic.co/elasticsearch/elasticsearch:7.17.0
-    environment:
-      - discovery.type=single-node
-    ports:
-      - '9200:9200'
 ```
 
-## Steps for Server Side Setup
+### Verification
 
-@TODO
+Once the application is running, you can verify it by:
+
+- API Endpoint: `http://localhost:4000/lms-service/v1`
+- Swagger Documentation: `http://localhost:4000/docs`

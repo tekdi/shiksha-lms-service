@@ -24,15 +24,12 @@ export class CreateEnrollmentDto {
   learnerId: string;
 
   @ApiProperty({
-    description: 'Course ID or array of Course IDs',
+    description: 'Course ID',
     example: '123e4567-e89b-12d3-a456-426614174000',
     required: true,
-    type: [String],
   })
-  @Transform(({ value }) => Array.isArray(value) ? value : [value])
-  @IsArray()
-  @IsUUID('4', { each: true, message: VALIDATION_MESSAGES.COMMON.UUID('Course ID') })
-  courseId: string[];
+  @IsUUID('4', { message: VALIDATION_MESSAGES.COMMON.UUID('Course ID') })
+  courseId: string;
 
   @ApiProperty({
     description: 'Enrollment status',
