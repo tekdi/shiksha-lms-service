@@ -63,6 +63,10 @@
    - [Get Lesson Status](#get-lesson-status)
    - [Get Attempt Details](#get-attempt-details)
    - [Update Attempt Progress](#update-attempt-progress)
+10. [Storage](#storage)
+    - [Get Pre-signed URL](#get-pre-signed-url)
+    - [Delete Storage Files](#delete-storage-files)
+    - [Copy Storage Files](#copy-storage-files)
 
 ## Overview
 
@@ -269,6 +273,54 @@ Content-Type: application/json
 **Status Codes**:
 - `200 OK`: System is healthy
 - `500 Internal Server Error`: System health check failed
+
+#### Get Live Health Status
+
+**Endpoint**: `GET /health/live`
+
+**HTTP Method**: GET
+
+**Description**: Liveness probe for Kubernetes and monitoring.
+
+**Response Structure**:
+```json
+{
+  "id": "api.health.live",
+  "ver": "1.0",
+  "ts": "2024-01-01T00:00:00Z",
+  "params": {
+    "status": "successful"
+  },
+  "responseCode": 200,
+  "result": {
+    "status": "up"
+  }
+}
+```
+
+#### Get Ready Health Status
+
+**Endpoint**: `GET /health/ready`
+
+**HTTP Method**: GET
+
+**Description**: Readiness probe for Kubernetes and monitoring.
+
+**Response Structure**:
+```json
+{
+  "id": "api.health.ready",
+  "ver": "1.0",
+  "ts": "2024-01-01T00:00:00Z",
+  "params": {
+    "status": "successful"
+  },
+  "responseCode": 200,
+  "result": {
+    "status": "ready"
+  }
+}
+```
 
 ---
 
@@ -1268,31 +1320,65 @@ The response structure varies based on the query parameters:
       "isEligible": true
     }
   }
+```
+
+#### Get Lesson Counts for Courses
+
+**Endpoint**: `GET /courses/lesson-counts`
+
+**HTTP Method**: GET
+
+**Description**: Returns total video, resource, and item counts for specified courses.
+
+**Headers**:
+```
+tenantid: <tenant-id>
+organisationid: <organisation-id>
+```
+
+**Query Parameters**:
+- `courseIds` (string, required): Comma-separated list of course UUIDs.
+
+**Response Structure**:
+```json
+{
+  "id": "api.course.lesson.counts",
+  "ver": "1.0",
+  "ts": "2024-01-01T00:00:00Z",
+  "params": {
+    "status": "successful"
+  },
+  "responseCode": 200,
+  "result": {
+    "123e4567-e89b-12d3-a456-426614174000": {
+      "videoCount": 5,
+      "resourceCount": 2,
+      "totalItems": 7
+    }
+  }
 }
 ```
 
 #### Get Next Course, Module, or Lesson
 
-**Endpoint**: `POST /courses/next-id`
+**Endpoint**: `GET /courses/next-id`
 
-**HTTP Method**: POST
+**HTTP Method**: GET
 
 **Description**: Get the next entity (course, module, or lesson) based on ordering fields. This endpoint intelligently navigates through the course hierarchy to find the next logical entity for the user to progress to.
 
 **Headers**:
 ```
-Content-Type: application/json
 tenantid: <tenant-id>
 organisationid: <organisation-id>
 ```
 
-**Request Body**:
-```json
-{
-  "nextIdFor": "lesson",
-  "id": "123e4567-e89b-12d3-a456-426614174000"
-}
-```
+**Query Parameters**:
+- `nextIdFor` (enum, required): Type of entity to find next for (`course`, `module`, `lesson`)
+- `id` (UUID, required): Current entity ID to find next for
+- `userId` (UUID, required): User ID for context
+
+**Response Structure**:
 
 **Request Body Parameters**:
 - `nextIdFor` (enum, required): Type of entity to find next for
@@ -1567,7 +1653,7 @@ organisationid: <organisation-id>
 
 #### Clone Course
 
-**Endpoint**: `POST /courses/clone/{courseId}`
+**Endpoint**: `POST /courses/{courseId}/clone`
 
 **HTTP Method**: POST
 
@@ -2912,101 +2998,6 @@ organisationid: <organisation-id>
 - User must have create permissions for lessons in the tenant
 - User must have access to the specified organization
 
-#### Bulk Archive Lessons by Module
-
-**Endpoint**: `POST /lessons/archive/module/{moduleId}`
-
-**HTTP Method**: POST
-
-**Description**: Archive all lessons for a specific module (internal use for cascading soft deletes)
-
-**Headers**:
-```
-Content-Type: application/json
-tenantid: <tenant-id>
-organisationid: <organisation-id>
-```
-
-**Path Parameters**:
-- `moduleId` (UUID, required): Module ID whose lessons should be archived
-
-**Query Parameters**:
-- `userId` (UUID, required): User ID performing the archive operation
-
-**Response Structure**:
-```json
-{
-  "success": true,
-  "message": "Successfully archived 5 lessons",
-  "archivedCount": 5
-}
-```
-
-**Validations and Conditions**:
-
-**Input Validation Rules**:
-- `moduleId` must be present and valid UUID format
-- `userId` query parameter must be present and valid UUID
-
-**Business Logic Conditions**:
-- Module must exist and be accessible
-- Module must belong to the specified tenant and organization
-- All non-archived lessons for the module will be archived
-- Bulk update operation is used for performance
-- Related caches are invalidated after archiving
-- Operation is logged for audit purposes
-
-**Authorization Conditions**:
-- User must have delete permissions for lessons in the tenant
-- User must have access to the specified organization
-
-#### Bulk Archive Lessons by Course
-
-**Endpoint**: `POST /lessons/archive/course/{courseId}`
-
-**HTTP Method**: POST
-
-**Description**: Archive all lessons for a specific course (internal use for cascading soft deletes)
-
-**Headers**:
-```
-Content-Type: application/json
-tenantid: <tenant-id>
-organisationid: <organisation-id>
-```
-
-**Path Parameters**:
-- `courseId` (UUID, required): Course ID whose lessons should be archived
-
-**Query Parameters**:
-- `userId` (UUID, required): User ID performing the archive operation
-
-**Response Structure**:
-```json
-{
-  "success": true,
-  "message": "Successfully archived 25 lessons",
-  "archivedCount": 25
-}
-```
-
-**Validations and Conditions**:
-
-**Input Validation Rules**:
-- `courseId` must be present and valid UUID format
-- `userId` query parameter must be present and valid UUID
-
-**Business Logic Conditions**:
-- Course must exist and be accessible
-- Course must belong to the specified tenant and organization
-- All non-archived lessons for the course will be archived
-- Bulk update operation is used for performance
-- Related caches are invalidated after archiving
-- Operation is logged for audit purposes
-
-**Authorization Conditions**:
-- User must have delete permissions for lessons in the tenant
-- User must have access to the specified organization
 
 ---
 
@@ -4090,6 +4081,202 @@ organisationid: <organisation-id>
 - User must have access to the lesson
 - User must be enrolled in the course
 - If updating to completed status, user must have completion permissions
+
+#### Get User Journey
+
+**Endpoint**: `GET /tracking/userjourney`
+
+**HTTP Method**: GET
+
+**Description**: Retrieves the comprehensive learning journey for a user, including all enrolled courses and their progress.
+
+**Headers**:
+```
+tenantid: <tenant-id>
+organisationid: <organisation-id>
+```
+
+**Query Parameters**:
+- `userId` (UUID, required): User ID to fetch journey for.
+
+**Response Structure**:
+```json
+{
+  "id": "api.tracking.userjourney",
+  "ver": "1.0",
+  "ts": "2024-01-01T00:00:00Z",
+  "params": {
+    "status": "successful"
+  },
+  "responseCode": 200,
+  "result": [
+    {
+      "courseId": "123...",
+      "title": "Intro Course",
+      "progress": 75,
+      "status": "in-progress"
+    }
+  ]
+}
+```
+
+#### Recalculate Progress
+
+**Endpoint**: `POST /tracking/recalculate/progress`
+
+**HTTP Method**: POST
+
+**Description**: Manually triggers a recalculation of course and module progress for a specific user and course.
+
+**Headers**:
+```
+Content-Type: application/json
+tenantid: <tenant-id>
+organisationid: <organisation-id>
+```
+
+**Request Body**:
+```json
+{
+  "courseId": "123e4567-e89b-12d3-a456-426614174000",
+  "userId": "456e7890-e89b-12d3-a456-426614174000"
+}
+```
+
+**Response Structure**:
+```json
+{
+  "id": "api.tracking.recalculate.progress",
+  "ver": "1.0",
+  "ts": "2024-01-01T00:00:00Z",
+  "params": {
+    "status": "successful"
+  },
+  "responseCode": 200,
+  "result": {
+    "success": true,
+    "message": "Progress recalculated successfully"
+  }
+}
+```
+
+---
+
+## Storage
+
+#### Get Pre-signed URL
+
+**Endpoint**: `POST /storage/presigned-url`
+
+**HTTP Method**: POST
+
+**Description**: Generates a pre-signed URL for uploading files directly to cloud storage.
+
+**Headers**:
+```
+Content-Type: application/json
+tenantid: <tenant-id>
+organisationid: <organisation-id>
+```
+
+**Request Body**:
+```json
+{
+  "key": "lms/lessons/sample.png",
+  "expiresIn": 3600,
+  "contentType": "image/png"
+}
+```
+
+**Response Structure**:
+```json
+{
+  "id": "api.storage.presigned",
+  "ver": "1.0",
+  "ts": "2024-01-01T00:00:00Z",
+  "params": {
+    "status": "successful"
+  },
+  "responseCode": 201,
+  "result": {
+    "url": "https://s3.amazonaws.com/bucket/key?AWSAccessKeyId=...",
+    "key": "lms/lessons/sample.png"
+  }
+}
+```
+
+#### Delete Storage Files
+
+**Endpoint**: `DELETE /storage/files`
+
+**HTTP Method**: DELETE
+
+**Description**: Deletes a file from cloud storage.
+
+**Headers**:
+```
+tenantid: <tenant-id>
+organisationid: <organisation-id>
+```
+
+**Query Parameters**:
+- `key` (string, required): The storage key of the file to delete.
+
+**Response Structure**:
+```json
+{
+  "id": "api.storage.delete",
+  "ver": "1.0",
+  "ts": "2024-01-01T00:00:00Z",
+  "params": {
+    "status": "successful"
+  },
+  "responseCode": 200,
+  "result": {
+    "success": true,
+    "message": "File deleted successfully"
+  }
+}
+```
+
+#### Copy Storage Files
+
+**Endpoint**: `POST /storage/files/copy`
+
+**HTTP Method**: POST
+
+**Description**: Copies a file from one storage location to another.
+
+**Headers**:
+```
+Content-Type: application/json
+tenantid: <tenant-id>
+organisationid: <organisation-id>
+```
+
+**Request Body**:
+```json
+{
+  "sourceKey": "lms/lessons/old.png",
+  "destinationKey": "lms/lessons/new.png"
+}
+```
+
+**Response Structure**:
+```json
+{
+  "id": "api.storage.copy",
+  "ver": "1.0",
+  "ts": "2024-01-01T00:00:00Z",
+  "params": {
+    "status": "successful"
+  },
+  "responseCode": 200,
+  "result": {
+    "success": true,
+    "message": "File copied successfully"
+  }
+}
 ```
 
 ---

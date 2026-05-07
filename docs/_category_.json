@@ -1,0 +1,8 @@
+{
+  "label": "LMS Service",
+  "position": 5,
+  "link": {
+    "type": "generated-index",
+    "description": "Learning Management System (LMS) microservice documentation"
+  }
+}
