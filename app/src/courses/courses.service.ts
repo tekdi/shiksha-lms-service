@@ -1964,12 +1964,21 @@ export class CoursesService {
           const newTitle = `${originalCourse.title} (Copy)`;
           const newAlias = originalCourse.alias + '-copy';
 
+          const resolvedOrdering =
+            await this.orderingService.resolveCloneCourseOrdering(
+              originalCourse.ordering,
+              tenantId,
+              organisationId,
+              transactionalEntityManager,
+            );
+
           // Create the new course
           const newCourseData = {
             ...originalCourse,
             title: newTitle,
             alias: newAlias,
             status: CourseStatus.PUBLISHED,
+            ordering: resolvedOrdering,
             createdBy: userId,
             updatedBy: userId,
             // Remove properties that should not be copied

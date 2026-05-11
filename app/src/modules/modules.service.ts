@@ -418,12 +418,23 @@ export class ModulesService {
     authorization: string,
   ): Promise<Module | null> {
     try {
+      const resolvedOrdering =
+        await this.orderingService.resolveCloneModuleOrdering(
+          originalModule.ordering,
+          newCourseId,
+          null,
+          tenantId,
+          organisationId,
+          transactionalEntityManager,
+        );
+
       // Create new module data
       const newModuleData = {
         ...originalModule,
         title: `${originalModule.title} (Copy)`,
         courseId: newCourseId,
         parentId: undefined,
+        ordering: resolvedOrdering,
         createdBy: userId,
         updatedBy: userId,
         // Remove properties that should not be copied
@@ -492,11 +503,22 @@ export class ModulesService {
     authorization: string,
   ): Promise<Module> {
   try {
+    const resolvedOrdering =
+      await this.orderingService.resolveCloneModuleOrdering(
+        originalSubmodule.ordering,
+        newCourseId,
+        newParentId,
+        tenantId,
+        organisationId,
+        transactionalEntityManager,
+      );
+
     // Create new submodule data
     const newSubmoduleData = {
       ...originalSubmodule,
       courseId: newCourseId,
       parentId: newParentId,
+      ordering: resolvedOrdering,
       createdBy: userId,
       updatedBy: userId,
       // Remove properties that should not be copied
