@@ -1194,7 +1194,10 @@ export class CoursesService {
             lessonAttempts,
             lesson.attemptsGrade,
           );
-          const lastAttempt = this.getLastAttempt(lessonAttempts);
+          const responseAttempt = this.getAttemptForHierarchyTrackingResponse(
+            lessonAttempts,
+            lesson.attemptsGrade,
+          );
 
           // Process associated lessons if they exist
           let associatedLessonsWithTracking: any[] = [];
@@ -1207,8 +1210,11 @@ export class CoursesService {
                   associatedAttempts,
                   associatedLesson.attemptsGrade,
                 );
-                const associatedLastAttempt =
-                  this.getLastAttempt(associatedAttempts);
+                const associatedResponseAttempt =
+                  this.getAttemptForHierarchyTrackingResponse(
+                    associatedAttempts,
+                    associatedLesson.attemptsGrade,
+                  );
 
                 return {
                   ...associatedLesson,
@@ -1218,36 +1224,39 @@ export class CoursesService {
                         canResume: associatedLesson.allowResubmission
                           ? true
                           : (associatedLesson.resume ?? true) &&
-                            associatedLastAttempt &&
-                            (associatedLastAttempt.status ===
+                            associatedResponseAttempt &&
+                            (associatedResponseAttempt.status ===
                               TrackingStatus.STARTED ||
-                              associatedLastAttempt.status ===
+                              associatedResponseAttempt.status ===
                                 TrackingStatus.INCOMPLETE),
                         canReattempt: associatedLesson.allowResubmission
                           ? true
                           : (associatedLesson.noOfAttempts === 0 ||
-                              (associatedLastAttempt &&
-                                associatedLastAttempt.attempt <
+                              (associatedResponseAttempt &&
+                                associatedResponseAttempt.attempt <
                                   associatedLesson.noOfAttempts)) &&
-                            associatedLastAttempt &&
-                            associatedLastAttempt.status ===
+                            associatedResponseAttempt &&
+                            associatedResponseAttempt.status ===
                               TrackingStatus.COMPLETED,
                         completionPercentage:
                           associatedBestAttempt.completionPercentage || 0,
                         lastAccessed: associatedBestAttempt.updatedAt,
                         timeSpent: associatedBestAttempt.timeSpent || 0,
                         score: associatedBestAttempt.score,
-                        attempt: associatedLastAttempt
+                        attempt: associatedResponseAttempt
                           ? {
-                              attemptId: associatedLastAttempt.lessonTrackId,
-                              attemptNumber: associatedLastAttempt.attempt,
+                              attemptId:
+                                associatedResponseAttempt.lessonTrackId,
+                              attemptNumber:
+                                associatedResponseAttempt.attempt,
                               startDatetime:
-                                associatedLastAttempt.startDatetime,
-                              endDatetime: associatedLastAttempt.endDatetime,
+                                associatedResponseAttempt.startDatetime,
+                              endDatetime:
+                                associatedResponseAttempt.endDatetime,
                               totalContent:
-                                associatedLastAttempt.totalContent || 0,
+                                associatedResponseAttempt.totalContent || 0,
                               currentPosition:
-                                associatedLastAttempt.currentPosition || 0,
+                                associatedResponseAttempt.currentPosition || 0,
                             }
                           : null,
                       }
@@ -1280,28 +1289,28 @@ export class CoursesService {
                   canResume: lesson.allowResubmission
                     ? true
                     : (lesson.resume ?? true) &&
-                      lastAttempt &&
-                      (lastAttempt.status === TrackingStatus.STARTED ||
-                        lastAttempt.status === TrackingStatus.INCOMPLETE),
+                      responseAttempt &&
+                      (responseAttempt.status === TrackingStatus.STARTED ||
+                        responseAttempt.status === TrackingStatus.INCOMPLETE),
                   canReattempt: lesson.allowResubmission
                     ? true
                     : (lesson.noOfAttempts === 0 ||
-                        (lastAttempt &&
-                          lastAttempt.attempt < lesson.noOfAttempts)) &&
-                      lastAttempt &&
-                      lastAttempt.status === TrackingStatus.COMPLETED,
+                        (responseAttempt &&
+                          responseAttempt.attempt < lesson.noOfAttempts)) &&
+                      responseAttempt &&
+                      responseAttempt.status === TrackingStatus.COMPLETED,
                   completionPercentage: bestAttempt.completionPercentage || 0,
                   lastAccessed: bestAttempt.updatedAt,
                   timeSpent: bestAttempt.timeSpent || 0,
                   score: bestAttempt.score,
-                  attempt: lastAttempt
+                  attempt: responseAttempt
                     ? {
-                        attemptId: lastAttempt.lessonTrackId,
-                        attemptNumber: lastAttempt.attempt,
-                        startDatetime: lastAttempt.startDatetime,
-                        endDatetime: lastAttempt.endDatetime,
-                        totalContent: lastAttempt.totalContent || 0,
-                        currentPosition: lastAttempt.currentPosition || 0,
+                        attemptId: responseAttempt.lessonTrackId,
+                        attemptNumber: responseAttempt.attempt,
+                        startDatetime: responseAttempt.startDatetime,
+                        endDatetime: responseAttempt.endDatetime,
+                        totalContent: responseAttempt.totalContent || 0,
+                        currentPosition: responseAttempt.currentPosition || 0,
                       }
                     : null,
                 }
@@ -1505,6 +1514,33 @@ export class CoursesService {
       return null;
     }
     return attempts.sort((a, b) => b.attempt - a.attempt)[0];
+  }
+
+  /**
+   * Choose attempt payload for hierarchy tracking response.
+   * For first_attempt grading, if attempt 1 is still incomplete, return it.
+   * Otherwise keep existing behavior and return the last attempt.
+   */
+  private getAttemptForHierarchyTrackingResponse(
+    attempts: LessonTrack[],
+    gradingMethod: AttemptsGradeMethod,
+  ): LessonTrack | null {
+    if (!attempts || attempts.length === 0) {
+      return null;
+    }
+
+    if (gradingMethod === AttemptsGradeMethod.FIRST_ATTEMPT) {
+      const firstAttempt = attempts.find((attempt) => attempt.attempt === 1);
+      if (
+        firstAttempt &&
+        firstAttempt.status !== TrackingStatus.COMPLETED &&
+        firstAttempt.status !== TrackingStatus.SUBMITTED
+      ) {
+        return firstAttempt;
+      }
+    }
+
+    return this.getLastAttempt(attempts);
   }
 
   /**
