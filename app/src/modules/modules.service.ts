@@ -428,6 +428,9 @@ export class ModulesService {
         updatedBy: userId,
         // Remove properties that should not be copied
         moduleId: undefined,
+        startDatetime: undefined,
+        endDatetime: undefined,
+        prerequisites: undefined,
       };
 
       const newModule = transactionalEntityManager.create(Module, newModuleData);
@@ -498,6 +501,9 @@ export class ModulesService {
       updatedBy: userId,
       // Remove properties that should not be copied
       moduleId: undefined,
+      startDatetime: undefined,
+      endDatetime: undefined,
+      prerequisites: undefined,
     };
 
     const newSubmodule = transactionalEntityManager.create(Module, newSubmoduleData);

@@ -1938,6 +1938,11 @@ export class CoursesService {
             updatedBy: userId,
             // Remove properties that should not be copied
             courseId: undefined,
+            startDatetime: undefined,
+            endDatetime: undefined,
+            certificateGenDateTime: undefined,
+            certificateIssueDateTime: undefined,
+            prerequisites: undefined,
             params: newCohortId
               ? {
                   ...originalCourse.params,
