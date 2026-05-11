@@ -152,11 +152,11 @@ export class OrderingService {
       })
       .getRawOne();
 
-    const count = parseInt(row?.cnt ?? '0', 10) || 0;
+    const count = Number.parseInt(row?.cnt ?? '0', 10) || 0;
     if (count === 0) {
       return originalOrdering;
     }
-    const maxOrd = parseInt(row?.maxOrd ?? '0', 10) || 0;
+    const maxOrd = Number.parseInt(row?.maxOrd ?? '0', 10) || 0;
     return maxOrd + 1;
   }
 
@@ -187,11 +187,11 @@ export class OrderingService {
     }
 
     const row = await qb.getRawOne();
-    const count = parseInt(row?.cnt ?? '0', 10) || 0;
+    const count = Number.parseInt(row?.cnt ?? '0', 10) || 0;
     if (count === 0) {
       return originalOrdering;
     }
-    const maxOrd = parseInt(row?.maxOrd ?? '0', 10) || 0;
+    const maxOrd = Number.parseInt(row?.maxOrd ?? '0', 10) || 0;
     return maxOrd + 1;
   }
 
@@ -222,11 +222,11 @@ export class OrderingService {
       })
       .getRawOne();
 
-    const count = parseInt(row?.cnt ?? '0', 10) || 0;
+    const count = Number.parseInt(row?.cnt ?? '0', 10) || 0;
     if (count === 0) {
       return originalOrdering;
     }
-    const maxOrd = parseInt(row?.maxOrd ?? '0', 10) || 0;
+    const maxOrd = Number.parseInt(row?.maxOrd ?? '0', 10) || 0;
     return maxOrd + 1;
   }
 } 
