@@ -191,34 +191,43 @@ export class RecalculateProgressQueueService extends WorkerHost {
             .join(', ');
           const moduleTotalsParams = moduleIds.flatMap((mid) => [mid, moduleTotalMap.get(mid) ?? 0]);
 
+          // Build all joins inside a subquery so mt is only referenced in WHERE (PostgreSQL restriction)
           await this.dataSource.query(
             `UPDATE module_track mt
              SET
-               "totalLessons"     = mt_totals.total,
-               "completedLessons" = COALESCE(lc.completed, 0),
+               "totalLessons"     = computed.total,
+               "completedLessons" = computed.completed,
                progress = CASE
-                 WHEN mt_totals.total > 0
-                 THEN ROUND((COALESCE(lc.completed, 0)::numeric / mt_totals.total::numeric) * 100)
+                 WHEN computed.total > 0
+                 THEN ROUND((computed.completed::numeric / computed.total::numeric) * 100)
                  ELSE 0
                END,
                status = CASE
-                 WHEN mt_totals.total > 0 AND COALESCE(lc.completed, 0) >= mt_totals.total THEN 'completed'
+                 WHEN computed.total > 0 AND computed.completed >= computed.total THEN 'completed'
                  ELSE 'incomplete'
                END
-             FROM (VALUES ${moduleTotalsValues}) AS mt_totals("moduleId", total)
-             LEFT JOIN (
-               SELECT lt."userId", l."moduleId", COUNT(DISTINCT lt."lessonId")::integer AS completed
-               FROM lesson_track lt
-               JOIN lessons l ON lt."lessonId" = l."lessonId"
-               WHERE l."moduleId" = ANY($1::uuid[]) AND lt."tenantId" = $2 AND lt."organisationId" = $3
-                 AND lt."userId" = ANY($4::uuid[])
-                 AND lt.status IN ('completed', 'submitted')
-                 AND l."considerForPassing" = true AND l.status = 'published'
-               GROUP BY lt."userId", l."moduleId"
-             ) lc ON lc."moduleId" = mt_totals."moduleId" AND lc."userId" = mt."userId"
+             FROM (
+               SELECT
+                 u."userId",
+                 mt_totals."moduleId",
+                 mt_totals.total,
+                 COALESCE(lc.completed, 0) AS completed
+               FROM unnest($4::uuid[]) AS u("userId")
+               CROSS JOIN (VALUES ${moduleTotalsValues}) AS mt_totals("moduleId", total)
+               LEFT JOIN (
+                 SELECT lt."userId", l."moduleId", COUNT(DISTINCT lt."lessonId")::integer AS completed
+                 FROM lesson_track lt
+                 JOIN lessons l ON lt."lessonId" = l."lessonId"
+                 WHERE l."moduleId" = ANY($1::uuid[]) AND lt."tenantId" = $2 AND lt."organisationId" = $3
+                   AND lt."userId" = ANY($4::uuid[])
+                   AND lt.status IN ('completed', 'submitted')
+                   AND l."considerForPassing" = true AND l.status = 'published'
+                 GROUP BY lt."userId", l."moduleId"
+               ) lc ON lc."moduleId" = mt_totals."moduleId" AND lc."userId" = u."userId"
+             ) computed
              WHERE mt."tenantId" = $2 AND mt."organisationId" = $3
-               AND mt."moduleId" = mt_totals."moduleId"
-               AND mt."userId" = ANY($4::uuid[])`,
+               AND mt."moduleId" = computed."moduleId"
+               AND mt."userId" = computed."userId"`,
             [moduleIds, tenantId, organisationId, userIds, ...moduleTotalsParams],
           );
         }
