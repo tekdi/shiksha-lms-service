@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource, FindOptionsWhere } from 'typeorm';
 import { InjectQueue, Processor, WorkerHost } from '@nestjs/bullmq';
 import { Queue, Job } from 'bullmq';
+import { ConfigService } from '@nestjs/config';
 import {
   ProgressRecalculationJob,
   JobStatus,
@@ -10,11 +11,11 @@ import {
 import { Course } from '../courses/entities/course.entity';
 import { Module as CourseModule } from '../modules/entities/module.entity';
 
-const BATCH_SIZE = 500;
-
 @Injectable()
 @Processor('recalculate-progress')
 export class RecalculateProgressQueueService extends WorkerHost {
+  private readonly batchSize: number;
+
   constructor(
     @InjectQueue('recalculate-progress') private readonly queue: Queue,
     @InjectRepository(ProgressRecalculationJob)
@@ -24,8 +25,10 @@ export class RecalculateProgressQueueService extends WorkerHost {
     @InjectRepository(CourseModule)
     private readonly moduleRepo: Repository<CourseModule>,
     private readonly dataSource: DataSource,
+    private readonly configService: ConfigService,
   ) {
     super();
+    this.batchSize = Number(this.configService.get<string>('RECALCULATE_PROGRESS_BATCH_SIZE', '500'));
   }
 
   async enqueueJob(
@@ -146,7 +149,7 @@ export class RecalculateProgressQueueService extends WorkerHost {
       while (offset < totalUsers) {
         const userRows: { userId: string }[] = await this.dataSource.query(
           `SELECT DISTINCT "userId" FROM course_track WHERE "courseId" = $1 AND "tenantId" = $2 AND "organisationId" = $3 ORDER BY "userId" LIMIT $4 OFFSET $5`,
-          [courseId, tenantId, organisationId, BATCH_SIZE, offset],
+          [courseId, tenantId, organisationId, this.batchSize, offset],
         );
         const userIds = userRows.map((r) => r.userId);
         if (userIds.length === 0) break;
@@ -233,7 +236,7 @@ export class RecalculateProgressQueueService extends WorkerHost {
         }
 
         processedUsers += userIds.length;
-        offset += BATCH_SIZE;
+        offset += this.batchSize;
         await this.jobRepo.update(jobId, { processedUsers });
       }
 
