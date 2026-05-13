@@ -25,7 +25,8 @@
     "migration:run": "npm run typeorm -- migration:run -d typeorm.config.ts",
     "migration:revert": "npm run typeorm -- migration:revert -d typeorm.config.ts",
     "migration:show": "npm run typeorm -- migration:show -d typeorm.config.ts",
-    "db:setup": "./scripts/setup-db.sh"
+    "db:setup": "./scripts/setup-db.sh",
+    "queue:remove-job": "node scripts/remove-queue-job.js"
   },
   "dependencies": {
     "@nestjs/axios": "^4.0.0",
@@ -39,11 +40,13 @@
     "@redis/client": "^1.6.1",
     "@tekdi/nestjs-cloud-storage": "https://github.com/tekdi/nestjs-cloud-storage/archive/refs/tags/v1.0.3.tar.gz",
     "axios": "^1.11.0",
+    "bullmq": "^5.76.5",
     "cache-manager": "^5.4.0",
     "cache-manager-redis-yet": "^5.1.5",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.1",
     "dotenv": "^17.2.0",
+    "ioredis": "^5.10.1",
     "pg": "^8.16.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",

@@ -54,6 +54,11 @@ type UserOutcomeMode =
 export class TrackingService {
   private readonly logger = new Logger(TrackingService.name);
 
+  /** Lets timers run (e.g. BullMQ lock renewal) during long synchronous loops */
+  private yieldEventLoop(): Promise<void> {
+    return new Promise((resolve) => setImmediate(resolve));
+  }
+
   constructor(
     @InjectRepository(CourseTrack)
     private readonly courseTrackRepository: Repository<CourseTrack>,
@@ -791,8 +796,82 @@ export class TrackingService {
   }
 
   /**
-   * Calculate completed lessons based on attemptsGrade method
+   * Groups lesson track rows by lessonId (attempt order should be set on rows before calling).
    */
+  private groupAttemptsByLessonId(attempts: LessonTrack[]): Map<string, LessonTrack[]> {
+    const attemptsByLesson = new Map<string, LessonTrack[]>();
+    for (const attempt of attempts) {
+      if (!attemptsByLesson.has(attempt.lessonId)) {
+        attemptsByLesson.set(attempt.lessonId, []);
+      }
+      attemptsByLesson.get(attempt.lessonId)!.push(attempt);
+    }
+    return attemptsByLesson;
+  }
+
+  /**
+   * Pure completion count from grouped attempts (same rules as incremental tracking).
+   */
+  private countCompletedLessonsFromAttempts(
+    lessons: Lesson[],
+    attemptsByLesson: Map<string, LessonTrack[]>,
+  ): number {
+    let completedLessonsCount = 0;
+    for (const lesson of lessons) {
+      const lessonAttempts = attemptsByLesson.get(lesson.lessonId) || [];
+
+      if (lessonAttempts.length === 0) {
+        continue;
+      }
+
+      let isLessonCompleted = false;
+
+      switch (lesson.attemptsGrade) {
+        case AttemptsGradeMethod.FIRST_ATTEMPT:
+          isLessonCompleted = lessonAttempts.some(attempt => attempt.attempt === 1);
+          break;
+
+        case AttemptsGradeMethod.LAST_ATTEMPT:
+          isLessonCompleted = true;
+          break;
+
+        case AttemptsGradeMethod.AVERAGE:
+          if (lesson.passingMarks && lesson.totalMarks) {
+            const averageScore =
+              lessonAttempts.reduce((sum, attempt) => sum + (attempt.score || 0), 0) /
+              lessonAttempts.length;
+            const averagePercentage = (averageScore / lesson.totalMarks) * 100;
+            isLessonCompleted =
+              averagePercentage >= (lesson.passingMarks / lesson.totalMarks) * 100;
+          } else {
+            isLessonCompleted = true;
+          }
+          break;
+
+        case AttemptsGradeMethod.HIGHEST:
+          if (lesson.passingMarks && lesson.totalMarks) {
+            const highestScore = Math.max(...lessonAttempts.map(attempt => attempt.score || 0));
+            const highestPercentage = (highestScore / lesson.totalMarks) * 100;
+            isLessonCompleted =
+              highestPercentage >= (lesson.passingMarks / lesson.totalMarks) * 100;
+          } else {
+            isLessonCompleted = true;
+          }
+          break;
+
+        default:
+          isLessonCompleted = true;
+          break;
+      }
+
+      if (isLessonCompleted) {
+        completedLessonsCount++;
+      }
+    }
+
+    return completedLessonsCount;
+  }
+
   /**
    * Calculate completed lessons based on attemptsGrade method
    * OPTIMIZED: Uses batch query to avoid N+1 problem
@@ -808,95 +887,136 @@ export class TrackingService {
       return 0;
     }
 
-    // Step 1: Get all lesson IDs
     const lessonIds = lessons.map(l => l.lessonId);
 
-    // Step 2: Single batch query for ALL attempts (fixes N+1 problem)
     const whereClause: any = {
       lessonId: In(lessonIds),
       userId,
       tenantId,
       organisationId,
-      status: In([TrackingStatus.COMPLETED, TrackingStatus.SUBMITTED])
+      status: In([TrackingStatus.COMPLETED, TrackingStatus.SUBMITTED]),
     };
-    
-    // Add courseId filter only if it's provided
+
     if (courseId) {
       whereClause.courseId = courseId;
     }
 
     const allAttempts = await this.lessonTrackRepository.find({
       where: whereClause as FindOptionsWhere<LessonTrack>,
-      order: { attempt: 'ASC' }
+      order: { attempt: 'ASC' },
     });
 
-    // Step 3: Group attempts by lessonId in memory
-    const attemptsByLesson = new Map<string, LessonTrack[]>();
-    allAttempts.forEach(attempt => {
-      if (!attemptsByLesson.has(attempt.lessonId)) {
-        attemptsByLesson.set(attempt.lessonId, []);
+    const attemptsByLesson = this.groupAttemptsByLessonId(allAttempts);
+    return this.countCompletedLessonsFromAttempts(lessons, attemptsByLesson);
+  }
+
+  /**
+   * All SUBMITTED/COMPLETED lesson_track rows for a course join‑eligible users, grouped by user then lesson.
+   * One query instead of one per user for recalculate-progress at scale.
+   */
+  private async loadCourseAttemptGroupsByUser(
+    courseId: string,
+    lessonIds: string[],
+    tenantId: string,
+    organisationId: string,
+  ): Promise<Map<string, Map<string, LessonTrack[]>>> {
+    const byUser = new Map<string, Map<string, LessonTrack[]>>();
+    if (lessonIds.length === 0) {
+      return byUser;
+    }
+
+    const rows = await this.lessonTrackRepository
+      .createQueryBuilder('lt')
+      .innerJoin(
+        'course_track',
+        'ct',
+        'ct.userId = lt.userId AND ct.courseId = lt.courseId AND ct.tenantId = lt.tenantId AND ct.organisationId = lt.organisationId',
+      )
+      .where('ct.courseId = :courseId', { courseId })
+      .andWhere('ct.tenantId = :tenantId', { tenantId })
+      .andWhere('ct.organisationId = :organisationId', { organisationId })
+      .andWhere('lt.lessonId IN (:...lessonIds)', { lessonIds })
+      .andWhere('lt.status IN (:...attemptStatuses)', {
+        attemptStatuses: [TrackingStatus.COMPLETED, TrackingStatus.SUBMITTED],
+      })
+      .orderBy('lt.attempt', 'ASC')
+      .select('lt')
+      .getMany();
+
+    for (const row of rows) {
+      if (!byUser.has(row.userId)) {
+        byUser.set(row.userId, new Map());
       }
-      attemptsByLesson.get(attempt.lessonId)!.push(attempt);
-    });
-
-    // Step 4: Process each lesson using the grouped data
-    let completedLessonsCount = 0;
-    for (const lesson of lessons) {
-      const lessonAttempts = attemptsByLesson.get(lesson.lessonId) || [];
-
-      if (lessonAttempts.length === 0) {
-        continue; // No completed attempts
+      const byLesson = byUser.get(row.userId)!;
+      if (!byLesson.has(row.lessonId)) {
+        byLesson.set(row.lessonId, []);
       }
+      byLesson.get(row.lessonId)!.push(row);
+    }
 
-      let isLessonCompleted = false;
+    return byUser;
+  }
 
-      switch (lesson.attemptsGrade) {
-        case AttemptsGradeMethod.FIRST_ATTEMPT:
-          // Consider completed if first attempt is completed
-          isLessonCompleted = lessonAttempts.some(attempt => attempt.attempt === 1);
-          break;
+  /**
+   * Attempt groups keyed by `userId\tmoduleId` → lessonId → attempts, for module recalc at scale.
+   */
+  private async loadModuleAttemptGroupsByUserModule(
+    moduleIdList: string[],
+    moduleLessons: Lesson[],
+    tenantId: string,
+    organisationId: string,
+  ): Promise<Map<string, Map<string, LessonTrack[]>>> {
+    const result = new Map<string, Map<string, LessonTrack[]>>();
+    if (moduleIdList.length === 0) {
+      return result;
+    }
 
-        case AttemptsGradeMethod.LAST_ATTEMPT:
-          // Consider completed if any attempt is completed (last attempt)
-          isLessonCompleted = true;
-          break;
+    const lessonIds = moduleLessons.map(l => l.lessonId);
+    if (lessonIds.length === 0) {
+      return result;
+    }
 
-        case AttemptsGradeMethod.AVERAGE:
-          // Consider completed if average score meets passing criteria
-          if (lesson.passingMarks && lesson.totalMarks) {
-            const averageScore = lessonAttempts.reduce((sum, attempt) => sum + (attempt.score || 0), 0) / lessonAttempts.length;
-            const averagePercentage = (averageScore / lesson.totalMarks) * 100;
-            isLessonCompleted = averagePercentage >= (lesson.passingMarks / lesson.totalMarks) * 100;
-          } else {
-            // If no passing criteria, consider completed if any attempt exists
-            isLessonCompleted = true;
-          }
-          break;
-
-        case AttemptsGradeMethod.HIGHEST:
-          // Consider completed if highest score meets passing criteria
-          if (lesson.passingMarks && lesson.totalMarks) {
-            const highestScore = Math.max(...lessonAttempts.map(attempt => attempt.score || 0));
-            const highestPercentage = (highestScore / lesson.totalMarks) * 100;
-            isLessonCompleted = highestPercentage >= (lesson.passingMarks / lesson.totalMarks) * 100;
-          } else {
-            // If no passing criteria, consider completed if any attempt exists
-            isLessonCompleted = true;
-          }
-          break;
-
-        default:
-          // Default behavior: consider completed if any attempt is completed
-          isLessonCompleted = true;
-          break;
-      }
-
-      if (isLessonCompleted) {
-        completedLessonsCount++;
+    const lessonIdToModuleId = new Map<string, string>();
+    for (const l of moduleLessons) {
+      if (l.moduleId) {
+        lessonIdToModuleId.set(l.lessonId, l.moduleId);
       }
     }
 
-    return completedLessonsCount;
+    const qb = this.lessonTrackRepository
+      .createQueryBuilder('lt')
+      .where('lt.lessonId IN (:...lessonIds)', { lessonIds })
+      .andWhere('lt.tenantId = :tenantId', { tenantId })
+      .andWhere('lt.organisationId = :organisationId', { organisationId })
+      .andWhere('lt.status IN (:...attemptStatuses)', {
+        attemptStatuses: [TrackingStatus.COMPLETED, TrackingStatus.SUBMITTED],
+      })
+      .orderBy('lt.attempt', 'ASC');
+
+    qb.andWhere(
+      `lt.userId IN (SELECT DISTINCT "userId" FROM module_track WHERE "moduleId" IN (:...moduleIds) AND "tenantId" = :mtTenantId AND "organisationId" = :mtOrgId)`,
+      { moduleIds: moduleIdList, mtTenantId: tenantId, mtOrgId: organisationId },
+    );
+
+    const rows = await qb.getMany();
+
+    for (const row of rows) {
+      const moduleId = lessonIdToModuleId.get(row.lessonId);
+      if (!moduleId) {
+        continue;
+      }
+      const key = `${row.userId}\t${moduleId}`;
+      if (!result.has(key)) {
+        result.set(key, new Map());
+      }
+      const byLesson = result.get(key)!;
+      if (!byLesson.has(row.lessonId)) {
+        byLesson.set(row.lessonId, []);
+      }
+      byLesson.get(row.lessonId)!.push(row);
+    }
+
+    return result;
   }
 
   /**
@@ -1080,9 +1200,15 @@ export class TrackingService {
 
   /**
    * Recalculate progress for course tracking and module tracking
-   * Updates noOfLessons in course_track and totalLessons in module_track
-   * based on lessons with considerForPassing = true and status = 'published'
-   * OPTIMIZED: Uses CTEs and JOINs for better performance, single transaction, and returns affected row counts
+   * Updates noOfLessons / totalLessons from published parent lessons with considerForPassing = true,
+   * then recomputes completedLessons from lesson_track using the same rules as incremental tracking
+   * (attemptsGrade, COMPLETED/SUBMITTED attempts).
+   *
+   * **Performance:** Lesson totals use bulk SQL; completion uses **two wide reads** on `lesson_track`
+   * (joined / filtered) plus in‑memory grading — not one DB round‑trip per learner. For tens of thousands
+   * of rows, the HTTP request may still run for minutes; use a **maintenance window**, **offline job**,
+   * or a **queue worker** (Bull/BullMQ, Step Functions, etc.) so the API does not block on gateways.
+   *
    * @param courseId The course ID to recalculate progress for
    * @param tenantId The tenant ID for data isolation
    * @param organisationId The organization ID for data isolation
@@ -1093,6 +1219,8 @@ export class TrackingService {
     organisationId: string
   ): Promise<{ success: boolean; message: string; courseTrackUpdated: number; moduleTrackUpdated: number }> {
     const startTime = Date.now();
+    /** Log in-memory progress every N rows (large courses) */
+    const progressLogEvery = 2000;
     try {
       this.logger.log(`[PERF] Recalculating progress for courseId: ${courseId}, tenantId: ${tenantId}, organisationId: ${organisationId}`);
 
@@ -1133,6 +1261,7 @@ export class TrackingService {
             AND l."organisationId" = ct."organisationId"
             AND l.status = 'published'
             AND l."considerForPassing" = true
+            AND l."parentId" IS NULL
         ), 0)
         WHERE ct."tenantId" = $1
           AND ct."organisationId" = $2
@@ -1150,7 +1279,7 @@ export class TrackingService {
       } else {
         // OPTIMIZED: Use CTE to calculate lesson counts once, ensures ALL records updated
         // Parameters: $1=tenantId, $2=organisationId, $3+ = moduleIds
-        // Updates totalLessons and calculates progress based on completedLessons / totalLessons * 100
+        // Updates totalLessons only; completedLessons/progress synced afterward from lesson_track
         // Performance: Calculates lesson count ONCE per module (instead of 3 times per row)
         // Uses DISTINCT module_track.moduleId to ensure all records are updated, even modules with no lessons
         const moduleIdPlaceholders = moduleIdList.map((_, index) => `$${index + 3}`).join(', ');
@@ -1172,6 +1301,7 @@ export class TrackingService {
               AND l."organisationId" = $2
               AND l.status = 'published'
               AND l."considerForPassing" = true
+              AND l."parentId" IS NULL
             GROUP BY l."moduleId"
           ),
           module_lesson_counts AS (
@@ -1183,12 +1313,7 @@ export class TrackingService {
           )
           UPDATE module_track mt
           SET 
-            "totalLessons" = mlc.total,
-            "progress" = CASE
-              WHEN mlc.total > 0
-              THEN ROUND((mt."completedLessons"::numeric / mlc.total::numeric) * 100)
-              ELSE 0
-            END
+            "totalLessons" = mlc.total
           FROM module_lesson_counts mlc
           WHERE mt."moduleId" = mlc."moduleId"
             AND mt."moduleId" IN (${moduleIdPlaceholders})
@@ -1199,6 +1324,7 @@ export class TrackingService {
       }
 
       // OPTIMIZED: Execute both updates in parallel
+      const sqlStart = Date.now();
       await Promise.all([
         this.courseTrackRepository.query(courseUpdateSql, [
           tenantId,
@@ -1209,6 +1335,180 @@ export class TrackingService {
           ? this.moduleTrackRepository.query(moduleUpdateSql, moduleUpdateParams)
           : Promise.resolve([])
       ]);
+      this.logger.log(
+        `[recalculate-progress] courseId=${courseId} bulk SQL (noOfLessons / totalLessons) done in ${Date.now() - sqlStart}ms; modules=${moduleIdList.length}`,
+      );
+
+      const [courseLessons, allModuleLessons] = await Promise.all([
+        this.lessonRepository.find({
+          where: {
+            courseId,
+            tenantId,
+            organisationId,
+            status: LessonStatus.PUBLISHED,
+            considerForPassing: true,
+            parentId: IsNull(),
+          } as FindOptionsWhere<Lesson>,
+        }),
+        moduleIdList.length > 0
+          ? this.lessonRepository.find({
+              where: {
+                moduleId: In(moduleIdList),
+                tenantId,
+                organisationId,
+                status: LessonStatus.PUBLISHED,
+                considerForPassing: true,
+                parentId: IsNull(),
+              } as FindOptionsWhere<Lesson>,
+            })
+          : Promise.resolve([] as Lesson[]),
+      ]);
+
+      const lessonsByModuleId = new Map<string, Lesson[]>();
+      for (const lesson of allModuleLessons) {
+        if (!lesson.moduleId) {
+          continue;
+        }
+        if (!lessonsByModuleId.has(lesson.moduleId)) {
+          lessonsByModuleId.set(lesson.moduleId, []);
+        }
+        lessonsByModuleId.get(lesson.moduleId)!.push(lesson);
+      }
+
+      const courseTracks = await this.courseTrackRepository.find({
+        where: { courseId, tenantId, organisationId } as FindOptionsWhere<CourseTrack>,
+      });
+      this.logger.log(
+        `[recalculate-progress] courseId=${courseId} loaded ${courseTracks.length} course_track rows; countable course lessons=${courseLessons.length}`,
+      );
+
+      const courseLessonIds = courseLessons.map((l) => l.lessonId);
+      const attemptsLoadStart = Date.now();
+      const attemptsByCourseUser =
+        courseLessonIds.length > 0
+          ? await this.loadCourseAttemptGroupsByUser(
+              courseId,
+              courseLessonIds,
+              tenantId,
+              organisationId,
+            )
+          : new Map<string, Map<string, LessonTrack[]>>();
+      this.logger.log(
+        `[recalculate-progress] courseId=${courseId} lesson_track prefetch for course: ${attemptsByCourseUser.size} users with attempts, ${Date.now() - attemptsLoadStart}ms`,
+      );
+
+      if (courseTracks.length > 5000) {
+        this.logger.warn(
+          `[PERF] recalculate-progress: ${courseTracks.length} course_track rows — expect long runtime; prefer async job for very large courses.`,
+        );
+      }
+
+      let courseIdx = 0;
+      for (const ct of courseTracks) {
+        const attemptsByLesson = attemptsByCourseUser.get(ct.userId) ?? new Map<string, LessonTrack[]>();
+        ct.completedLessons = this.countCompletedLessonsFromAttempts(courseLessons, attemptsByLesson);
+        if (ct.noOfLessons > 0 && ct.completedLessons >= ct.noOfLessons) {
+          ct.status = TrackingStatus.COMPLETED;
+          if (!ct.endDatetime) {
+            ct.endDatetime = new Date();
+          }
+        } else {
+          ct.status = TrackingStatus.INCOMPLETE;
+        }
+        courseIdx += 1;
+        if (courseIdx % progressLogEvery === 0) {
+          this.logger.log(
+            `[recalculate-progress] courseId=${courseId} course_track in-memory progress: ${courseIdx}/${courseTracks.length}`,
+          );
+        }
+        if (courseIdx % 500 === 0) {
+          await this.yieldEventLoop();
+        }
+      }
+      if (courseTracks.length > 0) {
+        this.logger.log(
+          `[recalculate-progress] courseId=${courseId} course_track in-memory pass complete: ${courseTracks.length}/${courseTracks.length}`,
+        );
+      }
+
+      const saveChunk = 500;
+      for (let i = 0; i < courseTracks.length; i += saveChunk) {
+        const end = Math.min(i + saveChunk, courseTracks.length);
+        const saveStart = Date.now();
+        await this.courseTrackRepository.save(courseTracks.slice(i, i + saveChunk));
+        this.logger.log(
+          `[recalculate-progress] courseId=${courseId} saved course_track ${i + 1}-${end} of ${courseTracks.length} (${Date.now() - saveStart}ms)`,
+        );
+      }
+
+      let moduleTracks: ModuleTrack[] = [];
+      if (moduleIdList.length > 0) {
+        moduleTracks = await this.moduleTrackRepository.find({
+          where: {
+            moduleId: In(moduleIdList),
+            tenantId,
+            organisationId,
+          } as FindOptionsWhere<ModuleTrack>,
+        });
+      }
+      this.logger.log(
+        `[recalculate-progress] courseId=${courseId} loaded ${moduleTracks.length} module_track rows; module lessons (rows)=${allModuleLessons.length}`,
+      );
+
+      const moduleAttemptsStart = Date.now();
+      const attemptsByUserModule =
+        allModuleLessons.length > 0
+          ? await this.loadModuleAttemptGroupsByUserModule(
+              moduleIdList,
+              allModuleLessons,
+              tenantId,
+              organisationId,
+            )
+          : new Map<string, Map<string, LessonTrack[]>>();
+      this.logger.log(
+        `[recalculate-progress] courseId=${courseId} lesson_track prefetch for modules: ${attemptsByUserModule.size} user-module keys, ${Date.now() - moduleAttemptsStart}ms`,
+      );
+
+      let moduleIdx = 0;
+      for (const mt of moduleTracks) {
+        const moduleLessons = lessonsByModuleId.get(mt.moduleId) ?? [];
+        const key = `${mt.userId}\t${mt.moduleId}`;
+        const attemptsByLesson = attemptsByUserModule.get(key) ?? new Map<string, LessonTrack[]>();
+        mt.completedLessons = this.countCompletedLessonsFromAttempts(moduleLessons, attemptsByLesson);
+        mt.totalLessons = moduleLessons.length;
+        mt.progress =
+          moduleLessons.length > 0
+            ? Math.round((mt.completedLessons / moduleLessons.length) * 100)
+            : 0;
+        if (mt.completedLessons === moduleLessons.length && moduleLessons.length > 0) {
+          mt.status = ModuleTrackStatus.COMPLETED;
+        } else {
+          mt.status = ModuleTrackStatus.INCOMPLETE;
+        }
+        moduleIdx += 1;
+        if (moduleIdx % progressLogEvery === 0) {
+          this.logger.log(
+            `[recalculate-progress] courseId=${courseId} module_track in-memory progress: ${moduleIdx}/${moduleTracks.length}`,
+          );
+        }
+        if (moduleIdx % 500 === 0) {
+          await this.yieldEventLoop();
+        }
+      }
+      if (moduleTracks.length > 0) {
+        this.logger.log(
+          `[recalculate-progress] courseId=${courseId} module_track in-memory pass complete: ${moduleTracks.length}/${moduleTracks.length}`,
+        );
+      }
+
+      for (let i = 0; i < moduleTracks.length; i += saveChunk) {
+        const end = Math.min(i + saveChunk, moduleTracks.length);
+        const saveStart = Date.now();
+        await this.moduleTrackRepository.save(moduleTracks.slice(i, i + saveChunk));
+        this.logger.log(
+          `[recalculate-progress] courseId=${courseId} saved module_track ${i + 1}-${end} of ${moduleTracks.length} (${Date.now() - saveStart}ms)`,
+        );
+      }
 
       // Get total counts of all matching records (matches original behavior)
       // This counts ALL course_track and module_track records for the course, not just updated ones

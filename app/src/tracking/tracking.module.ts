@@ -8,6 +8,9 @@ import { Lesson } from '../lessons/entities/lesson.entity';
 import { Module as CourseModule } from '../modules/entities/module.entity';
 import { TrackingController } from './tracking.controller';
 import { TrackingService } from './tracking.service';
+import { RecalculateProgressQueueService } from './recalculate-progress-queue.service';
+import { RecalculateProgressJob } from './entities/recalculate-progress-job.entity';
+import { RecalculateProgressJobStore } from './recalculate-progress-job.store';
 import { LessonsModule } from '../lessons/lessons.module';
 import { EnrollmentsModule } from '../enrollments/enrollments.module';
 import { CacheModule } from '../cache/cache.module';
@@ -20,14 +23,15 @@ import { CacheModule } from '../cache/cache.module';
       ModuleTrack,
       Course, 
       Lesson, 
-      CourseModule
+      CourseModule,
+      RecalculateProgressJob,
     ]),
     LessonsModule,
     EnrollmentsModule,
     CacheModule,
   ],
   controllers: [TrackingController],
-  providers: [TrackingService],
+  providers: [TrackingService, RecalculateProgressQueueService, RecalculateProgressJobStore],
   exports: [TrackingService],
 })
 export class TrackingModule {}

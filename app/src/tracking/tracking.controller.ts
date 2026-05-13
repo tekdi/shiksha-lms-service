@@ -9,6 +9,9 @@ import {
   Patch,
   HttpCode,
   HttpStatus,
+  Res,
+  NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -18,7 +21,11 @@ import {
   ApiBody,
   ApiBearerAuth,
 } from '@nestjs/swagger';
+import { Response } from 'express';
 import { TrackingService } from './tracking.service';
+import { RecalculateProgressQueueService } from './recalculate-progress-queue.service';
+import { RecalculateProgressJobStore } from './recalculate-progress-job.store';
+import { ListRecalculateProgressJobsQueryDto } from './dto/list-recalculate-progress-jobs-query.dto';
 import { API_IDS } from '../common/constants/api-ids.constant';
 import { ApiId } from '../common/decorators/api-id.decorator';
 import { CommonQueryDto } from '../common/dto/common-query.dto';
@@ -35,7 +42,11 @@ import { UserJourneyDto, UserJourneyResponseDto } from './dto/user-journey.dto';
 @ApiBearerAuth()
 @Controller('tracking')
 export class TrackingController {
-  constructor(private readonly trackingService: TrackingService) {}
+  constructor(
+    private readonly trackingService: TrackingService,
+    private readonly recalculateProgressQueue: RecalculateProgressQueueService,
+    private readonly recalculateProgressJobStore: RecalculateProgressJobStore,
+  ) {}
 
   @Post('userjourney')
   @HttpCode(HttpStatus.OK)
@@ -231,33 +242,122 @@ export class TrackingController {
     );
   }
 
+  @Get('recalculate-progress/jobs')
+  @ApiId(API_IDS.LIST_RECALCULATE_PROGRESS_JOBS)
+  @ApiOperation({
+    summary: 'List async recalculate-progress jobs (history) for the tenant/org',
+    description:
+      'Reads from recalculate_progress_jobs. BullMQ redis state may differ briefly until workers update rows.',
+  })
+  @ApiResponse({ status: 200, description: 'Paged list of job records' })
+  async listRecalculateProgressJobs(
+    @Query() query: ListRecalculateProgressJobsQueryDto,
+    @TenantOrg() tenant: { tenantId: string; organisationId: string },
+  ) {
+    const limit = query.limit ?? 20;
+    const offset = query.offset ?? 0;
+    const { items, total } = await this.recalculateProgressJobStore.list({
+      tenantId: tenant.tenantId,
+      organisationId: tenant.organisationId,
+      courseId: query.courseId,
+      status: query.status,
+      limit,
+      offset,
+    });
+    return {
+      items,
+      total,
+      limit,
+      offset,
+    };
+  }
+
+  @Get('recalculate-progress/jobs/:jobId')
+  @ApiId(API_IDS.RECALCULATE_PROGRESS_JOB_STATUS)
+  @ApiOperation({ summary: 'Poll status of an async recalculate-progress job' })
+  @ApiParam({ name: 'jobId', description: 'Job id returned from async recalculate request' })
+  @ApiResponse({ status: 200, description: 'Job state and result when completed' })
+  @ApiResponse({ status: 404, description: 'Job not found' })
+  async getRecalculateProgressJobStatus(
+    @Param('jobId') jobId: string,
+    @TenantOrg() tenant: { tenantId: string; organisationId: string },
+  ) {
+    const status = await this.recalculateProgressQueue.getJobStatus(
+      jobId,
+      tenant.tenantId,
+      tenant.organisationId,
+    );
+    if (!status) {
+      throw new NotFoundException('Job not found');
+    }
+    return status;
+  }
+
   @Post('recalculate-progress')
   @ApiId(API_IDS.RECALCULATE_PROGRESS)
-  @ApiOperation({ summary: 'Recalculate progress for course tracking and module tracking' })
+  @ApiOperation({
+    summary:
+      'Recalculate lesson totals and completed counts for course_track and module_track from lessons and lesson_track',
+  })
   @ApiBody({ type: RecalculateProgressDto })
-  @ApiResponse({ 
-    status: 200, 
-    description: 'Progress recalculated successfully',
+  @ApiResponse({
+    status: 202,
+    description: 'Job accepted (when async: true and Redis is configured)',
+    schema: {
+      type: 'object',
+      properties: {
+        jobId: { type: 'string' },
+        message: { type: 'string' },
+        deduplicated: { type: 'boolean' },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Progress recalculated successfully (synchronous)',
     schema: {
       type: 'object',
       properties: {
         success: { type: 'boolean' },
         message: { type: 'string' },
         courseTrackUpdated: { type: 'number' },
-        moduleTrackUpdated: { type: 'number' }
-      }
-    }
+        moduleTrackUpdated: { type: 'number' },
+      },
+    },
   })
   @ApiResponse({ status: 404, description: 'Course not found' })
   @ApiResponse({ status: 400, description: 'Invalid request data' })
+  @ApiResponse({
+    status: 503,
+    description: 'async requested but background jobs unavailable (Redis not configured)',
+  })
   async recalculateProgress(
     @Body() recalculateProgressDto: RecalculateProgressDto,
-    @TenantOrg() tenant: {tenantId: string, organisationId: string},  
+    @TenantOrg() tenant: { tenantId: string; organisationId: string },
+    @Res({ passthrough: true }) res: Response,
   ) {
+    if (recalculateProgressDto.async) {
+      if (!this.recalculateProgressQueue.isEnabled()) {
+        throw new ServiceUnavailableException(
+          'Background recalculate requires REDIS_HOST (same as cache). Omit async to run synchronously.',
+        );
+      }
+      const enqueued = await this.recalculateProgressQueue.enqueue(
+        {
+          courseId: recalculateProgressDto.courseId,
+          tenantId: tenant.tenantId,
+          organisationId: tenant.organisationId,
+        },
+        { force: recalculateProgressDto.force === true },
+      );
+      res.status(HttpStatus.ACCEPTED);
+      return enqueued;
+    }
+
     return this.trackingService.recalculateProgress(
       recalculateProgressDto.courseId,
       tenant.tenantId,
-      tenant.organisationId
+      tenant.organisationId,
     );
   }
 }
