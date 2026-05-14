@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { BullModule } from '@nestjs/bullmq';
 import { CourseTrack } from './entities/course-track.entity';
@@ -27,12 +27,12 @@ import { CacheModule } from '../cache/cache.module';
       ProgressRecalculationJob,
     ]),
     BullModule.registerQueue({ name: 'recalculate-progress' }),
-    LessonsModule,
+    forwardRef(() => LessonsModule),
     EnrollmentsModule,
     CacheModule,
   ],
   controllers: [TrackingController],
   providers: [TrackingService, RecalculateProgressQueueService],
-  exports: [TrackingService],
+  exports: [TrackingService, RecalculateProgressQueueService],
 })
 export class TrackingModule {}

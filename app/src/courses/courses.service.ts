@@ -1838,22 +1838,6 @@ export class CoursesService {
     try {
       const course = await this.findOne(courseId, tenantId, organisationId);
 
-      // Check if course has active enrollments
-      const activeEnrollments = await this.userEnrollmentRepository.count({
-        where: {
-          courseId,
-          tenantId,
-          organisationId,
-          status: EnrollmentStatus.PUBLISHED,
-        },
-      });
-
-      if (activeEnrollments > 0) {
-        throw new BadRequestException(
-          `Cannot delete course. Course has ${activeEnrollments} active enrollment(s). Please delete all enrollments first.`,
-        );
-      }
-
       // Use a database transaction to ensure data consistency
       const result = await this.courseRepository.manager.transaction(
         async (transactionalEntityManager) => {
