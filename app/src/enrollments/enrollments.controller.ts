@@ -22,6 +22,7 @@ import { EnrollmentsService } from './enrollments.service';
 import { CreateEnrollmentDto } from './dto/create-enrollment.dto';
 import { UpdateEnrollmentDto } from './dto/update-enrollment.dto';
 import { DeleteEnrollmentDto } from './dto/delete-enrollment.dto';
+import { EnrollCohortDto } from './dto/enroll-cohort.dto';
 import { PaginationDto } from '../common/dto/pagination.dto';
 import { API_IDS } from '../common/constants/api-ids.constant';
 import { UserEnrollment, EnrollmentStatus } from './entities/user-enrollment.entity';
@@ -38,11 +39,17 @@ export class EnrollmentsController {
 
   @Post()
   @ApiId(API_IDS.ENROLL_USER)
-  @ApiOperation({ summary: 'Enroll user for a course' })
+  @ApiOperation({ summary: 'Enroll user for one or more courses' })
   @ApiResponse({ 
     status: 201, 
     description: 'User enrolled successfully',
-    type: UserEnrollment 
+    schema: {
+      properties: {
+        successfullyEnrolled: { type: 'array', items: { $ref: '#/components/schemas/UserEnrollment' } },
+        alreadyEnrolledCourseIds: { type: 'array', items: { type: 'string' } },
+        failedCourseIds: { type: 'array', items: { type: 'string' } }
+      }
+    }
   })
   @ApiResponse({ status: 400, description: 'Bad request' })
   @ApiResponse({ status: 404, description: 'Course not found' })
@@ -54,6 +61,36 @@ export class EnrollmentsController {
   ) {
     return this.enrollmentsService.enroll(
       createEnrollmentDto,
+      query.userId,
+      tenantOrg.tenantId,
+      tenantOrg.organisationId
+    );
+  }
+
+  @Post('cohort')
+  @ApiId(API_IDS.ENROLL_USER)
+  @ApiOperation({ summary: 'Enroll user in all active courses for a cohort' })
+  @ApiResponse({ 
+    status: 201, 
+    description: 'User enrolled successfully in cohort courses',
+    schema: {
+      properties: {
+        successfullyEnrolled: { type: 'array', items: { $ref: '#/components/schemas/UserEnrollment' } },
+        alreadyEnrolledCourseIds: { type: 'array', items: { type: 'string' } },
+        failedCourseIds: { type: 'array', items: { type: 'string' } }
+      }
+    }
+  })
+  @ApiResponse({ status: 400, description: 'Bad request' })
+  @ApiBody({ type: EnrollCohortDto })
+  async enrollCohort(
+    @Body() enrollCohortDto: EnrollCohortDto,
+    @Query() query: CommonQueryDto,    
+    @TenantOrg() tenantOrg: { tenantId: string; organisationId: string },
+  ) {
+    return this.enrollmentsService.enrollByCohort(
+      enrollCohortDto.learnerId,
+      enrollCohortDto.cohortId,
       query.userId,
       tenantOrg.tenantId,
       tenantOrg.organisationId

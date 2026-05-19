@@ -7,8 +7,9 @@ import {
   IsEnum,
   IsUUID,
   IsObject,
+  IsArray,
 } from 'class-validator';
-import { Type } from 'class-transformer';
+import { Type, Transform } from 'class-transformer';
 import { VALIDATION_MESSAGES } from '../../common/constants/response-messages.constant';
 import { EnrollmentStatus } from '../entities/user-enrollment.entity';
 
@@ -23,12 +24,15 @@ export class CreateEnrollmentDto {
   learnerId: string;
 
   @ApiProperty({
-    description: 'Course ID',
+    description: 'Course ID or array of Course IDs',
     example: '123e4567-e89b-12d3-a456-426614174000',
     required: true,
+    type: [String],
   })
-  @IsUUID('4', { message: VALIDATION_MESSAGES.COMMON.UUID('Course ID') })
-  courseId: string;
+  @Transform(({ value }) => Array.isArray(value) ? value : [value])
+  @IsArray()
+  @IsUUID('4', { each: true, message: VALIDATION_MESSAGES.COMMON.UUID('Course ID') })
+  courseId: string[];
 
   @ApiProperty({
     description: 'Enrollment status',
