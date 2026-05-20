@@ -143,13 +143,16 @@ export class RecalculateProgressQueueService extends WorkerHost {
 
       await this.jobRepo.update(jobId, { totalUsers });
 
-      let offset = 0;
+      let lastUserId: string | null = null; // keyset cursor
       let processedUsers = 0;
 
-      while (offset < totalUsers) {
+      while (true) {
         const userRows: { userId: string }[] = await this.dataSource.query(
-          `SELECT DISTINCT "userId" FROM course_track WHERE "courseId" = $1 AND "tenantId" = $2 AND "organisationId" = $3 ORDER BY "userId" LIMIT $4 OFFSET $5`,
-          [courseId, tenantId, organisationId, this.batchSize, offset],
+          `SELECT DISTINCT "userId" FROM course_track
+           WHERE "courseId" = $1 AND "tenantId" = $2 AND "organisationId" = $3
+             AND ($4::uuid IS NULL OR "userId" > $4::uuid)
+           ORDER BY "userId" LIMIT $5`,
+          [courseId, tenantId, organisationId, lastUserId, this.batchSize],
         );
         const userIds = userRows.map((r) => r.userId);
         if (userIds.length === 0) break;
@@ -236,7 +239,7 @@ export class RecalculateProgressQueueService extends WorkerHost {
         }
 
         processedUsers += userIds.length;
-        offset += this.batchSize;
+        lastUserId = userIds.at(-1) ?? null;
         await this.jobRepo.update(jobId, { processedUsers });
       }
 
