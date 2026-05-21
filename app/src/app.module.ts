@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
+import { BullModule } from '@nestjs/bullmq';
 import { ModulesModule } from './modules/modules.module';
 import { LessonsModule } from './lessons/lessons.module';
 import { MediaModule } from './media/media.module';
@@ -37,6 +38,17 @@ import { AspireLeaderModule } from './aspire-leader/aspire-leader.module';
           }),
         ]
       : []),
+    BullModule.forRootAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (configService: ConfigService) => ({
+        connection: {
+          host: configService.get('REDIS_HOST', 'localhost'),
+          port: Number(configService.get('REDIS_PORT', '6379')),
+          db: Number(configService.get('REDIS_DB', '0')),
+        },
+      }),
+    }),
     CacheModule,
     DatabaseModule,
     CommonModule,
