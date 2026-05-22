@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, QueryRunner, Not } from 'typeorm';
+import { Repository, QueryRunner, EntityManager } from 'typeorm';
 import { Course, CourseStatus } from '../../courses/entities/course.entity';
 import { Module, ModuleStatus } from '../../modules/entities/module.entity';
 import { Lesson, LessonStatus } from '../../lessons/entities/lesson.entity';
@@ -128,5 +128,105 @@ export class OrderingService {
 
     const maxOrdering = await queryBuilder.getRawOne();
     return (maxOrdering?.maxOrdering || 0) + 1;
+  }
+
+  /**
+   * Clone ordering: if there are no non-archived siblings in the destination scope, keep the
+   * source ordering; otherwise place after the last sibling (max + 1).
+   */
+  async resolveCloneCourseOrdering(
+    originalOrdering: number,
+    tenantId: string,
+    organisationId: string,
+    manager: EntityManager,
+  ): Promise<number> {
+    const repo = manager.getRepository(Course);
+    const row = await repo
+      .createQueryBuilder('course')
+      .select('COUNT(*)', 'cnt')
+      .addSelect('MAX(course.ordering)', 'maxOrd')
+      .where('course.tenantId = :tenantId', { tenantId })
+      .andWhere('course.organisationId = :organisationId', { organisationId })
+      .andWhere('course.status != :archived', {
+        archived: CourseStatus.ARCHIVED,
+      })
+      .getRawOne();
+
+    const count = Number.parseInt(row?.cnt ?? '0', 10) || 0;
+    if (count === 0) {
+      return originalOrdering;
+    }
+    const maxOrd = Number.parseInt(row?.maxOrd ?? '0', 10) || 0;
+    return maxOrd + 1;
+  }
+
+  async resolveCloneModuleOrdering(
+    originalOrdering: number,
+    newCourseId: string,
+    parentId: string | null | undefined,
+    tenantId: string,
+    organisationId: string,
+    manager: EntityManager,
+  ): Promise<number> {
+    const repo = manager.getRepository(Module);
+    const qb = repo
+      .createQueryBuilder('module')
+      .select('COUNT(*)', 'cnt')
+      .addSelect('MAX(module.ordering)', 'maxOrd')
+      .where('module.courseId = :courseId', { courseId: newCourseId })
+      .andWhere('module.tenantId = :tenantId', { tenantId })
+      .andWhere('module.organisationId = :organisationId', { organisationId })
+      .andWhere('module.status != :archived', {
+        archived: ModuleStatus.ARCHIVED,
+      });
+
+    if (parentId) {
+      qb.andWhere('module.parentId = :parentId', { parentId });
+    } else {
+      qb.andWhere('module.parentId IS NULL');
+    }
+
+    const row = await qb.getRawOne();
+    const count = Number.parseInt(row?.cnt ?? '0', 10) || 0;
+    if (count === 0) {
+      return originalOrdering;
+    }
+    const maxOrd = Number.parseInt(row?.maxOrd ?? '0', 10) || 0;
+    return maxOrd + 1;
+  }
+
+  async resolveCloneLessonOrdering(
+    originalOrdering: number,
+    preserveSourceOrdering: boolean,
+    newModuleId: string,
+    newCourseId: string,
+    tenantId: string,
+    organisationId: string,
+    manager: EntityManager,
+  ): Promise<number> {
+    if (preserveSourceOrdering) {
+      return originalOrdering;
+    }
+
+    const repo = manager.getRepository(Lesson);
+    const row = await repo
+      .createQueryBuilder('lesson')
+      .select('COUNT(*)', 'cnt')
+      .addSelect('MAX(lesson.ordering)', 'maxOrd')
+      .where('lesson.moduleId = :moduleId', { moduleId: newModuleId })
+      .andWhere('lesson.courseId = :courseId', { courseId: newCourseId })
+      .andWhere('lesson.tenantId = :tenantId', { tenantId })
+      .andWhere('lesson.organisationId = :organisationId', { organisationId })
+      .andWhere('lesson.status != :archived', {
+        archived: LessonStatus.ARCHIVED,
+      })
+      .getRawOne();
+
+    const count = Number.parseInt(row?.cnt ?? '0', 10) || 0;
+    if (count === 0) {
+      return originalOrdering;
+    }
+    const maxOrd = Number.parseInt(row?.maxOrd ?? '0', 10) || 0;
+    return maxOrd + 1;
   }
 } 
