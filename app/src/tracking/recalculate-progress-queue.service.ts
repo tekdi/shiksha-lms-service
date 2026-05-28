@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, DataSource, FindOptionsWhere } from 'typeorm';
+import { Repository, DataSource } from 'typeorm';
 import { InjectQueue, Processor, WorkerHost } from '@nestjs/bullmq';
 import { Queue, Job } from 'bullmq';
 import { ConfigService } from '@nestjs/config';
@@ -63,18 +63,41 @@ export class RecalculateProgressQueueService extends WorkerHost {
     status?: JobStatus,
     limit = 20,
     offset = 0,
-  ): Promise<{ data: ProgressRecalculationJob[]; total: number }> {
-    const where: FindOptionsWhere<ProgressRecalculationJob> = { tenantId, organisationId };
-    if (courseId) where.courseId = courseId;
-    if (status) where.status = status;
+  ): Promise<{
+    data: (ProgressRecalculationJob & { courseName: string | null })[];
+    total: number;
+  }> {
+    const params: unknown[] = [tenantId, organisationId];
+    const filters: string[] = [`j."tenantId" = $1`, `j."organisationId" = $2`];
 
-    const [data, total] = await this.jobRepo.findAndCount({
-      where,
-      order: { createdAt: 'DESC' },
-      take: limit,
-      skip: offset,
-    });
-    return { data, total };
+    if (courseId) {
+      params.push(courseId);
+      filters.push(`j."courseId" = $${params.length}::uuid`);
+    }
+    if (status) {
+      params.push(status);
+      filters.push(`j.status = $${params.length}`);
+    }
+
+    const where = filters.join(' AND ');
+
+    const [countResult, rows] = await Promise.all([
+      this.dataSource.query<{ total: string }[]>(
+        `SELECT COUNT(*)::integer AS total FROM progress_recalculation_job j WHERE ${where}`,
+        params,
+      ),
+      this.dataSource.query<(ProgressRecalculationJob & { courseName: string | null })[]>(
+        `SELECT j.*, c.title AS "courseName"
+         FROM progress_recalculation_job j
+         LEFT JOIN courses c ON c."courseId" = j."courseId"
+         WHERE ${where}
+         ORDER BY j."createdAt" DESC
+         LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+        [...params, limit, offset],
+      ),
+    ]);
+
+    return { data: rows, total: Number(countResult[0]?.total ?? 0) };
   }
 
   async getJobStatus(
@@ -111,28 +134,28 @@ export class RecalculateProgressQueueService extends WorkerHost {
       const moduleIds = modules.map((m) => m.moduleId);
 
       const [countResult, noOfLessonsResult, moduleLessonCountRows] = await Promise.all([
-        this.dataSource.query<{ total: string }[]>(
-          `SELECT COUNT(DISTINCT "userId")::integer AS total FROM course_track WHERE "courseId" = $1 AND "tenantId" = $2 AND "organisationId" = $3`,
-          [courseId, tenantId, organisationId],
-        ),
-        // Pre-calculate noOfLessons once — constant for all users in this course
-        this.dataSource.query<{ count: string }[]>(
-          `SELECT COUNT("lessonId")::integer AS count FROM lessons
-           WHERE "courseId" = $1 AND "tenantId" = $2 AND "organisationId" = $3
-             AND status = 'published' AND "considerForPassing" = true`,
-          [courseId, tenantId, organisationId],
-        ),
-        // Pre-calculate totalLessons per module once — constant for all users
-        moduleIds.length > 0
-          ? this.dataSource.query<{ moduleId: string; total: string }[]>(
-              `SELECT "moduleId", COUNT("lessonId")::integer AS total FROM lessons
-               WHERE "moduleId" = ANY($1::uuid[]) AND "tenantId" = $2 AND "organisationId" = $3
-                 AND status = 'published' AND "considerForPassing" = true
-               GROUP BY "moduleId"`,
-              [moduleIds, tenantId, organisationId],
-            )
-          : Promise.resolve([]),
-      ]);
+          this.dataSource.query<{ total: string }[]>(
+            `SELECT COUNT(DISTINCT "userId")::integer AS total FROM course_track WHERE "courseId" = $1 AND "tenantId" = $2 AND "organisationId" = $3`,
+            [courseId, tenantId, organisationId],
+          ),
+          // Pre-calculate noOfLessons once — constant for all users in this course
+          this.dataSource.query<{ count: string }[]>(
+            `SELECT COUNT("lessonId")::integer AS count FROM lessons
+             WHERE "courseId" = $1 AND "tenantId" = $2 AND "organisationId" = $3
+               AND status = 'published' AND "considerForPassing" = true`,
+            [courseId, tenantId, organisationId],
+          ),
+          // Pre-calculate totalLessons per module once — constant for all users
+          moduleIds.length > 0
+            ? this.dataSource.query<{ moduleId: string; total: string }[]>(
+                `SELECT "moduleId", COUNT("lessonId")::integer AS total FROM lessons
+                 WHERE "moduleId" = ANY($1::uuid[]) AND "tenantId" = $2 AND "organisationId" = $3
+                   AND status = 'published' AND "considerForPassing" = true
+                 GROUP BY "moduleId"`,
+                [moduleIds, tenantId, organisationId],
+              )
+            : Promise.resolve([]),
+        ]);
 
       const totalUsers: number = Number(countResult[0]?.total ?? 0);
       const noOfLessons: number = Number(noOfLessonsResult[0]?.count ?? 0);
