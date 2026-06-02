@@ -3,6 +3,8 @@ import {
   NotFoundException,
   BadRequestException,
   Logger,
+  Inject,
+  forwardRef,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, FindOptionsWhere, Not, FindManyOptions, IsNull, In } from 'typeorm';
@@ -68,6 +70,7 @@ export class TrackingService {
     @InjectRepository(ModuleTrack)
     private readonly moduleTrackRepository: Repository<ModuleTrack>,
     private readonly configService: ConfigService,
+    @Inject(forwardRef(() => LessonsService))
     private readonly lessonsService: LessonsService,
     private readonly enrollmentsService: EnrollmentsService,
     private readonly cacheService: CacheService,
