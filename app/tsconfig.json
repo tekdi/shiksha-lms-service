@@ -20,6 +20,6 @@
     "resolveJsonModule": true,
     "esModuleInterop": true
   },
-  "include": ["src/**/*", "migrations/**/*", "src/storage"],
+  "include": ["src/**/*", "src/migrations/**/*", "src/storage"],
   "exclude": ["node_modules", "dist"]
 }
