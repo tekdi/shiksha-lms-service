@@ -187,12 +187,7 @@ export class RecalculateProgressQueueService extends WorkerHost {
           `UPDATE course_track ct
            SET
              "noOfLessons"      = $5,
-             "completedLessons" = COALESCE(lc.completed, 0),
-             status = CASE
-               WHEN COALESCE(lc.completed, 0) = 0                              THEN 'not_started'
-               WHEN $5 > 0 AND COALESCE(lc.completed, 0) >= $5                 THEN 'completed'
-               ELSE 'incomplete'
-             END
+             "completedLessons" = COALESCE(lc.completed, 0)
            FROM (
              SELECT u."userId", COALESCE(agg.completed, 0) AS completed
              FROM unnest($4::uuid[]) AS u("userId")
