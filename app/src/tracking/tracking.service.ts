@@ -766,11 +766,12 @@ export class TrackingService {
       // Update course track
       courseTrack.completedLessons = completedLessonsCount;
       
-      // Check if course is completed
-      if (courseTrack.completedLessons >= courseTrack.noOfLessons && lessonTrack.status === TrackingStatus.COMPLETED) {
+      // When lesson is submitted, force incomplete regardless of counts
+      if (lessonTrack.status === TrackingStatus.SUBMITTED) {
+        courseTrack.status = TrackingStatus.INCOMPLETE;
+      } else if (courseTrack.completedLessons >= courseTrack.noOfLessons && lessonTrack.status === TrackingStatus.COMPLETED) {
         courseTrack.status = TrackingStatus.COMPLETED;
         courseTrack.endDatetime = new Date();
-        
       } else {
         courseTrack.status = TrackingStatus.INCOMPLETE;
       }
@@ -782,14 +783,14 @@ export class TrackingService {
     let lesson = (lessonTrack as any).lesson;
     if (!lesson) {
       lesson = await this.lessonRepository.findOne({
-        where: { 
+        where: {
           lessonId: lessonTrack.lessonId,
         } as FindOptionsWhere<Lesson>,
       });
     }
 
     if (lesson && lesson.moduleId) {
-      await this.updateModuleTracking(lesson.moduleId, lessonTrack.userId, lessonTrack.tenantId, lessonTrack.organisationId);
+      await this.updateModuleTracking(lesson.moduleId, lessonTrack.userId, lessonTrack.tenantId, lessonTrack.organisationId, lessonTrack.status === TrackingStatus.SUBMITTED);
     }
   }
 
@@ -905,7 +906,7 @@ export class TrackingService {
   /**
    * Helper method to update module tracking
    */
-  private async updateModuleTracking(moduleId: string, userId: string, tenantId: string, organisationId: string): Promise<void> {
+  private async updateModuleTracking(moduleId: string, userId: string, tenantId: string, organisationId: string, skipStatusUpdate = false): Promise<void> {
     
     try {
     // Get module
@@ -971,9 +972,13 @@ export class TrackingService {
     moduleTrack.totalLessons = moduleLessons.length;
     moduleTrack.progress = moduleLessons.length > 0 ? Math.round((completedLessonsCount / moduleLessons.length) * 100) : 0;
 
-    // Update module status based on completion
-    if (completedLessonsCount === moduleLessons.length && moduleLessons.length > 0) {
-      moduleTrack.status = ModuleTrackStatus.COMPLETED;
+    // Update module status based on completion (skip when lesson is submitted)
+    if (!skipStatusUpdate) {
+      if (completedLessonsCount === moduleLessons.length && moduleLessons.length > 0) {
+        moduleTrack.status = ModuleTrackStatus.COMPLETED;
+      } else {
+        moduleTrack.status = ModuleTrackStatus.INCOMPLETE;
+      }
     } else {
       moduleTrack.status = ModuleTrackStatus.INCOMPLETE;
     }
