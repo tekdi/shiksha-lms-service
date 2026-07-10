@@ -8,7 +8,7 @@ export interface NotificationPayload {
   key: string;
   replacements?: Record<string, string | number>;
   email: {
-    receipients: string[];
+    recipients: string[];
   };
 }
 
@@ -37,12 +37,7 @@ export class LmsNotificationService {
       data: JSON.stringify(payload),
     };
 
-    // Log full curl for debugging
-    this.logger.log(
-      `[Notification] curl --location '${config.url}' \\\n` +
-      `  --header 'Content-Type: application/json' \\\n` +
-      `  --data '${config.data}'`,
-    );
+    this.logger.log(`[Notification] Sending to ${config.url}`);
 
     try {
       const response = await axios.request(config);

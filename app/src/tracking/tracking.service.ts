@@ -785,32 +785,31 @@ export class TrackingService {
             select: ['courseId', 'title', 'notification_send'] as any,
           });
           if (course?.notification_send === true) {
-            this.courseCompletionNotification(
-              lessonTrack.userId,
-              lessonTrack.courseId,
-              course.title ?? '',
-              tenantId,
-              organisationId,
-              authorization,
-            ).then(() => {
-              this.courseTrackRepository.update(
-                { courseId: lessonTrack.courseId, userId: lessonTrack.userId, tenantId, organisationId } as any,
-                { notification_sent: true } as any,
-              ).catch(err => this.logger.error(`Failed to mark notification_sent for course=${lessonTrack.courseId}: ${err?.message}`));
+            try {
+              await this.courseCompletionNotification(
+                lessonTrack.userId,
+                lessonTrack.courseId,
+                course.title ?? '',
+                tenantId,
+                organisationId,
+                authorization,
+              );
+              // Set in memory before save to avoid race condition where save overwrites to false
+              courseTrack.notification_sent = true;
 
               // Notify pathway service only after email notification is sent successfully
               if (lessonTrack.courseId) {
-                this.notifyPathwayCourseCompleted(
+                await this.notifyPathwayCourseCompleted(
                   lessonTrack.userId,
                   lessonTrack.courseId,
                   tenantId,
                   organisationId,
                   authorization,
-                ).catch(err => this.logger.warn(`[Pathway] API failed user=${lessonTrack.userId} course=${lessonTrack.courseId}: ${err?.message}`));
+                );
               }
-            }).catch(err =>
-              this.logger.error(`Course completion notification failed for user=${lessonTrack.userId} course=${lessonTrack.courseId}: ${err?.message}`)
-            );
+            } catch (err) {
+              this.logger.error(`Course completion notification or pathway notification failed for user=${lessonTrack.userId} course=${lessonTrack.courseId}: ${err?.message}`);
+            }
           }
         }
       } else {
@@ -1815,15 +1814,9 @@ export class TrackingService {
         ...(accessToken && { authorization: accessToken }),
       };
 
-      // Log full curl for debugging
-      const curlHeaders = Object.entries(requestHeaders)
-        .map(([k, v]) => `--header '${k}: ${v}'`)
-        .join(' \\\n  ');
-      this.logger.log(`[Notification] curl --location '${readUrl}' \\\n  ${curlHeaders}`);
-
       try {
         const res = await axios.get(readUrl, { headers: requestHeaders, timeout: 30000 });
-        this.logger.log(`[Notification] User fetch response status=${res.status} data=${JSON.stringify(res.data)?.substring(0, 200)}`);
+        this.logger.log(`[Notification] User fetch response status=${res.status} userId=${userId}`);
         const userData = res?.data?.result?.userData ?? res?.data?.result ?? {};
         email = userData?.email ?? '';
         firstName = userData?.firstName ?? '';
@@ -1852,31 +1845,32 @@ export class TrackingService {
         '{programName}': courseTitle,
         '{currentYear}': new Date().getFullYear(),
       },
-      email: { receipients: [email] },
+      email: { recipients: [email] },
     };
 
-    this.logger.log(`[Notification] Sending course completion email to=${email} course=${courseId}`);
+    this.logger.log(`[Notification] Sending course completion email course=${courseId} userId=${userId}`);
 
-    this.lmsNotificationService.sendNotification(notificationPayload)
-      .then((mailSend) => {
-        if (mailSend?.result?.email?.errors?.length > 0) {
-          const errorMessages = mailSend.result.email.errors
-            .map((e: any) => e?.error || JSON.stringify(e))
-            .join(', ');
-          this.logger.warn(
-            `[Notification] Email delivery failed userId=${userId} email=${email} course=${courseId} errors=${errorMessages}`,
-          );
-        } else {
-          this.logger.log(
-            `[Notification] Email sent successfully userId=${userId} email=${email} course=${courseId}`,
-          );
-        }
-      })
-      .catch((err) => {
-        this.logger.error(
-          `[Notification] sendNotification threw for userId=${userId} email=${email} course=${courseId}: ${err?.message}`,
+    try {
+      const mailSend = await this.lmsNotificationService.sendNotification(notificationPayload);
+      if (mailSend?.result?.email?.errors?.length > 0) {
+        const errorMessages = mailSend.result.email.errors
+          .map((e: any) => e?.error || JSON.stringify(e))
+          .join(', ');
+        this.logger.warn(
+          `[Notification] Email delivery failed userId=${userId} course=${courseId} errors=${errorMessages}`,
         );
-      });
+        throw new Error(`Email delivery failed: ${errorMessages}`);
+      } else {
+        this.logger.log(
+          `[Notification] Email sent successfully userId=${userId} course=${courseId}`,
+        );
+      }
+    } catch (err) {
+      this.logger.error(
+        `[Notification] sendNotification threw for userId=${userId} course=${courseId}: ${err?.message}`,
+      );
+      throw err;
+    }
   }
 
   /**
