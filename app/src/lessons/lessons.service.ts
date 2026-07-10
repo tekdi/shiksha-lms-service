@@ -4,6 +4,8 @@ import {
   BadRequestException,
   InternalServerErrorException,
   Logger,
+  Inject,
+  forwardRef,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Not, FindOneOptions, FindOptionsWhere, In } from 'typeorm';
@@ -18,10 +20,6 @@ import { Course, CourseStatus } from '../courses/entities/course.entity';
 import { Module, ModuleStatus } from '../modules/entities/module.entity';
 import { Media, MediaStatus } from '../media/entities/media.entity';
 import { LessonTrack } from '../tracking/entities/lesson-track.entity';
-import {
-  UserEnrollment,
-  EnrollmentStatus,
-} from '../enrollments/entities/user-enrollment.entity';
 import { CreateLessonDto } from './dto/create-lesson.dto';
 import { UpdateLessonDto } from './dto/update-lesson.dto';
 import { PaginationDto } from '../common/dto/pagination.dto';
@@ -34,6 +32,7 @@ import { OrderingService } from '../common/services/ordering.service';
 import { AssociatedFile } from '../media/entities/associated-file.entity';
 import { SearchLessonDto } from './dto/search-lesson.dto';
 import { v4 as uuidv4 } from 'uuid';
+import { RecalculateProgressQueueService } from '../tracking/recalculate-progress-queue.service';
 
 @Injectable()
 export class LessonsService {
@@ -49,12 +48,12 @@ export class LessonsService {
     private readonly mediaRepository: Repository<Media>,
     @InjectRepository(LessonTrack)
     private readonly lessonTrackRepository: Repository<LessonTrack>,
-    @InjectRepository(UserEnrollment)
-    private readonly userEnrollmentRepository: Repository<UserEnrollment>,
     private readonly cacheService: CacheService,
     private readonly configService: ConfigService,
     private readonly cacheConfig: CacheConfigService,
     private readonly orderingService: OrderingService,
+    @Inject(forwardRef(() => RecalculateProgressQueueService))
+    private readonly recalculateProgressQueueService: RecalculateProgressQueueService,
   ) {}
 
   /**
@@ -321,6 +320,14 @@ export class LessonsService {
             )
           : Promise.resolve(),
       ]);
+      if (savedLesson.considerForPassing && courseId) {
+        await this.recalculateProgressQueueService.enqueueJob(
+          courseId,
+          tenantId,
+          organisationId,
+        );
+      }
+
       return savedLesson;
     } catch (error) {
       this.logger.error(`Error creating lesson: ${error.message}`, error.stack);
@@ -684,7 +691,15 @@ export class LessonsService {
     organisationId: string,
   ): Promise<Lesson> {
     try {
-      const lesson = await this.findOne(lessonId, tenantId, organisationId);
+      const lesson = await this.lessonRepository.findOne({
+        where: {
+          lessonId,
+          tenantId,
+          organisationId,
+          status: Not(LessonStatus.ARCHIVED),
+        },
+        relations: ['media', 'associatedFiles.media', 'associatedLesson'],
+      });
 
       if (!lesson) {
         throw new NotFoundException(RESPONSE_MESSAGES.ERROR.LESSON_NOT_FOUND);
@@ -963,6 +978,8 @@ export class LessonsService {
         }
       }
 
+      const previousConsiderForPassing = lesson.considerForPassing;
+
       // Update the lesson
       const updatedLesson = this.lessonRepository.merge(lesson, updateData);
       const savedLesson = await this.lessonRepository.save(updatedLesson);
@@ -1127,6 +1144,18 @@ export class LessonsService {
 
       await Promise.all(cacheInvalidationPromises);
 
+      const shouldRecalculate =
+        updateLessonDto.considerForPassing !== undefined &&
+        (updateLessonDto.considerForPassing === true ||
+          previousConsiderForPassing === true);
+      if (shouldRecalculate && courseId) {
+        await this.recalculateProgressQueueService.enqueueJob(
+          courseId,
+          tenantId,
+          organisationId,
+        );
+      }
+
       return await this.findOne(savedLesson.lessonId, tenantId, organisationId);
     } catch (error) {
       this.logger.error(`Error updating lesson: ${error.message}`);
@@ -1156,28 +1185,17 @@ export class LessonsService {
     organisationId: string,
   ): Promise<{ success: boolean; message: string }> {
     try {
-      const lesson = await this.findOne(lessonId, tenantId, organisationId);
+      const lesson = await this.lessonRepository.findOne({
+        where: {
+          lessonId,
+          tenantId,
+          organisationId,
+          status: Not(LessonStatus.ARCHIVED),
+        },
+      });
 
       if (!lesson) {
         throw new NotFoundException(RESPONSE_MESSAGES.ERROR.LESSON_NOT_FOUND);
-      }
-
-      // Check if lesson's course has active enrollments
-      if (lesson.courseId) {
-        const activeEnrollments = await this.userEnrollmentRepository.count({
-          where: {
-            courseId: lesson.courseId,
-            tenantId,
-            organisationId,
-            status: EnrollmentStatus.PUBLISHED,
-          },
-        });
-
-        if (activeEnrollments > 0) {
-          throw new BadRequestException(
-            `Cannot delete lesson. The course has ${activeEnrollments} active enrollment(s). Please cancel all enrollments first.`,
-          );
-        }
       }
 
       // Soft delete by updating status
@@ -1219,6 +1237,14 @@ export class LessonsService {
             )
           : Promise.resolve(),
       ]);
+
+      if (lesson.considerForPassing && courseId) {
+        await this.recalculateProgressQueueService.enqueueJob(
+          courseId,
+          tenantId,
+          organisationId,
+        );
+      }
 
       return {
         success: true,

@@ -1182,6 +1182,62 @@ export class CoursesService {
       moduleTrackMap.set(track.moduleId, track);
     });
 
+    // Fetch assessment metadata (aiEnabled, aiRubricId) for feedback/reflection/assessment lessons
+    const ASSESSMENT_SUBFORMATS = new Set([
+      'feedback',
+      'reflection.prompt',
+      'assessment',
+    ]);
+    const assessmentDataMap = new Map<
+      string,
+      { aiEnabled: boolean; aiRubricId: string | null }
+    >();
+    if (includeLessons) {
+      const assessmentBase = this.configService
+        .get<string>('ASSESSMENT_SERVICE_URL', '')
+        .replace(/\/$/, '');
+      const testIds = new Set<string>();
+      lessonsByModule.forEach((moduleLessons) => {
+        moduleLessons.forEach((lesson) => {
+          if (
+            ASSESSMENT_SUBFORMATS.has(lesson.subFormat) &&
+            lesson.media?.path
+          ) {
+            testIds.add(lesson.media.path);
+          }
+        });
+      });
+      if (assessmentBase && testIds.size > 0) {
+        await Promise.all(
+          Array.from(testIds).map(async (testId) => {
+            try {
+              const { data } = await axios.get(
+                `${assessmentBase}/tests/${testId}?includeHierarchy=false`,
+                {
+                  headers: {
+                    tenantid: tenantId,
+                    organisationid: organisationId,
+                  },
+                  timeout: 10000,
+                },
+              );
+              const result = data?.result;
+              console.log(result, 'result');
+
+              if (result) {
+                assessmentDataMap.set(testId, {
+                  aiEnabled: result.aiEnabled ?? false,
+                  aiRubricId: result.aiRubricId ?? null,
+                });
+              }
+            } catch (error) {
+              console.error(error);
+            }
+          }),
+        );
+      }
+    }
+
     // Build modules with tracking
     const modulesWithTracking = modules.map((module) => {
       let lessonsWithTracking: any[] = [];
@@ -1247,8 +1303,7 @@ export class CoursesService {
                           ? {
                               attemptId:
                                 associatedResponseAttempt.lessonTrackId,
-                              attemptNumber:
-                                associatedResponseAttempt.attempt,
+                              attemptNumber: associatedResponseAttempt.attempt,
                               startDatetime:
                                 associatedResponseAttempt.startDatetime,
                               endDatetime:
@@ -1279,8 +1334,20 @@ export class CoursesService {
           //   eventData = eventDataMap.get(lesson.media.source);
           // }
 
+          const assessmentMeta =
+            ASSESSMENT_SUBFORMATS.has(lesson.subFormat) && lesson.media?.path
+              ? assessmentDataMap.get(lesson.media.path)
+              : undefined;
+
           return {
             ...lesson,
+            media: assessmentMeta
+              ? {
+                  ...lesson.media,
+                  aiEnabled: assessmentMeta.aiEnabled,
+                  aiRubricId: assessmentMeta.aiRubricId,
+                }
+              : lesson.media,
             associatedLesson: associatedLessonsWithTracking,
             // eventData,
             tracking: bestAttempt
@@ -1837,22 +1904,6 @@ export class CoursesService {
   ): Promise<{ success: boolean; message: string }> {
     try {
       const course = await this.findOne(courseId, tenantId, organisationId);
-
-      // Check if course has active enrollments
-      const activeEnrollments = await this.userEnrollmentRepository.count({
-        where: {
-          courseId,
-          tenantId,
-          organisationId,
-          status: EnrollmentStatus.PUBLISHED,
-        },
-      });
-
-      if (activeEnrollments > 0) {
-        throw new BadRequestException(
-          `Cannot delete course. Course has ${activeEnrollments} active enrollment(s). Please delete all enrollments first.`,
-        );
-      }
 
       // Use a database transaction to ensure data consistency
       const result = await this.courseRepository.manager.transaction(
