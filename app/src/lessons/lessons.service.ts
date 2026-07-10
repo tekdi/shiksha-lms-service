@@ -1450,6 +1450,7 @@ export class LessonsService {
           organisationId,
         },
         relations: ['media', 'associatedFiles.media'],
+        order: { ordering: 'ASC' },
       });
 
       if (!lessons || lessons.length === 0) {
@@ -1469,6 +1470,7 @@ export class LessonsService {
             transactionalEntityManager,
             newCourseId,
             authorization,
+            true,
           );
         } catch (error) {
           this.logger.error(
@@ -1499,11 +1501,23 @@ export class LessonsService {
     transactionalEntityManager: any,
     newCourseId: string,
     authorization: string,
+    preserveSourceOrdering: boolean,
   ): Promise<Lesson | boolean> {
     try {
       if (originalLesson.format === LessonFormat.EVENT) {
         return true;
       } else {
+        const lessonOrdering =
+          await this.orderingService.resolveCloneLessonOrdering(
+            originalLesson.ordering,
+            preserveSourceOrdering,
+            newModuleId,
+            newCourseId,
+            tenantId,
+            organisationId,
+            transactionalEntityManager,
+          );
+
         let newMediaId: string | undefined;
 
         // Clone media if lesson has media
@@ -1569,12 +1583,12 @@ export class LessonsService {
           image: originalLesson.image,
           description: originalLesson.description,
           status: originalLesson.status,
-          startDatetime: originalLesson.startDatetime,
-          endDatetime: originalLesson.endDatetime,
+          startDatetime: undefined,
+          endDatetime: undefined,
           storage: originalLesson.storage,
           noOfAttempts: originalLesson.noOfAttempts,
           attemptsGrade: originalLesson.attemptsGrade,
-          prerequisites: originalLesson.prerequisites,
+          prerequisites: undefined,
           idealTime: originalLesson.idealTime,
           resume: originalLesson.resume,
           totalMarks: originalLesson.totalMarks,
@@ -1582,13 +1596,14 @@ export class LessonsService {
           params: originalLesson.params || {},
           sampleLesson: originalLesson.sampleLesson,
           considerForPassing: originalLesson.considerForPassing,
+          ordering: lessonOrdering,
           // Explicitly preserve allowResubmission value from original lesson (true stays true, false stays false)
           // This applies to all lesson formats: feedback, quiz, assessment, reflection.prompt, etc.
           allowResubmission: originalLesson.allowResubmission,
           tenantId,
           organisationId,
           // Override with new values
-          mediaId: newMediaId || null, //Use null if no new media was created
+          mediaId: newMediaId || undefined, //Use undefined if no new media was created
           courseId: newCourseId,
           moduleId: newModuleId,
           createdBy: userId,
@@ -1928,6 +1943,7 @@ export class LessonsService {
             transactionalEntityManager,
             newCourseId,
             authorization,
+            false,
           );
 
           if (typeof clonedLesson === 'boolean') {

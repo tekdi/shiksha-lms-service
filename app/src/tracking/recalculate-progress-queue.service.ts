@@ -189,15 +189,16 @@ export class RecalculateProgressQueueService extends WorkerHost {
              "noOfLessons"      = $5,
              "completedLessons" = COALESCE(lc.completed, 0),
              status = CASE
-               WHEN COALESCE(lc.completed, 0) = 0                              THEN 'not_started'
-               WHEN $5 > 0 AND COALESCE(lc.completed, 0) >= $5                 THEN 'completed'
-               ELSE 'incomplete'
+               WHEN $5 > 0 AND COALESCE(lc.completed_only, 0) >= $5 THEN 'completed'
+               ELSE ct.status
              END
            FROM (
-             SELECT u."userId", COALESCE(agg.completed, 0) AS completed
+             SELECT u."userId", COALESCE(agg.completed, 0) AS completed, COALESCE(agg.completed_only, 0) AS completed_only
              FROM unnest($4::uuid[]) AS u("userId")
              LEFT JOIN (
-               SELECT lt."userId", COUNT(DISTINCT lt."lessonId")::integer AS completed
+               SELECT lt."userId",
+                 COUNT(DISTINCT lt."lessonId")::integer AS completed,
+                 COUNT(DISTINCT CASE WHEN lt.status = 'completed' THEN lt."lessonId" END)::integer AS completed_only
                FROM lesson_track lt
                JOIN lessons l ON lt."lessonId" = l."lessonId"
                WHERE lt."courseId" = $1 AND lt."tenantId" = $2 AND lt."organisationId" = $3

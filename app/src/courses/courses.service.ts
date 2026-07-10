@@ -1182,6 +1182,62 @@ export class CoursesService {
       moduleTrackMap.set(track.moduleId, track);
     });
 
+    // Fetch assessment metadata (aiEnabled, aiRubricId) for feedback/reflection/assessment lessons
+    const ASSESSMENT_SUBFORMATS = new Set([
+      'feedback',
+      'reflection.prompt',
+      'assessment',
+    ]);
+    const assessmentDataMap = new Map<
+      string,
+      { aiEnabled: boolean; aiRubricId: string | null }
+    >();
+    if (includeLessons) {
+      const assessmentBase = this.configService
+        .get<string>('ASSESSMENT_SERVICE_URL', '')
+        .replace(/\/$/, '');
+      const testIds = new Set<string>();
+      lessonsByModule.forEach((moduleLessons) => {
+        moduleLessons.forEach((lesson) => {
+          if (
+            ASSESSMENT_SUBFORMATS.has(lesson.subFormat) &&
+            lesson.media?.path
+          ) {
+            testIds.add(lesson.media.path);
+          }
+        });
+      });
+      if (assessmentBase && testIds.size > 0) {
+        await Promise.all(
+          Array.from(testIds).map(async (testId) => {
+            try {
+              const { data } = await axios.get(
+                `${assessmentBase}/tests/${testId}?includeHierarchy=false`,
+                {
+                  headers: {
+                    tenantid: tenantId,
+                    organisationid: organisationId,
+                  },
+                  timeout: 10000,
+                },
+              );
+              const result = data?.result;
+              console.log(result, 'result');
+
+              if (result) {
+                assessmentDataMap.set(testId, {
+                  aiEnabled: result.aiEnabled ?? false,
+                  aiRubricId: result.aiRubricId ?? null,
+                });
+              }
+            } catch (error) {
+              console.error(error);
+            }
+          }),
+        );
+      }
+    }
+
     // Build modules with tracking
     const modulesWithTracking = modules.map((module) => {
       let lessonsWithTracking: any[] = [];
@@ -1247,8 +1303,7 @@ export class CoursesService {
                           ? {
                               attemptId:
                                 associatedResponseAttempt.lessonTrackId,
-                              attemptNumber:
-                                associatedResponseAttempt.attempt,
+                              attemptNumber: associatedResponseAttempt.attempt,
                               startDatetime:
                                 associatedResponseAttempt.startDatetime,
                               endDatetime:
@@ -1279,8 +1334,20 @@ export class CoursesService {
           //   eventData = eventDataMap.get(lesson.media.source);
           // }
 
+          const assessmentMeta =
+            ASSESSMENT_SUBFORMATS.has(lesson.subFormat) && lesson.media?.path
+              ? assessmentDataMap.get(lesson.media.path)
+              : undefined;
+
           return {
             ...lesson,
+            media: assessmentMeta
+              ? {
+                  ...lesson.media,
+                  aiEnabled: assessmentMeta.aiEnabled,
+                  aiRubricId: assessmentMeta.aiRubricId,
+                }
+              : lesson.media,
             associatedLesson: associatedLessonsWithTracking,
             // eventData,
             tracking: bestAttempt
@@ -1948,16 +2015,30 @@ export class CoursesService {
           const newTitle = `${originalCourse.title} (Copy)`;
           const newAlias = originalCourse.alias + '-copy';
 
+          const resolvedOrdering =
+            await this.orderingService.resolveCloneCourseOrdering(
+              originalCourse.ordering,
+              tenantId,
+              organisationId,
+              transactionalEntityManager,
+            );
+
           // Create the new course
           const newCourseData = {
             ...originalCourse,
             title: newTitle,
             alias: newAlias,
             status: CourseStatus.PUBLISHED,
+            ordering: resolvedOrdering,
             createdBy: userId,
             updatedBy: userId,
             // Remove properties that should not be copied
             courseId: undefined,
+            startDatetime: undefined,
+            endDatetime: undefined,
+            certificateGenDateTime: undefined,
+            certificateIssueDateTime: undefined,
+            prerequisites: undefined,
             params: newCohortId
               ? {
                   ...originalCourse.params,
