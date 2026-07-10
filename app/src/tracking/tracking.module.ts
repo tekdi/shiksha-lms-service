@@ -11,15 +11,16 @@ import { TrackingService } from './tracking.service';
 import { LessonsModule } from '../lessons/lessons.module';
 import { EnrollmentsModule } from '../enrollments/enrollments.module';
 import { CacheModule } from '../cache/cache.module';
+import { LmsNotificationService } from '../common/services/lms-notification.service';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([
-      CourseTrack, 
+      CourseTrack,
       LessonTrack,
       ModuleTrack,
-      Course, 
-      Lesson, 
+      Course,
+      Lesson,
       CourseModule
     ]),
     LessonsModule,
@@ -27,7 +28,7 @@ import { CacheModule } from '../cache/cache.module';
     CacheModule,
   ],
   controllers: [TrackingController],
-  providers: [TrackingService],
+  providers: [TrackingService, LmsNotificationService],
   exports: [TrackingService],
 })
 export class TrackingModule {}
