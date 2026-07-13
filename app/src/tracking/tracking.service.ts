@@ -1285,17 +1285,61 @@ export class TrackingService {
       );
     }
 
-    const { courses, totalElements } = await this.enrollmentsService.usersEnrolledCourses(
-      {
-        userId: dto.userId,
-        cohortId: dto.cohortId,
-        pathwayId: dto.pathwayId,
-        limit,
+    // Eligibility (has >=1 lesson eligible for passing) is not known by the enrollment layer, so it
+    // can't be applied before enrollmentsService's own pagination. Pull every enrolled course across
+    // enrollmentsService's pages (it caps limit at 100 per call), filter for eligibility, then paginate
+    // locally — this keeps totalElements/page-size correct without changing usersEnrolledCourses.
+    const ENROLLMENT_PAGE_SIZE = 100;
+    const allEnrolledCourses: Awaited<
+      ReturnType<typeof this.enrollmentsService.usersEnrolledCourses>
+    >['courses'] = [];
+    let fetchOffset = 0;
+    for (;;) {
+      const page = await this.enrollmentsService.usersEnrolledCourses(
+        {
+          userId: dto.userId,
+          cohortId: dto.cohortId,
+          pathwayId: dto.pathwayId,
+          limit: ENROLLMENT_PAGE_SIZE,
+          offset: fetchOffset,
+        },
+        tenantId,
+        organisationId,
+      );
+      allEnrolledCourses.push(...page.courses);
+      fetchOffset += ENROLLMENT_PAGE_SIZE;
+      if (page.courses.length === 0 || fetchOffset >= page.totalElements) {
+        break;
+      }
+    }
+
+    if (allEnrolledCourses.length === 0) {
+      return {
+        courses: [],
+        totalElements: 0,
         offset,
-      },
-      tenantId,
-      organisationId,
+        limit,
+      };
+    }
+
+    const allEnrolledCourseIds = allEnrolledCourses.map((c) => c.courseId);
+    const eligibleCourseRows = await this.lessonRepository
+      .createQueryBuilder('lesson')
+      .select('DISTINCT lesson.courseId', 'courseId')
+      .where('lesson.courseId IN (:...courseIds)', {
+        courseIds: allEnrolledCourseIds,
+      })
+      .andWhere('lesson.considerForPassing = true')
+      .andWhere('lesson.status = :status', { status: LessonStatus.PUBLISHED })
+      .getRawMany();
+    const eligibleCourseIdSet = new Set(eligibleCourseRows.map((r) => r.courseId));
+
+    // Exclude courses with no lessons eligible for passing — they can never be completed.
+    const eligibleCourses = allEnrolledCourses.filter((c) =>
+      eligibleCourseIdSet.has(c.courseId),
     );
+    const totalElements = eligibleCourses.length;
+    const courses = eligibleCourses.slice(offset, offset + limit);
 
     if (courses.length === 0) {
       return {
@@ -1394,47 +1438,44 @@ export class TrackingService {
       completedEventLessonIds = new Set(completed.map((r) => r.lessonId));
     }
 
-    const resultCourses: UserJourneyItemDto[] = courses
-      .map((course) => {
-        const eventLessonIds = courseToEventLessonIds.get(course.courseId) ?? [];
-        const totalEventLessons = eventLessonIds.length;
-        const isAttendedOneEvent =
-          totalEventLessons > 0 &&
-          eventLessonIds.some((id) => completedEventLessonIds.has(id));
-        const track = courseTrackByCourseId.get(course.courseId);
-        const noOfLessons = track?.noOfLessons ?? 0;
-        const completedLessons = track?.completedLessons ?? 0;
-        const progressPct =
-          noOfLessons > 0 ? Math.round((completedLessons / noOfLessons) * 100) : 0;
-        const courseTrackStatus = track?.status ?? TrackingStatus.NOT_STARTED;
-        const progressDetail = {
-          courseTrackStatus,
-          completedLessons,
-          noOfLessons,
-          progress: progressPct,
-          lastAccessedDate: track?.lastAccessedDate?.toISOString() ?? null,
-          certificateIssued: track?.certificateIssued ?? false,
-          assessmentOutcome: assessmentOutcomeByCourse.get(course.courseId) ?? null,
-        };
-        return {
-          courseId: course.courseId,
-          name: course.title,
-          title: course.title,
-          alias: course.alias,
-          shortDescription: course.shortDescription,
-          description: course.description,
-          image: course.image,
-          status: courseTrackStatus,
-          progress: progressPct,
-          params: course.params,
-          ordering: course.ordering,
-          totalEventLessons,
-          isAttendedOneEvent,
-          progressDetail,
-        };
-      })
-      // Exclude courses with no lessons eligible for passing (considerForPassing=true, published) — can never be completed.
-      .filter((course) => course.progressDetail.noOfLessons > 0);
+    const resultCourses: UserJourneyItemDto[] = courses.map((course) => {
+      const eventLessonIds = courseToEventLessonIds.get(course.courseId) ?? [];
+      const totalEventLessons = eventLessonIds.length;
+      const isAttendedOneEvent =
+        totalEventLessons > 0 &&
+        eventLessonIds.some((id) => completedEventLessonIds.has(id));
+      const track = courseTrackByCourseId.get(course.courseId);
+      const noOfLessons = track?.noOfLessons ?? 0;
+      const completedLessons = track?.completedLessons ?? 0;
+      const progressPct =
+        noOfLessons > 0 ? Math.round((completedLessons / noOfLessons) * 100) : 0;
+      const courseTrackStatus = track?.status ?? TrackingStatus.NOT_STARTED;
+      const progressDetail = {
+        courseTrackStatus,
+        completedLessons,
+        noOfLessons,
+        progress: progressPct,
+        lastAccessedDate: track?.lastAccessedDate?.toISOString() ?? null,
+        certificateIssued: track?.certificateIssued ?? false,
+        assessmentOutcome: assessmentOutcomeByCourse.get(course.courseId) ?? null,
+      };
+      return {
+        courseId: course.courseId,
+        name: course.title,
+        title: course.title,
+        alias: course.alias,
+        shortDescription: course.shortDescription,
+        description: course.description,
+        image: course.image,
+        status: courseTrackStatus,
+        progress: progressPct,
+        params: course.params,
+        ordering: course.ordering,
+        totalEventLessons,
+        isAttendedOneEvent,
+        progressDetail,
+      };
+    });
 
     return {
       courses: resultCourses,
