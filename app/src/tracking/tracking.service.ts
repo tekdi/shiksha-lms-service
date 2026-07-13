@@ -1394,44 +1394,47 @@ export class TrackingService {
       completedEventLessonIds = new Set(completed.map((r) => r.lessonId));
     }
 
-    const resultCourses: UserJourneyItemDto[] = courses.map((course) => {
-      const eventLessonIds = courseToEventLessonIds.get(course.courseId) ?? [];
-      const totalEventLessons = eventLessonIds.length;
-      const isAttendedOneEvent =
-        totalEventLessons > 0 &&
-        eventLessonIds.some((id) => completedEventLessonIds.has(id));
-      const track = courseTrackByCourseId.get(course.courseId);
-      const noOfLessons = track?.noOfLessons ?? 0;
-      const completedLessons = track?.completedLessons ?? 0;
-      const progressPct =
-        noOfLessons > 0 ? Math.round((completedLessons / noOfLessons) * 100) : 0;
-      const courseTrackStatus = track?.status ?? TrackingStatus.NOT_STARTED;
-      const progressDetail = {
-        courseTrackStatus,
-        completedLessons,
-        noOfLessons,
-        progress: progressPct,
-        lastAccessedDate: track?.lastAccessedDate?.toISOString() ?? null,
-        certificateIssued: track?.certificateIssued ?? false,
-        assessmentOutcome: assessmentOutcomeByCourse.get(course.courseId) ?? null,
-      };
-      return {
-        courseId: course.courseId,
-        name: course.title,
-        title: course.title,
-        alias: course.alias,
-        shortDescription: course.shortDescription,
-        description: course.description,
-        image: course.image,
-        status: courseTrackStatus,
-        progress: progressPct,
-        params: course.params,
-        ordering: course.ordering,
-        totalEventLessons,
-        isAttendedOneEvent,
-        progressDetail,
-      };
-    });
+    const resultCourses: UserJourneyItemDto[] = courses
+      .map((course) => {
+        const eventLessonIds = courseToEventLessonIds.get(course.courseId) ?? [];
+        const totalEventLessons = eventLessonIds.length;
+        const isAttendedOneEvent =
+          totalEventLessons > 0 &&
+          eventLessonIds.some((id) => completedEventLessonIds.has(id));
+        const track = courseTrackByCourseId.get(course.courseId);
+        const noOfLessons = track?.noOfLessons ?? 0;
+        const completedLessons = track?.completedLessons ?? 0;
+        const progressPct =
+          noOfLessons > 0 ? Math.round((completedLessons / noOfLessons) * 100) : 0;
+        const courseTrackStatus = track?.status ?? TrackingStatus.NOT_STARTED;
+        const progressDetail = {
+          courseTrackStatus,
+          completedLessons,
+          noOfLessons,
+          progress: progressPct,
+          lastAccessedDate: track?.lastAccessedDate?.toISOString() ?? null,
+          certificateIssued: track?.certificateIssued ?? false,
+          assessmentOutcome: assessmentOutcomeByCourse.get(course.courseId) ?? null,
+        };
+        return {
+          courseId: course.courseId,
+          name: course.title,
+          title: course.title,
+          alias: course.alias,
+          shortDescription: course.shortDescription,
+          description: course.description,
+          image: course.image,
+          status: courseTrackStatus,
+          progress: progressPct,
+          params: course.params,
+          ordering: course.ordering,
+          totalEventLessons,
+          isAttendedOneEvent,
+          progressDetail,
+        };
+      })
+      // Exclude courses with no lessons eligible for passing (considerForPassing=true, published) — can never be completed.
+      .filter((course) => course.progressDetail.noOfLessons > 0);
 
     return {
       courses: resultCourses,
