@@ -1325,17 +1325,92 @@ export class TrackingService {
       );
     }
 
-    const { courses, totalElements } = await this.enrollmentsService.usersEnrolledCourses(
+    // Eligibility (has >=1 lesson eligible for passing) is not known by the enrollment layer, so it
+    // can't be applied before enrollmentsService's own pagination. Pull every enrolled course across
+    // enrollmentsService's pages (it caps limit at 100 per call), filter for eligibility, then paginate
+    // locally — this keeps totalElements/page-size correct without changing usersEnrolledCourses.
+    const ENROLLMENT_PAGE_SIZE = 100;
+    type EnrolledCourse = Awaited<
+      ReturnType<typeof this.enrollmentsService.usersEnrolledCourses>
+    >['courses'][number];
+
+    const firstPage = await this.enrollmentsService.usersEnrolledCourses(
       {
         userId: dto.userId,
         cohortId: dto.cohortId,
         pathwayId: dto.pathwayId,
-        limit,
-        offset,
+        limit: ENROLLMENT_PAGE_SIZE,
+        offset: 0,
       },
       tenantId,
       organisationId,
     );
+
+    let allEnrolledCourses: EnrolledCourse[] = firstPage.courses;
+    // Most cohorts fit in a single page; only fan out for the rare case with >100 enrolled courses.
+    if (firstPage.totalElements > ENROLLMENT_PAGE_SIZE) {
+      const remainingOffsets: number[] = [];
+      for (
+        let off = ENROLLMENT_PAGE_SIZE;
+        off < firstPage.totalElements;
+        off += ENROLLMENT_PAGE_SIZE
+      ) {
+        remainingOffsets.push(off);
+      }
+      const remainingPages = await Promise.all(
+        remainingOffsets.map((off) =>
+          this.enrollmentsService.usersEnrolledCourses(
+            {
+              userId: dto.userId,
+              cohortId: dto.cohortId,
+              pathwayId: dto.pathwayId,
+              limit: ENROLLMENT_PAGE_SIZE,
+              offset: off,
+            },
+            tenantId,
+            organisationId,
+          ),
+        ),
+      );
+      allEnrolledCourses = allEnrolledCourses.concat(
+        ...remainingPages.map((p) => p.courses),
+      );
+    }
+
+    if (allEnrolledCourses.length === 0) {
+      return {
+        courses: [],
+        totalElements: 0,
+        offset,
+        limit,
+      };
+    }
+
+    const allEnrolledCourseIds = allEnrolledCourses.map((c) => c.courseId);
+    // EXISTS short-circuits per course instead of scanning+deduping every matching lesson row.
+    const eligibleCourseSql = `
+      SELECT c."courseId"
+      FROM UNNEST($1::uuid[]) AS c("courseId")
+      WHERE EXISTS (
+        SELECT 1
+        FROM lessons l
+        WHERE l."courseId" = c."courseId"
+          AND l."considerForPassing" = true
+          AND l."status" = $2
+      )
+    `;
+    const eligibleCourseParams = [allEnrolledCourseIds, LessonStatus.PUBLISHED];
+    
+    const eligibleCourseRows: { courseId: string }[] =
+      await this.lessonRepository.query(eligibleCourseSql, eligibleCourseParams);
+    const eligibleCourseIdSet = new Set(eligibleCourseRows.map((r) => r.courseId));
+
+    // Exclude courses with no lessons eligible for passing — they can never be completed.
+    const eligibleCourses = allEnrolledCourses.filter((c) =>
+      eligibleCourseIdSet.has(c.courseId),
+    );
+    const totalElements = eligibleCourses.length;
+    const courses = eligibleCourses.slice(offset, offset + limit);
 
     if (courses.length === 0) {
       return {
