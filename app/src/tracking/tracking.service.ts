@@ -782,7 +782,7 @@ export class TrackingService {
         if (!courseTrack.notification_sent) {
           const course = await this.courseRepository.findOne({
             where: { courseId: lessonTrack.courseId } as FindOptionsWhere<Course>,
-            select: ['courseId', 'title', 'notification_send'] as any,
+            select: ['courseId', 'title', 'notification_send', 'params'] as any,
           });
           if (course?.notification_send === true) {
             try {
@@ -805,6 +805,7 @@ export class TrackingService {
                   tenantId,
                   organisationId,
                   authorization,
+                  course.params?.pathwayId,
                 );
               }
             } catch (err) {
@@ -1959,6 +1960,7 @@ export class TrackingService {
     tenantId: string,
     organisationId: string,
     authorization?: string,
+    pathwayId?: string,
   ): Promise<void> {
     const userServiceUrl = this.configService.get<string>('USER_SERVICE_URL', '');
     if (!userServiceUrl) return;
@@ -1967,7 +1969,7 @@ export class TrackingService {
 
     await axios.post(
       `${userServiceUrl}/pathway/course-completed`,
-      { userId, courseId, tenantId, organisationId },
+      { userId, courseId, pathwayId, tenantId, organisationId },
       {
         headers: {
           'Content-Type': 'application/json',
@@ -1978,6 +1980,6 @@ export class TrackingService {
         timeout: 5000,
       },
     );
-    this.logger.log(`[Pathway] Notified user-service: userId=${userId} courseId=${courseId}`);
+    this.logger.log(`[Pathway] Notified user-service: userId=${userId} courseId=${courseId} pathwayId=${pathwayId}`);
   }
 }
