@@ -23,8 +23,10 @@ export class LmsNotificationService {
 
   async sendNotification(payload: NotificationPayload): Promise<any> {
     if (!this.notificationUrl) {
-      this.logger.warn('NOTIFICATION_URL not configured — notification skipped');
-      return;
+      throw new HttpException(
+        'NOTIFICATION_URL is not configured — cannot send notification',
+        HttpStatus.SERVICE_UNAVAILABLE,
+      );
     }
 
     const config: AxiosRequestConfig = {

@@ -33,6 +33,11 @@ import axios from 'axios';
 
 type FinalAssessmentOutcome = 'pass' | 'fail' | 'submitted' | null;
 
+type NotificationOutcome =
+  | { status: 'SENT' }
+  | { status: 'NO_EMAIL' }
+  | { status: 'RETRYABLE_FAILURE'; reason: string };
+
 /**
  * Controls how `progressDetail.assessmentOutcome` is computed for user journey (one “final” assessment
  * lesson per course).
@@ -776,17 +781,29 @@ export class TrackingService {
         courseTrack.status = TrackingStatus.COMPLETED;
         courseTrack.endDatetime = new Date();
 
-        // Send course completion notification if enabled on the course
-        // and this user hasn't been notified yet for this course track.
-        // Only after notification is sent, notify the pathway service to mark COMPLETED + assign tags.
+        // Atomically claim the notification slot before making any external calls.
+        // UPDATE ... WHERE notification_sent = false ensures only one concurrent
+        // request proceeds — affected === 0 means another request already claimed it.
         if (!courseTrack.notification_sent) {
-          const course = await this.courseRepository.findOne({
-            where: { courseId: lessonTrack.courseId } as FindOptionsWhere<Course>,
-            select: ['courseId', 'title', 'notification_send', 'params'] as any,
-          });
-          if (course?.notification_send === true) {
-            try {
-              await this.courseCompletionNotification(
+          const claimed = await this.courseTrackRepository
+            .createQueryBuilder()
+            .update(CourseTrack)
+            .set({ notification_sent: true })
+            .where('courseTrackId = :id', { id: courseTrack.courseTrackId })
+            .andWhere('notification_sent = :sent', { sent: false })
+            .execute();
+
+          if (claimed.affected === 1) {
+            courseTrack.notification_sent = true;
+            const course = await this.courseRepository.findOne({
+              where: { courseId: lessonTrack.courseId } as FindOptionsWhere<Course>,
+              select: ['courseId', 'title', 'notification_send', 'params'] as any,
+            });
+
+            // Email notification — outcome drives whether notification_sent stays true.
+            // RETRYABLE_FAILURE resets the flag so the next lesson update retries.
+            if (course?.notification_send === true) {
+              const outcome = await this.courseCompletionNotification(
                 lessonTrack.userId,
                 lessonTrack.courseId,
                 course.title ?? '',
@@ -794,22 +811,34 @@ export class TrackingService {
                 organisationId,
                 authorization,
               );
-              // Set in memory before save to avoid race condition where save overwrites to false
-              courseTrack.notification_sent = true;
-
-              // Notify pathway service only after email notification is sent successfully
-              if (lessonTrack.courseId) {
-                await this.notifyPathwayCourseCompleted(
-                  lessonTrack.userId,
-                  lessonTrack.courseId,
-                  tenantId,
-                  organisationId,
-                  authorization,
-                  course.params?.pathwayId,
+              if (outcome.status === 'RETRYABLE_FAILURE') {
+                this.logger.error(`Course completion email retryable failure for user=${lessonTrack.userId} course=${lessonTrack.courseId}: ${outcome.reason}`);
+                await this.courseTrackRepository.update(
+                  { courseTrackId: courseTrack.courseTrackId },
+                  { notification_sent: false },
                 );
+                courseTrack.notification_sent = false;
               }
-            } catch (err) {
-              this.logger.error(`Course completion notification or pathway notification failed for user=${lessonTrack.userId} course=${lessonTrack.courseId}: ${err?.message}`);
+            }
+
+            // Pathway completion — retried up to 3 times, independent of email outcome
+            if (course?.params?.pathwayId) {
+              let success = false;
+              for (let attempt = 1; attempt <= 3 && !success; attempt++) {
+                try {
+                  await this.notifyPathwayCourseCompleted(
+                    lessonTrack.userId,
+                    lessonTrack.courseId,
+                    tenantId,
+                    organisationId,
+                    authorization,
+                    course.params.pathwayId,
+                  );
+                  success = true;
+                } catch (err) {
+                  this.logger.error(`Pathway completion callback attempt ${attempt}/3 failed for user=${lessonTrack.userId} course=${lessonTrack.courseId}: ${err?.message}`);
+                }
+              }
             }
           }
         }
@@ -1863,9 +1892,13 @@ export class TrackingService {
 
   /**
    * Generic course completion notification.
-   * Called fire-and-forget when course.notification_send = true and courseTrack.notification_sent = false.
-   * Fetches user profile from user-service, then sends notification via LmsNotificationService → NOTIFICATION_URL.
-   * Self-contained in LMS — any course can enable this by setting notification_send = true.
+   * Called when course.notification_send = true and courseTrack.notification_sent = false.
+   * Returns a NotificationOutcome — never throws.
+   *
+   * SENT            — email was accepted by the notification service.
+   * NO_EMAIL        — user profile fetched successfully but contains no email; permanent skip.
+   * RETRYABLE_FAILURE — transient error (user-service down, notification service down, etc.);
+   *                    caller should reset notification_sent=false so the next trigger retries.
    */
   private async courseCompletionNotification(
     userId: string,
@@ -1874,39 +1907,41 @@ export class TrackingService {
     tenantId: string,
     organisationId: string,
     authorization?: string,
-  ): Promise<void> {
+  ): Promise<NotificationOutcome> {
     const userServiceUrl = this.configService.get<string>('USER_SERVICE_URL', '');
     const accessToken = authorization || this.configService.get<string>('USER_SERVICE_ACCESS_TOKEN', '');
     let email = '';
     let firstName = '';
     let lastName = '';
 
-    // Fetch user profile via GET /read/:userId?fieldvalue=true
-    if (userServiceUrl) {
-      const readUrl = `${userServiceUrl}/read/${userId}?fieldvalue=true`;
-      const requestHeaders: Record<string, string> = {
-        tenantid: tenantId,
-        organisationid: organisationId,
-        ...(accessToken && { authorization: accessToken }),
-      };
-
-      try {
-        const res = await axios.get(readUrl, { headers: requestHeaders, timeout: 30000 });
-        this.logger.log(`[Notification] User fetch response status=${res.status} userId=${userId}`);
-        const userData = res?.data?.result?.userData ?? res?.data?.result ?? {};
-        email = userData?.email ?? '';
-        firstName = userData?.firstName ?? '';
-        lastName = userData?.lastName ?? '';
-      } catch (err) {
-        this.logger.warn(`[Notification] Could not fetch user profile: GET ${readUrl} userId=${userId} status=${err?.response?.status} error=${err?.message}`);
-      }
-    } else {
+    if (!userServiceUrl) {
       this.logger.warn('[Notification] USER_SERVICE_URL not configured — cannot fetch user profile');
+      return { status: 'RETRYABLE_FAILURE', reason: 'USER_SERVICE_URL not configured' };
+    }
+
+    // Fetch user profile via GET /read/:userId?fieldvalue=true
+    const readUrl = `${userServiceUrl}/read/${userId}?fieldvalue=true`;
+    const requestHeaders: Record<string, string> = {
+      tenantid: tenantId,
+      organisationid: organisationId,
+      ...(accessToken && { authorization: accessToken }),
+    };
+
+    try {
+      const res = await axios.get(readUrl, { headers: requestHeaders, timeout: 30000 });
+      this.logger.log(`[Notification] User fetch response status=${res.status} userId=${userId}`);
+      const userData = res?.data?.result?.userData ?? res?.data?.result ?? {};
+      email = userData?.email ?? '';
+      firstName = userData?.firstName ?? '';
+      lastName = userData?.lastName ?? '';
+    } catch (err) {
+      this.logger.warn(`[Notification] Could not fetch user profile: GET ${readUrl} userId=${userId} status=${err?.response?.status} error=${err?.message}`);
+      return { status: 'RETRYABLE_FAILURE', reason: `User-service fetch failed: ${err?.message}` };
     }
 
     if (!email) {
-      this.logger.warn(`[Notification] Skipping — no email found for userId=${userId}`);
-      return;
+      this.logger.warn(`[Notification] No email address in profile for userId=${userId} — skipping permanently`);
+      return { status: 'NO_EMAIL' };
     }
 
     const notificationPayload = {
@@ -1932,20 +1967,14 @@ export class TrackingService {
         const errorMessages = mailSend.result.email.errors
           .map((e: any) => e?.error || JSON.stringify(e))
           .join(', ');
-        this.logger.warn(
-          `[Notification] Email delivery failed userId=${userId} course=${courseId} errors=${errorMessages}`,
-        );
-        throw new Error(`Email delivery failed: ${errorMessages}`);
-      } else {
-        this.logger.log(
-          `[Notification] Email sent successfully userId=${userId} course=${courseId}`,
-        );
+        this.logger.warn(`[Notification] Email delivery failed userId=${userId} course=${courseId} errors=${errorMessages}`);
+        return { status: 'RETRYABLE_FAILURE', reason: `Email delivery failed: ${errorMessages}` };
       }
+      this.logger.log(`[Notification] Email sent successfully userId=${userId} course=${courseId}`);
+      return { status: 'SENT' };
     } catch (err) {
-      this.logger.error(
-        `[Notification] sendNotification threw for userId=${userId} course=${courseId}: ${err?.message}`,
-      );
-      throw err;
+      this.logger.error(`[Notification] sendNotification threw for userId=${userId} course=${courseId}: ${err?.message}`);
+      return { status: 'RETRYABLE_FAILURE', reason: err?.message };
     }
   }
 
