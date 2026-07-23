@@ -9,6 +9,7 @@ import {
   Patch,
   HttpCode,
   HttpStatus,
+  Headers,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -235,7 +236,8 @@ export class TrackingController {
     @Param('attemptId', ParseUUIDPipe) attemptId: string,
     @Body() UpdateLessonTrackingDto: UpdateLessonTrackingDto,
     @Query() query: CommonQueryDto,
-    @TenantOrg() tenant: { tenantId: string; organisationId: string },
+    @TenantOrg() tenant: {tenantId: string, organisationId: string},
+    @Headers('authorization') authorization?: string,
   ): Promise<LessonTrack> {
     return this.trackingService.updateProgress(
       attemptId,
@@ -243,6 +245,7 @@ export class TrackingController {
       query.userId,
       tenant.tenantId,
       tenant.organisationId,
+      authorization,
     );
   }
 

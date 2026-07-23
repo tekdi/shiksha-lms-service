@@ -28,9 +28,15 @@ import { ConfigService } from '@nestjs/config';
 import { ModuleTrack, ModuleTrackStatus } from './entities/module-track.entity';
 import { LessonsService } from '../lessons/lessons.service';
 import { CacheService } from '../cache/cache.service';
+import { LmsNotificationService } from '../common/services/lms-notification.service';
 import axios from 'axios';
 
 type FinalAssessmentOutcome = 'pass' | 'fail' | 'submitted' | null;
+
+type NotificationOutcome =
+  | { status: 'SENT' }
+  | { status: 'NO_EMAIL' }
+  | { status: 'RETRYABLE_FAILURE'; reason: string };
 
 /**
  * Controls how `progressDetail.assessmentOutcome` is computed for user journey (one “final” assessment
@@ -74,6 +80,7 @@ export class TrackingService {
     private readonly lessonsService: LessonsService,
     private readonly enrollmentsService: EnrollmentsService,
     private readonly cacheService: CacheService,
+    private readonly lmsNotificationService: LmsNotificationService,
   ) {}
 
   /**
@@ -647,7 +654,8 @@ export class TrackingService {
     updateProgressDto: UpdateLessonTrackingDto,
     userId: string,
     tenantId: string,
-    organisationId: string
+    organisationId: string,
+    authorization?: string,
   ): Promise<LessonTrack> {
     const attempt = await this.lessonTrackRepository.findOne({
       where: { 
@@ -705,7 +713,7 @@ export class TrackingService {
     // Update course and module tracking asynchronously (fire and forget) to avoid blocking response
     // Skip expensive operations for incomplete status - no need to recalculate course completion
     if (savedAttempt.courseId && savedAttempt.status !== TrackingStatus.INCOMPLETE) {
-      this.updateCourseAndModuleTracking(savedAttempt, tenantId, organisationId)
+      this.updateCourseAndModuleTracking(savedAttempt, tenantId, organisationId, authorization)
         .catch(err => this.logger.error('Failed to update course/module tracking asynchronously', err));
     }
 
@@ -717,7 +725,7 @@ export class TrackingService {
   /**
    * Helper method to update course and module tracking
    */
-  public async updateCourseAndModuleTracking(lessonTrack: LessonTrack, tenantId: string, organisationId: string): Promise<void> {
+  public async updateCourseAndModuleTracking(lessonTrack: LessonTrack, tenantId: string, organisationId: string, authorization?: string): Promise<void> {
     if (!lessonTrack.courseId) {
       return;
     }
@@ -772,6 +780,68 @@ export class TrackingService {
       } else if (courseTrack.completedLessons >= courseTrack.noOfLessons && lessonTrack.status === TrackingStatus.COMPLETED) {
         courseTrack.status = TrackingStatus.COMPLETED;
         courseTrack.endDatetime = new Date();
+
+        // Atomically claim the notification slot before making any external calls.
+        // UPDATE ... WHERE notification_sent = false ensures only one concurrent
+        // request proceeds — affected === 0 means another request already claimed it.
+        if (!courseTrack.notification_sent) {
+          const claimed = await this.courseTrackRepository
+            .createQueryBuilder()
+            .update(CourseTrack)
+            .set({ notification_sent: true })
+            .where('courseTrackId = :id', { id: courseTrack.courseTrackId })
+            .andWhere('notification_sent = :sent', { sent: false })
+            .execute();
+
+          if (claimed.affected === 1) {
+            courseTrack.notification_sent = true;
+            const course = await this.courseRepository.findOne({
+              where: { courseId: lessonTrack.courseId } as FindOptionsWhere<Course>,
+              select: ['courseId', 'title', 'notification_send', 'params'] as any,
+            });
+
+            // Email notification — outcome drives whether notification_sent stays true.
+            // RETRYABLE_FAILURE resets the flag so the next lesson update retries.
+            if (course?.notification_send === true) {
+              const outcome = await this.courseCompletionNotification(
+                lessonTrack.userId,
+                lessonTrack.courseId,
+                course.title ?? '',
+                tenantId,
+                organisationId,
+                authorization,
+              );
+              if (outcome.status === 'RETRYABLE_FAILURE') {
+                this.logger.error(`Course completion email retryable failure for user=${lessonTrack.userId} course=${lessonTrack.courseId}: ${outcome.reason}`);
+                await this.courseTrackRepository.update(
+                  { courseTrackId: courseTrack.courseTrackId },
+                  { notification_sent: false },
+                );
+                courseTrack.notification_sent = false;
+              }
+            }
+
+            // Pathway completion — retried up to 3 times, independent of email outcome
+            if (course?.params?.pathwayId) {
+              let success = false;
+              for (let attempt = 1; attempt <= 3 && !success; attempt++) {
+                try {
+                  await this.notifyPathwayCourseCompleted(
+                    lessonTrack.userId,
+                    lessonTrack.courseId,
+                    tenantId,
+                    organisationId,
+                    authorization,
+                    course.params.pathwayId,
+                  );
+                  success = true;
+                } catch (err) {
+                  this.logger.error(`Pathway completion callback attempt ${attempt}/3 failed for user=${lessonTrack.userId} course=${lessonTrack.courseId}: ${err?.message}`);
+                }
+              }
+            }
+          }
+        }
       } else {
         courseTrack.status = TrackingStatus.INCOMPLETE;
       }
@@ -1818,5 +1888,127 @@ export class TrackingService {
     }
 
     return out;
+  }
+
+  /**
+   * Generic course completion notification.
+   * Called when course.notification_send = true and courseTrack.notification_sent = false.
+   * Returns a NotificationOutcome — never throws.
+   *
+   * SENT            — email was accepted by the notification service.
+   * NO_EMAIL        — user profile fetched successfully but contains no email; permanent skip.
+   * RETRYABLE_FAILURE — transient error (user-service down, notification service down, etc.);
+   *                    caller should reset notification_sent=false so the next trigger retries.
+   */
+  private async courseCompletionNotification(
+    userId: string,
+    courseId: string,
+    courseTitle: string,
+    tenantId: string,
+    organisationId: string,
+    authorization?: string,
+  ): Promise<NotificationOutcome> {
+    const userServiceUrl = this.configService.get<string>('USER_SERVICE_URL', '');
+    const accessToken = authorization || this.configService.get<string>('USER_SERVICE_ACCESS_TOKEN', '');
+    let email = '';
+    let firstName = '';
+    let lastName = '';
+
+    if (!userServiceUrl) {
+      this.logger.warn('[Notification] USER_SERVICE_URL not configured — cannot fetch user profile');
+      return { status: 'RETRYABLE_FAILURE', reason: 'USER_SERVICE_URL not configured' };
+    }
+
+    // Fetch user profile via GET /read/:userId?fieldvalue=true
+    const readUrl = `${userServiceUrl}/read/${userId}?fieldvalue=true`;
+    const requestHeaders: Record<string, string> = {
+      tenantid: tenantId,
+      organisationid: organisationId,
+      ...(accessToken && { authorization: accessToken }),
+    };
+
+    try {
+      const res = await axios.get(readUrl, { headers: requestHeaders, timeout: 30000 });
+      this.logger.log(`[Notification] User fetch response status=${res.status} userId=${userId}`);
+      const userData = res?.data?.result?.userData ?? res?.data?.result ?? {};
+      email = userData?.email ?? '';
+      firstName = userData?.firstName ?? '';
+      lastName = userData?.lastName ?? '';
+    } catch (err) {
+      this.logger.warn(`[Notification] Could not fetch user profile: GET ${readUrl} userId=${userId} status=${err?.response?.status} error=${err?.message}`);
+      return { status: 'RETRYABLE_FAILURE', reason: `User-service fetch failed: ${err?.message}` };
+    }
+
+    if (!email) {
+      this.logger.warn(`[Notification] No email address in profile for userId=${userId} — skipping permanently`);
+      return { status: 'NO_EMAIL' };
+    }
+
+    const notificationPayload = {
+      isQueue: false,
+      context: 'USER',
+      key: 'onCourseCompletion',
+      replacements: {
+        '{username}': `${firstName} ${lastName}`.trim(),
+        '{firstName}': firstName,
+        '{lastName}': lastName,
+        '{courseName}': courseTitle,
+        '{programName}': courseTitle,
+        '{currentYear}': new Date().getFullYear(),
+      },
+      email: { recipients: [email] },
+    };
+
+    this.logger.log(`[Notification] Sending course completion email course=${courseId} userId=${userId}`);
+
+    try {
+      const mailSend = await this.lmsNotificationService.sendNotification(notificationPayload);
+      if (mailSend?.result?.email?.errors?.length > 0) {
+        const errorMessages = mailSend.result.email.errors
+          .map((e: any) => e?.error || JSON.stringify(e))
+          .join(', ');
+        this.logger.warn(`[Notification] Email delivery failed userId=${userId} course=${courseId} errors=${errorMessages}`);
+        return { status: 'RETRYABLE_FAILURE', reason: `Email delivery failed: ${errorMessages}` };
+      }
+      this.logger.log(`[Notification] Email sent successfully userId=${userId} course=${courseId}`);
+      return { status: 'SENT' };
+    } catch (err) {
+      this.logger.error(`[Notification] sendNotification threw for userId=${userId} course=${courseId}: ${err?.message}`);
+      return { status: 'RETRYABLE_FAILURE', reason: err?.message };
+    }
+  }
+
+  /**
+   * Notifies user-service pathway module that a course was completed.
+   * Fire-and-forget — called after courseTrack.status transitions to COMPLETED.
+   * User-service marks the linked VOLUNTEER pathway history as COMPLETED and assigns tags.
+   */
+  private async notifyPathwayCourseCompleted(
+    userId: string,
+    courseId: string,
+    tenantId: string,
+    organisationId: string,
+    authorization?: string,
+    pathwayId?: string,
+  ): Promise<void> {
+    const userServiceUrl = this.configService.get<string>('USER_SERVICE_URL', '');
+    if (!userServiceUrl) return;
+
+    const token = authorization || `Bearer ${this.configService.get<string>('USER_SERVICE_ACCESS_TOKEN', '')}`;
+
+    await axios.post(
+      `${userServiceUrl}/pathway/course-completed`,
+      { userId, courseId, pathwayId, tenantId, organisationId },
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: token,
+          tenantid: tenantId,
+          organisationid: organisationId,
+        },
+        timeout: 5000,
+      },
+    );
+    this.logger.log(`[Pathway] Notified user-service: userId=${userId} courseId=${courseId} pathwayId=${pathwayId}`);
   }
 }

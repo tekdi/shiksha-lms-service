@@ -191,4 +191,13 @@ export class CreateCourseDto {
   @IsOptional()
   @IsDateString()
   certificateIssueDateTime?: string;
+
+  @ApiPropertyOptional({
+    description: 'If true, fires a webhook to user-service on course completion to send notification email and assign volunteer tags. Set at course creation for volunteer pathway courses.',
+    example: false,
+    default: false,
+  })
+  @IsOptional()
+  @IsBoolean()
+  notification_send?: boolean;
 }

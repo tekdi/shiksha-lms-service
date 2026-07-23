@@ -14,6 +14,7 @@ import { RecalculateProgressQueueService } from './recalculate-progress-queue.se
 import { LessonsModule } from '../lessons/lessons.module';
 import { EnrollmentsModule } from '../enrollments/enrollments.module';
 import { CacheModule } from '../cache/cache.module';
+import { LmsNotificationService } from '../common/services/lms-notification.service';
 
 @Module({
   imports: [
@@ -32,7 +33,7 @@ import { CacheModule } from '../cache/cache.module';
     CacheModule,
   ],
   controllers: [TrackingController],
-  providers: [TrackingService, RecalculateProgressQueueService],
+  providers: [TrackingService, LmsNotificationService, RecalculateProgressQueueService],
   exports: [TrackingService, RecalculateProgressQueueService],
 })
 export class TrackingModule {}
