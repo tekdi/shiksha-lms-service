@@ -1383,6 +1383,34 @@ export class TrackingService {
 
     const courseIds = courses.map((c) => c.courseId);
 
+    // isAttendedOneEvent is a global flag: if the user has completed at least one
+    // published event lesson in ANY enrolled course (including ineligible ones
+    // excluded from the response), it is true for every course returned here.
+    const allEventLessons = await this.lessonRepository.find({
+      where: {
+        courseId: In(allEnrolledCourseIds),
+        format: LessonFormat.EVENT,
+        status: LessonStatus.PUBLISHED,
+        tenantId,
+        organisationId,
+      },
+      select: ['lessonId'],
+    });
+
+    let hasAttendedOneEvent = false;
+    if (allEventLessons.length > 0) {
+      const attendedCount = await this.lessonTrackRepository.count({
+        where: {
+          userId: dto.userId,
+          lessonId: In(allEventLessons.map((l) => l.lessonId)),
+          status: TrackingStatus.COMPLETED,
+          tenantId,
+          organisationId,
+        },
+      });
+      hasAttendedOneEvent = attendedCount > 0;
+    }
+
     const [cachedEventLessonIdResults, courseTracks, assessmentOutcomeByCourse] =
       await Promise.all([
         Promise.all(courseIds.map((id) => this.cacheService.getCourseEventLessons(id))),
@@ -1473,8 +1501,9 @@ export class TrackingService {
       const eventLessonIds = courseToEventLessonIds.get(course.courseId) ?? [];
       const totalEventLessons = eventLessonIds.length;
       const isAttendedOneEvent =
-        totalEventLessons > 0 &&
-        eventLessonIds.some((id) => completedEventLessonIds.has(id));
+        hasAttendedOneEvent ||
+        (totalEventLessons > 0 &&
+          eventLessonIds.some((id) => completedEventLessonIds.has(id)));
       const track = courseTrackByCourseId.get(course.courseId);
       const noOfLessons = track?.noOfLessons ?? 0;
       const completedLessons = track?.completedLessons ?? 0;
