@@ -874,6 +874,16 @@ export class TrackingService {
               this.logger.error(`Pathway completion callback attempt ${attempt}/3 failed for user=${lessonTrack.userId} course=${lessonTrack.courseId}: ${err?.message}`);
             }
           }
+
+          // All 3 attempts failed — release the notification claim so the next
+          // lesson update retries the pathway callback instead of skipping it forever.
+          if (!pathwayNotifyResult) {
+            await this.courseTrackRepository.update(
+              { courseTrackId: courseTrack.courseTrackId },
+              { notification_sent: false },
+            );
+            courseTrack.notification_sent = false;
+          }
         }
 
         // Email notification — outcome drives whether notification_sent stays true.
@@ -919,7 +929,7 @@ export class TrackingService {
         // Pathway fully completed — user-service confirms every course in the
         // pathway is done, LMS owns sending the actual email (same as the
         // per-course email above), keeping all notification-sending in one place.
-        if (pathwayNotifyResult?.allCoursesCompleted && course?.params?.pathwayId) {
+      /*  if (pathwayNotifyResult?.allCoursesCompleted && course?.params?.pathwayId) {
           await this.pathwayCompletionNotification(
             lessonTrack.userId,
             course.params.pathwayId,
@@ -927,7 +937,7 @@ export class TrackingService {
             organisationId,
             authorization,
           );
-        }
+        } */
       }
     }
   }
