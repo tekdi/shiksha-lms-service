@@ -6,6 +6,7 @@ import {
   Body,
   Query,
   HttpStatus,
+  HttpCode,
   Headers,
 } from '@nestjs/common';
 import {
@@ -18,7 +19,7 @@ import { AspireLeaderService } from './aspire-leader.service';
 import { CourseReportDto, CourseReportHeadersDto } from './dto/course-report.dto';
 import { LessonCompletionStatusDto, LessonCompletionStatusResponseDto } from './dto/lesson-completion-status.dto';
 import { UpdateTestProgressDto } from './dto/update-test-progress.dto';
-import { AggregationDto, AggregatedResponseDto, AggregationHeadersDto } from './dto/aggregation.dto';
+import { AggregationDto, AggregatedResponseDto, AggregationHeadersDto, AggregateCourseDto, AggregateCourseResponseDto } from './dto/aggregation.dto';
 import { TrackingStatus } from '../tracking/entities/course-track.entity';
 import { EnrollmentStatus } from '../enrollments/entities/user-enrollment.entity';
 import { API_IDS } from '../common/constants/api-ids.constant';
@@ -124,6 +125,32 @@ async getAggregatedContent(
   );
 }
 
+  @Post('aggregate-course')
+  @HttpCode(200)
+  @ApiId(API_IDS.GET_AGGREGATED_COURSES)
+  @ApiOperation({
+    summary: 'Get enrolled courses with tracking for a user in a cohort/pathway',
+    description: 'Returns the courses a user is enrolled in for the given cohortId or pathwayId, along with course-level tracking, and an overall completionStatus flag that is true only if every returned course is completed.'
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Aggregated course list retrieved successfully',
+    type: AggregateCourseResponseDto
+  })
+  @ApiResponse({ status: 400, description: 'Bad request - Invalid parameters' })
+  @ApiResponse({ status: 404, description: 'No course found for the given cohort/pathway' })
+  async getAggregatedCourses(
+    @Body() aggregateCourseDto: AggregateCourseDto,
+    @TenantOrg() tenantOrg: { tenantId: string; organisationId: string },
+  ): Promise<AggregateCourseResponseDto> {
+    return this.aspireLeaderService.getAggregatedCourses(
+      aggregateCourseDto.userId,
+      tenantOrg.tenantId,
+      tenantOrg.organisationId,
+      aggregateCourseDto.cohortId,
+      aggregateCourseDto.pathwayId,
+    );
+  }
 
   @Patch('tracking/update_test_progress')
   @ApiId(API_IDS.UPDATE_TEST_PROGRESS)
@@ -140,11 +167,13 @@ async getAggregatedContent(
   async updateTestProgress(
     @Body() updateTestProgressDto: UpdateTestProgressDto,
     @TenantOrg() tenantOrg: { tenantId: string; organisationId: string },
+    @Headers('authorization') authorization?: string,
   ): Promise<any> {
     return this.aspireLeaderService.updateTestProgress(
       updateTestProgressDto,
       tenantOrg.tenantId,
       tenantOrg.organisationId,
+      authorization,
     );
   }
 } 

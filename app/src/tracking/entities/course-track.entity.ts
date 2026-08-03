@@ -73,6 +73,9 @@ export class CourseTrack {
   @Column({ type: 'boolean', default: false })
   certificateIssued: boolean;
 
+  @Column({ type: 'boolean', default: false })
+  notification_sent: boolean;
+
   @ManyToOne(() => Course)
   @JoinColumn({ name: 'courseId' })
   course: Course;

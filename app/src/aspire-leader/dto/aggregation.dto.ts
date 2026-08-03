@@ -46,6 +46,39 @@ export class AggregationDto {
     userId?: string;
 }
 
+export class AggregateCourseDto {
+    @ApiProperty({
+        description: 'User ID to fetch enrolled courses and tracking for',
+        example: '77a456c8-0b3b-46fc-b6b2-d53353fc737c',
+        type: 'string',
+        format: 'uuid',
+    })
+    @IsUUID()
+    userId: string;
+
+    @ApiProperty({
+        description: 'Associated cohort ID',
+        example: '123e4567-e89b-12d3-a456-426614174001',
+        type: 'string',
+        format: 'uuid',
+        required: false
+    })
+    @IsOptional()
+    @IsUUID()
+    cohortId?: string;
+
+    @ApiProperty({
+        description: 'Associated pathway ID',
+        example: '123e4567-e89b-12d3-a456-426614174001',
+        type: 'string',
+        format: 'uuid',
+        required: false
+    })
+    @IsOptional()
+    @IsUUID()
+    pathwayId?: string;
+}
+
 export class TrackingDto {
     @ApiProperty()
     status: string;
@@ -70,6 +103,25 @@ export class TrackingDto {
 
     @ApiProperty({ required: false })
     attempt?: number;
+}
+
+export class AggregateCourseItemDto {
+    @ApiProperty()
+    courseId: string;
+
+    @ApiProperty()
+    title: string;
+
+    @ApiProperty({ type: () => TrackingDto, required: false })
+    tracking?: TrackingDto;
+}
+
+export class AggregateCourseResponseDto {
+    @ApiProperty({ type: [AggregateCourseItemDto] })
+    courses: AggregateCourseItemDto[];
+
+    @ApiProperty({ description: 'True if every returned course is completed' })
+    completionStatus: boolean;
 }
 
 export class MediaDto {

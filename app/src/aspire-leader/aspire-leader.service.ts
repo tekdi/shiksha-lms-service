@@ -901,6 +901,7 @@ export class AspireLeaderService {
     updateTestProgressDto: UpdateTestProgressDto,
     tenantId: string,
     organisationId: string,
+    authorization?: string,
   ): Promise<LessonTrack> {
     const startTime = Date.now();
     this.logger.log(
@@ -1017,6 +1018,7 @@ export class AspireLeaderService {
           updatedLessonTrack,
           tenantId,
           organisationId,
+          authorization,
         );
       }
 
@@ -1434,6 +1436,141 @@ const courses = await queryBuilder.getMany();
     return {
       courses: coursesList,
     };
+  }
+
+  /**
+   * Returns the courses a user is enrolled in for a given cohortId/pathwayId,
+   * along with course-level tracking, and an overall completionStatus flag.
+   */
+  async getAggregatedCourses(
+    userId: string,
+    tenantId: string | undefined,
+    organisationId: string | undefined,
+    cohortId?: string,
+    pathwayId?: string,
+  ): Promise<any> {
+    if (!cohortId && !pathwayId) {
+      throw new BadRequestException(
+        'Either cohortId or pathwayId must be provided.',
+      );
+    }
+
+    if (cohortId && pathwayId) {
+      throw new BadRequestException(
+        'Either cohortId or pathwayId must be provided, but not both.',
+      );
+    }
+
+    const effectiveTenantId =
+      tenantId || this.configService.get('TENANT_ID');
+    const effectiveOrganisationId =
+      organisationId || this.configService.get('ORGANISATION_ID');
+
+    // 1. Find all published courses for the cohort or pathway
+    const queryBuilder = this.courseRepository
+      .createQueryBuilder('course')
+      .select(['course.courseId', 'course.title'])
+      .where('course."status" = :status', { status: CourseStatus.PUBLISHED });
+
+    if (cohortId) {
+      queryBuilder.andWhere(`course."params"->>'cohortId' = :cohortId`, {
+        cohortId,
+      });
+    }
+
+    if (pathwayId) {
+      queryBuilder.andWhere(`course."params"->>'pathwayId' = :pathwayId`, {
+        pathwayId,
+      });
+    }
+
+    if (effectiveTenantId) {
+      queryBuilder.andWhere('course."tenantId" = :tenantId', {
+        tenantId: effectiveTenantId,
+      });
+    }
+
+    if (effectiveOrganisationId) {
+      queryBuilder.andWhere('course."organisationId" = :organisationId', {
+        organisationId: effectiveOrganisationId,
+      });
+    }
+
+    const courses = await queryBuilder.getMany();
+
+    if (courses.length === 0) {
+      const identifierType = cohortId ? 'cohortId' : 'pathwayId';
+      const identifierValue = cohortId || pathwayId;
+      throw new NotFoundException(
+        `No course found with ${identifierType}: ${identifierValue}`,
+      );
+    }
+
+    const courseIds = courses.map((course) => course.courseId);
+
+    // 2. Restrict to courses the user is actually enrolled in
+    const enrollments = await this.userEnrollmentRepository.find({
+      where: {
+        courseId: In(courseIds),
+        userId,
+        tenantId: effectiveTenantId,
+        organisationId: effectiveOrganisationId,
+        status: EnrollmentStatus.PUBLISHED,
+      },
+      select: ['courseId'],
+    });
+    const enrolledCourseIds = new Set(enrollments.map((e) => e.courseId));
+    const enrolledCourses = courses.filter((course) =>
+      enrolledCourseIds.has(course.courseId),
+    );
+
+    if (enrolledCourses.length === 0) {
+      return { courses: [], completionStatus: false };
+    }
+
+    // 3. Fetch course-level tracking for the enrolled courses
+    const courseTracks = await this.courseTrackRepository.find({
+      where: {
+        courseId: In(enrolledCourses.map((course) => course.courseId)),
+        userId,
+        tenantId: effectiveTenantId,
+        organisationId: effectiveOrganisationId,
+      },
+    });
+    const courseTrackMap = new Map(
+      courseTracks.map((track) => [track.courseId, track]),
+    );
+
+    const resultCourses = enrolledCourses.map((course) => {
+      const track = courseTrackMap.get(course.courseId);
+      const tracking = track
+        ? {
+            status: track.status,
+            progress: Math.round(
+              (track.completedLessons / (track.noOfLessons || 1)) * 100,
+            ),
+            completedLessons: track.completedLessons,
+            totalLessons: track.noOfLessons,
+          }
+        : {
+            status: TrackingStatus.NOT_STARTED,
+            progress: 0,
+            completedLessons: 0,
+            totalLessons: 0,
+          };
+
+      return {
+        courseId: course.courseId,
+        title: course.title,
+        tracking,
+      };
+    });
+
+    const completionStatus = resultCourses.every(
+      (course) => course.tracking.status === TrackingStatus.COMPLETED,
+    );
+
+    return { courses: resultCourses, completionStatus };
   }
 
   /**

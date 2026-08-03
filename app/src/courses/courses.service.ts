@@ -2726,8 +2726,15 @@ export class CoursesService {
       );
     }
 
-    const currentCohortId = currentCourse.params?.cohortId;
     const currentOrdering = currentCourse.ordering || 0;
+
+    // Determine which grouping param (cohortId or pathwayId) scopes this course
+    const groupingKey = currentCourse.params?.cohortId
+      ? 'cohortId'
+      : currentCourse.params?.pathwayId
+        ? 'pathwayId'
+        : null;
+    const groupingValue = groupingKey ? currentCourse.params[groupingKey] : null;
 
     // Build query to find next course
     let query = this.courseRepository
@@ -2740,10 +2747,10 @@ export class CoursesService {
       .orderBy('course.ordering', 'ASC')
       .limit(2);
 
-    // If cohortId exists, filter by it
-    if (currentCohortId) {
-      query = query.andWhere("course.params->>'cohortId' = :cohortId", {
-        cohortId: currentCohortId,
+    // If cohortId or pathwayId exists, filter by whichever is present
+    if (groupingKey) {
+      query = query.andWhere(`course.params->>'${groupingKey}' = :groupingValue`, {
+        groupingValue,
       });
     }
 

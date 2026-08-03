@@ -152,6 +152,10 @@ export class Course {
   @Column({ type: 'integer', default: 0 })
   ordering: number;
 
+  @ApiProperty({ description: 'When true, user-service sends a completion email and assigns volunteer tags when a user finishes this course', default: false })
+  @Column({ type: 'boolean', default: false })
+  notification_send: boolean;
+
   @ApiProperty({ description: 'User who created the course', example: '123e4567-e89b-12d3-a456-426614174000' })
   @Column({ type: 'uuid' })
   createdBy: string;
