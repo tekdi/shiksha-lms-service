@@ -1,0 +1,28 @@
+name: BRAC-QA - Deploy Shiksha LMS Service
+
+on:
+  push:
+    branches:
+      - brac-release-1.0.0
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      # =========================
+      # Deploy on Server
+      # =========================
+      - name: Deploy Stack
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.QA_BRAC_HOST }}
+          username: ${{ secrets.USERNAME }}
+          key: ${{ secrets.SSH_KEY }}
+          port: ${{ secrets.PORT }}
+          script: |
+            cd ${{ secrets.TARGET_DIR_QA }}
+            if [ -f .env ]; then
+              mv .env .env-bkp
+            fi
+            echo '${{ secrets.QA_ENV_BRAC }}' > .env
+            ./deploy.sh
