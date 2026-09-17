@@ -1273,16 +1273,12 @@ export class CoursesService {
             );
           }
 
-          // Add event data for event format lessons
-          // let eventData = null;
-          // if (lesson.format === 'event' && lesson.media && lesson.media.source && eventDataMap.has(lesson.media.source)) {
-          //   eventData = eventDataMap.get(lesson.media.source);
-          // }
+
 
           return {
             ...lesson,
             associatedLesson: associatedLessonsWithTracking,
-            // eventData,
+
             tracking: bestAttempt
               ? {
                   status: bestAttempt.status,
@@ -2776,111 +2772,6 @@ export class CoursesService {
     const isLast = results.length <= 1; // If we got 1 or 0 results, the next lesson is the last
 
     return { nextLesson, isLast };
-  }
-
-  /**
-   * Fetch event data from event service for lessons with event format
-   * HACK - Aspire-Leader Project
-   */
-  private async fetchEventData(
-    eventIds: string[],
-    userId: string,
-    authorizationToken?: string,
-  ): Promise<Map<string, any>> {
-    if (!eventIds || eventIds.length === 0) {
-      return new Map();
-    }
-
-    try {
-      const eventServiceUrl =
-        this.configService.get<string>('EVENT_SERVICE_URL');
-      if (!eventServiceUrl) {
-        this.logger.warn(
-          'EVENT_SERVICE_URL not configured, skipping event data fetch',
-        );
-        return new Map();
-      }
-
-      // Validate URL format
-      try {
-        new URL(eventServiceUrl);
-      } catch (urlError) {
-        this.logger.error(
-          `Invalid EVENT_SERVICE_URL format: ${eventServiceUrl}`,
-        );
-        return new Map();
-      }
-
-      const url = `${eventServiceUrl}/event-service/attendees/v1/search`;
-      const requestBody = {
-        userId: userId,
-        eventIds: eventIds,
-        offset: 0,
-        limit: 100,
-      };
-
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-      };
-
-      if (authorizationToken) {
-        headers['Authorization'] = `Bearer ${authorizationToken}`;
-      }
-
-      const response = await axios.post(url, requestBody, {
-        headers,
-      });
-
-      if (
-        response.data &&
-        response.data.result &&
-        response.data.result.attendees
-      ) {
-        const eventDataMap = new Map();
-        response.data.result.attendees.forEach((attendee: any) => {
-          if (attendee.eventId) {
-            eventDataMap.set(attendee.eventId, attendee);
-          }
-        });
-        return eventDataMap;
-      }
-
-      return new Map();
-    } catch (error) {
-      if (axios.isAxiosError(error)) {
-        // Log timeout errors separately for monitoring
-        if (
-          error.code === 'ECONNABORTED' ||
-          error.message.includes('timeout')
-        ) {
-          this.logger.warn(
-            `Event service API timeout for ${eventIds.length} events`,
-            {
-              url: error.config?.url,
-              timeout: error.config?.timeout,
-            },
-          );
-        } else {
-          this.logger.error(
-            `Event service API error: ${error.response?.status} - ${error.response?.statusText}`,
-            {
-              url: error.config?.url,
-              method: error.config?.method,
-              status: error.response?.status,
-              statusText: error.response?.statusText,
-              data: error.response?.data,
-            },
-          );
-        }
-      } else {
-        this.logger.error(
-          `Failed to fetch event data: ${error.message}`,
-          error.stack,
-        );
-      }
-      // Return empty map on error to not break the main flow
-      return new Map();
-    }
   }
 
   /**

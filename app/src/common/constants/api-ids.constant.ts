@@ -65,9 +65,4 @@ export const API_IDS = {
   RECALCULATE_PROGRESS: 'api.tracking.recalculate.progress',
   GET_USER_JOURNEY: 'api.tracking.userjourney',
 
-  // Aspire Leader Report APIs
-  GET_COURSE_REPORT: 'api.course.report',
-  GET_LESSON_COMPLETION_STATUS: 'api.lesson.completion.status',
-  UPDATE_TEST_PROGRESS: 'api.tracking.update_test_progress',
-  GET_AGGREGATED_CONTENT: 'api.course.aggregate.content',
 };

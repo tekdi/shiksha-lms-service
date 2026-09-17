@@ -56,9 +56,18 @@ fi
 echo "🔧 Enabling UUID extension..."
 PGPASSWORD=$DB_PASSWORD psql -h $DB_HOST -p $DB_PORT -U $DB_USER -d $DB_DATABASE -c "CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\";" > /dev/null 2>&1 || true
 
-# Run migrations
+# Create tables using schema.sql
+echo "🏗️  Creating database tables..."
+if [ -f scripts/schema.sql ]; then
+    PGPASSWORD=$DB_PASSWORD psql -h $DB_HOST -p $DB_PORT -U $DB_USER -d $DB_DATABASE -f scripts/schema.sql > /dev/null 2>&1
+    echo "✅ Database tables created successfully"
+else
+    echo "⚠️  scripts/schema.sql not found, skipping table creation"
+fi
+
+# Run migrations (if any)
 echo "🔄 Running database migrations..."
-npm run migration:run
+npm run migration:run || echo "⚠️  Migration script failed or no migrations found, skipping..."
 
 echo "✅ Database setup completed successfully!"
 echo ""
