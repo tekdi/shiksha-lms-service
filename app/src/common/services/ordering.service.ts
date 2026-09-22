@@ -35,7 +35,13 @@ export class OrderingService {
     const queryBuilder = repository
       .createQueryBuilder('course')
       .select('MAX(course.ordering)', 'maxOrdering')
-      .where('course.status = :publishedStatus', { publishedStatus: CourseStatus.PUBLISHED });
+      // Unpublished courses occupy an ordering slot too, so they have to count
+      // towards the max -- looking at published courses alone handed the same
+      // number to every draft created between two publishes. Archived courses
+      // are excluded: they sit outside every ordering-sensitive query.
+      .where('course.status IN (:...orderedStatuses)', {
+        orderedStatuses: [CourseStatus.UNPUBLISHED, CourseStatus.PUBLISHED],
+      });
 
     if (tenantId) {
       queryBuilder.andWhere('course.tenantId = :tenantId', { tenantId });
