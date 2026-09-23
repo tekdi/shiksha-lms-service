@@ -24,15 +24,15 @@ export class UserEnrollment {
   @Index()
   courseId: string;
 
-  @Column({ type: 'uuid'})
+  @Column({ type: 'varchar'})
   @Index()
   tenantId: string;
   
-  @Column({ type: 'uuid',nullable: true })
+  @Column({ type: 'varchar',nullable: true })
   @Index()
   organisationId: string;
 
-  @Column({ type: 'uuid'})
+  @Column({ type: 'varchar' })
   @Index()
   userId: string;
 
@@ -62,7 +62,7 @@ export class UserEnrollment {
   @Column({ type: 'jsonb', nullable: true })
   params: Record<string, any>;
 
-  @Column({ type: 'uuid', })
+  @Column({ type: 'varchar' })
   enrolledBy: string;
   
   @Column({ type: 'timestamptz', })

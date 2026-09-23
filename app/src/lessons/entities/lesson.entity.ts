@@ -59,11 +59,11 @@ export class Lesson {
   @Column({ type: 'uuid', nullable: true })
   parentId: string | null;
 
-  @Column({ type: 'uuid', nullable: true })
+  @Column({ type: 'varchar', nullable: true })
   @Index()
   tenantId: string;
   
-  @Column({ type: 'uuid', nullable: true })
+  @Column({ type: 'varchar', nullable: true })
   @Index()
   organisationId: string;
 
@@ -184,13 +184,13 @@ export class Lesson {
   @CreateDateColumn({ type: 'timestamptz' })
   createdAt: Date;
 
-  @Column({ type: 'uuid' })
+  @Column({ type: 'varchar' })
   createdBy: string;
 
   @UpdateDateColumn({ type: 'timestamptz' })
   updatedAt: Date;
 
-  @Column({ type: 'uuid' })
+  @Column({ type: 'varchar' })
   updatedBy: string;
 
   // Relationships

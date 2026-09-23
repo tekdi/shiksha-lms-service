@@ -13,11 +13,11 @@ export class AssociatedFile {
   @Column()
   mediaId: string;
 
-  @Column({ type: 'uuid', nullable: true })
+  @Column({ type: 'varchar', nullable: true })
   @Index()
   tenantId: string;
 
-  @Column({ type: 'uuid', nullable: true })
+  @Column({ type: 'varchar', nullable: true })
   @Index()
   organisationId: string;
 

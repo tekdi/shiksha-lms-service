@@ -27,12 +27,12 @@ export class CourseTrack {
   courseTrackId: string;
 
   @ApiProperty({ description: 'Tenant ID for multi-tenancy support', example: '123e4567-e89b-12d3-a456-426614174000' })
-  @Column({ type: 'uuid' })
+  @Column({ type: 'varchar' })
   @Index()
   tenantId: string;
   
   @ApiProperty({ description: 'Organization ID for organization-level data isolation', example: '123e4567-e89b-12d3-a456-426614174000' })
-  @Column({ type: 'uuid'})
+  @Column({ type: 'varchar'})
   @Index()
   organisationId: string;
 
@@ -40,7 +40,7 @@ export class CourseTrack {
   @Index()
   courseId: string;
 
-  @Column({ type: 'uuid' })
+  @Column({ type: 'varchar' })
   @Index()
   userId: string;
 

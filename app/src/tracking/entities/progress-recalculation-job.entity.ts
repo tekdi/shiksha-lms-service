@@ -23,10 +23,10 @@ export class ProgressRecalculationJob {
   @Index()
   courseId: string;
 
-  @Column({ type: 'uuid' })
+  @Column({ type: 'varchar' })
   tenantId: string;
 
-  @Column({ type: 'uuid' })
+  @Column({ type: 'varchar' })
   organisationId: string;
 
   @Column({ type: 'varchar', length: 20, default: JobStatus.PENDING })

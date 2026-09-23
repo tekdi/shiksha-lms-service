@@ -27,15 +27,15 @@ export class LessonTrack {
   @Index()
   courseId: string | null;
 
-  @Column({ type: 'uuid' })
+  @Column({ type: 'varchar' })
   @Index()
   userId: string;
 
-  @Column({ type: 'uuid', nullable: true })
+  @Column({ type: 'varchar', nullable: true })
   @Index()
   tenantId: string;
 
-  @Column({ type: 'uuid', nullable: true })
+  @Column({ type: 'varchar', nullable: true })
   @Index()
   organisationId: string;
 
@@ -74,7 +74,7 @@ export class LessonTrack {
   @Column({ type: 'jsonb', nullable: true })
   params: Record<string, any>;
 
-  @Column({ type: 'uuid', nullable: true })
+  @Column({ type: 'varchar', nullable: true })
   updatedBy: string;
 
   @Column({ type: 'timestamptz' })

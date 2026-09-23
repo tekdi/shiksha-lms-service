@@ -411,7 +411,7 @@ export class CoursesController {
   @ApiResponse({ status: 404, description: 'Course not found' })
   async getCourseHierarchyWithTracking(
     @Param('courseId', ParseUUIDPipe) courseId: string,
-    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('userId') userId: string,
     @Query() filterDto: CourseHierarchyFilterDto,
     @TenantOrg() tenantOrg: { tenantId: string; organisationId: string },
     @Headers('authorization') authorization?: string,

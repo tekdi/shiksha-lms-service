@@ -38,7 +38,6 @@ export class AggregationDto {
         description: 'User ID for fetching user-specific tracking (progress, status, etc.)',
         example: '77a456c8-0b3b-46fc-b6b2-d53353fc737c',
         type: 'string',
-        format: 'uuid',
         required: false
     })
     @IsOptional()
@@ -51,9 +50,7 @@ export class AggregateCourseDto {
         description: 'User ID to fetch enrolled courses and tracking for',
         example: '77a456c8-0b3b-46fc-b6b2-d53353fc737c',
         type: 'string',
-        format: 'uuid',
     })
-    @IsUUID()
     userId: string;
 
     @ApiProperty({

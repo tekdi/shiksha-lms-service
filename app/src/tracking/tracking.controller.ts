@@ -85,7 +85,7 @@ export class TrackingController {
   })
   async getCourseTracking(
     @Param('courseId', ParseUUIDPipe) courseId: string,
-    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('userId') userId: string,
     @TenantOrg() tenant: { tenantId: string; organisationId: string },
   ) {
     return this.trackingService.getCourseTracking(
@@ -111,7 +111,7 @@ export class TrackingController {
   })
   async getPathwayCompletionStatus(
     @Query('pathwayId', ParseUUIDPipe) pathwayId: string,
-    @Query('userId', ParseUUIDPipe) userId: string,
+    @Query('userId') userId: string,
     @TenantOrg() tenant: { tenantId: string; organisationId: string },
   ) {
     return this.trackingService.getPathwayCompletionStatus(
@@ -135,7 +135,6 @@ export class TrackingController {
     name: 'userId',
     description: 'The user ID',
     type: 'string',
-    format: 'uuid',
   })
   @ApiBody({ type: UpdateCourseTrackingDto })
   @ApiResponse({
@@ -146,7 +145,7 @@ export class TrackingController {
   @ApiResponse({ status: 400, description: 'Invalid request data' })
   async updateCourseTracking(
     @Param('courseId', ParseUUIDPipe) courseId: string,
-    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('userId') userId: string,
     @Body() updateCourseTrackingDto: UpdateCourseTrackingDto,
     @TenantOrg() tenant: { tenantId: string; organisationId: string },
   ) {
@@ -220,7 +219,7 @@ export class TrackingController {
   })
   async getLessonStatus(
     @Param('lessonId', ParseUUIDPipe) lessonId: string,
-    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('userId') userId: string,
     @TenantOrg() tenant: { tenantId: string; organisationId: string },
   ): Promise<LessonStatusDto> {
     return this.trackingService.getLessonStatus(
@@ -241,7 +240,7 @@ export class TrackingController {
   })
   async getAttempt(
     @Param('attemptId') attemptId: string,
-    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('userId') userId: string,
     @TenantOrg() tenant: { tenantId: string; organisationId: string },
   ): Promise<LessonTrack> {
     return this.trackingService.getAttempt(

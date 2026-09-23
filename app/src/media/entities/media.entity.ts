@@ -28,11 +28,11 @@ export class Media {
   @PrimaryGeneratedColumn('uuid')
   mediaId: string;
 
-  @Column({ type: 'uuid', nullable: true })
+  @Column({ type: 'varchar', nullable: true })
   @Index()
   tenantId: string;
   
-  @Column({ type: 'uuid', nullable: true })
+  @Column({ type: 'varchar', nullable: true })
   @Index()
   organisationId: string;
 
@@ -70,13 +70,13 @@ export class Media {
   @CreateDateColumn({ type: 'timestamptz' })
   createdAt: Date;
 
-  @Column({ type: 'uuid' })
+  @Column({ type: 'varchar' })
   createdBy: string;
 
   @UpdateDateColumn({ type: 'timestamptz' })
   updatedAt: Date;
 
-  @Column({ type: 'uuid' })
+  @Column({ type: 'varchar' })
   updatedBy: string;
 
   @OneToMany(() => Lesson, (lesson) => lesson.media)

@@ -173,7 +173,7 @@ export class RecalculateProgressQueueService extends WorkerHost {
         const userRows: { userId: string }[] = await this.dataSource.query(
           `SELECT DISTINCT "userId" FROM course_track
            WHERE "courseId" = $1 AND "tenantId" = $2 AND "organisationId" = $3
-             AND ($4::uuid IS NULL OR "userId" > $4::uuid)
+             AND ($4::text IS NULL OR "userId" > $4::text)
            ORDER BY "userId" LIMIT $5`,
           [courseId, tenantId, organisationId, lastUserId, this.batchSize],
         );
@@ -194,7 +194,7 @@ export class RecalculateProgressQueueService extends WorkerHost {
              END
            FROM (
              SELECT u."userId", COALESCE(agg.completed, 0) AS completed, COALESCE(agg.completed_only, 0) AS completed_only
-             FROM unnest($4::uuid[]) AS u("userId")
+             FROM unnest($4::text[]) AS u("userId")
              LEFT JOIN (
                SELECT lt."userId",
                  COUNT(DISTINCT lt."lessonId")::integer AS completed,
@@ -202,7 +202,7 @@ export class RecalculateProgressQueueService extends WorkerHost {
                FROM lesson_track lt
                JOIN lessons l ON lt."lessonId" = l."lessonId"
                WHERE lt."courseId" = $1 AND lt."tenantId" = $2 AND lt."organisationId" = $3
-                 AND lt."userId" = ANY($4::uuid[])
+                 AND lt."userId" = ANY($4::text[])
                  AND lt.status IN ('completed', 'submitted')
                  AND l."considerForPassing" = true AND l.status = 'published'
                GROUP BY lt."userId"
@@ -242,14 +242,14 @@ export class RecalculateProgressQueueService extends WorkerHost {
                  mt_totals."moduleId",
                  mt_totals.total,
                  COALESCE(lc.completed, 0) AS completed
-               FROM unnest($4::uuid[]) AS u("userId")
+               FROM unnest($4::text[]) AS u("userId")
                CROSS JOIN (VALUES ${moduleTotalsValues}) AS mt_totals("moduleId", total)
                LEFT JOIN (
                  SELECT lt."userId", l."moduleId", COUNT(DISTINCT lt."lessonId")::integer AS completed
                  FROM lesson_track lt
                  JOIN lessons l ON lt."lessonId" = l."lessonId"
                  WHERE l."moduleId" = ANY($1::uuid[]) AND lt."tenantId" = $2 AND lt."organisationId" = $3
-                   AND lt."userId" = ANY($4::uuid[])
+                   AND lt."userId" = ANY($4::text[])
                    AND lt.status IN ('completed', 'submitted')
                    AND l."considerForPassing" = true AND l.status = 'published'
                  GROUP BY lt."userId", l."moduleId"

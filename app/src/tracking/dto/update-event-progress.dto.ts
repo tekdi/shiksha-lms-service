@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsUUID, IsNotEmpty, IsOptional, IsNumber, Min, IsString } from 'class-validator';
+import { IsNotEmpty, IsOptional, IsNumber, Min, IsString } from 'class-validator';
 import { Type } from 'class-transformer';
 import { VALIDATION_MESSAGES } from '../../common/constants/response-messages.constant';
 import { TrackingStatus } from '../entities/course-track.entity';
@@ -9,7 +9,6 @@ export class UpdateEventProgressDto {
     description: 'User ID',
     example: '123e4567-e89b-12d3-a456-426614174000',
   })
-  @IsUUID('4', { message: VALIDATION_MESSAGES.COMMON.UUID('User ID') })
   @IsNotEmpty({ message: VALIDATION_MESSAGES.COMMON.REQUIRED('User ID') })
   userId: string;
 

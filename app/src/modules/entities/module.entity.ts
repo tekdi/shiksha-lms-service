@@ -36,12 +36,12 @@ export class Module {
   courseId: string;
 
   @ApiProperty({ description: 'Tenant ID for multi-tenancy support', example: '123e4567-e89b-12d3-a456-426614174000' })
-  @Column({ type: 'uuid' })
+  @Column({ type: 'varchar' })
   @Index()
   tenantId: string;
   
   @ApiProperty({ description: 'Organization ID for organization-level data isolation', example: '123e4567-e89b-12d3-a456-426614174000' })
-  @Column({ type: 'uuid'})
+  @Column({ type: 'varchar' })
   @Index()
   organisationId: string;
 
@@ -101,7 +101,7 @@ export class Module {
   createdAt: Date;
 
   @ApiProperty({ description: 'User who created the module', example: '123e4567-e89b-12d3-a456-426614174000' })
-  @Column({ type: 'uuid' })
+  @Column({ type: 'varchar' })
   createdBy: string;
 
   @ApiProperty({ description: 'Last update timestamp', example: '2023-01-01T00:00:00Z' })
@@ -109,7 +109,7 @@ export class Module {
   updatedAt: Date;
 
   @ApiProperty({ description: 'User who last updated the module', example: '123e4567-e89b-12d3-a456-426614174000' })
-  @Column({ type: 'uuid' })
+  @Column({ type: 'varchar' })
   updatedBy: string;
 
   // Relationships
