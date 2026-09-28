@@ -19,8 +19,9 @@ import {
 } from 'class-validator';
 import { Type, Transform } from 'class-transformer';
 import { VALIDATION_MESSAGES } from '../../common/constants/response-messages.constant';
-import { LessonStatus, LessonSubFormat } from '../entities/lesson.entity';
 import {
+  LessonStatus,
+  LessonSubFormat,
   LessonFormat,
   AttemptsGradeMethod,
   COURSE_CONTEXT_REQUIRED_FORMATS,
