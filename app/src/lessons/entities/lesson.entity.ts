@@ -38,6 +38,12 @@ export enum LessonSubFormat {
   EXTERNAL_ASSESSMENT_URL = 'external.assessment.url', // PROJECT SECIFIC - ASPRE_LEADER
 }
 
+// Formats that must always belong to a course and module (cannot be independent lessons)
+export const COURSE_CONTEXT_REQUIRED_FORMATS: LessonFormat[] = [
+  LessonFormat.ASSESSMENT,
+  LessonFormat.EVENT,
+];
+
 export enum LessonStatus {
   UNPUBLISHED = 'unpublished',
   PUBLISHED = 'published',
