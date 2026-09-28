@@ -310,7 +310,6 @@ export class TrackingService {
    * OPTIMIZED: Batch load all prerequisites and completion checks to avoid N+1 queries
    * @param lesson The lesson to check prerequisites for
    * @param userId The user ID
-   * @param courseId The course ID
    * @param tenantId The tenant ID
    * @param organisationId The organization ID
    * @returns Promise with prerequisite status information
@@ -409,15 +408,11 @@ export class TrackingService {
       throw new NotFoundException(RESPONSE_MESSAGES.ERROR.LESSON_NOT_FOUND);
     }
 
-    // Independent lessons have no course; their tracks are stored with courseId = null
-    const courseId = lesson.courseId || null;
-    
     // Find existing tracks for the lesson
     const existingTracks = await this.lessonTrackRepository.find({
       where: { 
         lessonId, 
         userId,
-        courseId: courseId ?? IsNull(),
         tenantId,
         organisationId
       } as FindOptionsWhere<LessonTrack>,
@@ -477,10 +472,9 @@ export class TrackingService {
       const lessonTrack = this.lessonTrackRepository.create({
         userId,
         lessonId,
-        courseId,
         tenantId,
         organisationId,
-        attempt: latestTrack.attempt + 1,
+        attempt: latestTrack.attempt,
         status: TrackingStatus.STARTED,
         startDatetime: new Date(),
         completionPercentage: 0,
@@ -619,7 +613,7 @@ export class TrackingService {
     const lesson = await this.lessonsService.findOne(
       attempt.lessonId,
       tenantId,
-      organisationId,
+      organisationId
     );
 
     // Attach lesson to attempt to maintain identical response structure
