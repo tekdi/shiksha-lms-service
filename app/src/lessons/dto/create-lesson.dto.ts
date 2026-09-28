@@ -105,7 +105,6 @@ export class CreateLessonDto {
     required: false,
   })
   @IsOptional()
-  // @IsUUID('4', { message: VALIDATION_MESSAGES.COMMON.UUID('Checked out user ID') })
   checkedOut?: string;
 
   @ApiProperty({
