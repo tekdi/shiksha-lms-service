@@ -15,6 +15,7 @@ import {
   LessonStatus,
   AttemptsGradeMethod,
   LessonFormat,
+  COURSE_CONTEXT_REQUIRED_FORMATS,
 } from './entities/lesson.entity';
 import { Course, CourseStatus } from '../courses/entities/course.entity';
 import { Module, ModuleStatus } from '../modules/entities/module.entity';
@@ -57,6 +58,64 @@ export class LessonsService {
   ) {}
 
   /**
+   * Validate the course/module context of a lesson.
+   * - Both null/absent: independent lesson (not allowed for course-bound formats like test/event)
+   * - Both provided: course must exist and module must belong to it
+   * - Only one provided: invalid
+   */
+  private async validateLessonContext(
+    courseId: string | null | undefined,
+    moduleId: string | null | undefined,
+    format: LessonFormat,
+    tenantId: string,
+    organisationId: string,
+  ): Promise<void> {
+    if (!courseId && !moduleId) {
+      if (COURSE_CONTEXT_REQUIRED_FORMATS.includes(format)) {
+        throw new BadRequestException(
+          RESPONSE_MESSAGES.ERROR.COURSE_AND_MODULE_REQUIRED_FOR_FORMAT(format),
+        );
+      }
+      return;
+    }
+
+    if (!courseId || !moduleId) {
+      throw new BadRequestException(
+        RESPONSE_MESSAGES.ERROR.COURSE_AND_MODULE_REQUIRED_TOGETHER,
+      );
+    }
+
+    const course = await this.courseRepository.findOne({
+      where: {
+        courseId,
+        status: Not(CourseStatus.ARCHIVED),
+        tenantId,
+        organisationId,
+      },
+    });
+
+    if (!course) {
+      throw new NotFoundException(RESPONSE_MESSAGES.ERROR.COURSE_NOT_FOUND);
+    }
+
+    const module = await this.moduleRepository.findOne({
+      where: {
+        moduleId,
+        courseId,
+        status: Not(ModuleStatus.ARCHIVED),
+        tenantId,
+        organisationId,
+      },
+    });
+
+    if (!module) {
+      throw new NotFoundException(
+        RESPONSE_MESSAGES.ERROR.MODULE_NOT_FOUND_IN_COURSE(moduleId),
+      );
+    }
+  }
+
+  /**
    * Create a new lesson with optional course association
    * @param createLessonDto The lesson data to create
    * @param userId The user ID for data isolation
@@ -72,43 +131,14 @@ export class LessonsService {
     organisationId: string,
   ): Promise<Lesson> {
     try {
-      // Validate course and module existence if provided
-      if (createLessonDto.courseId) {
-        // Check if course exists
-        const course = await this.courseRepository.findOne({
-          where: {
-            courseId: createLessonDto.courseId,
-            status: Not(CourseStatus.ARCHIVED),
-            tenantId,
-            organisationId,
-          },
-        });
-
-        if (!course) {
-          throw new NotFoundException(RESPONSE_MESSAGES.ERROR.COURSE_NOT_FOUND);
-        }
-
-        // If moduleId is provided, validate it belongs to the course
-        if (createLessonDto.moduleId) {
-          const module = await this.moduleRepository.findOne({
-            where: {
-              moduleId: createLessonDto.moduleId,
-              courseId: createLessonDto.courseId,
-              status: Not(ModuleStatus.ARCHIVED),
-              tenantId,
-              organisationId,
-            },
-          });
-
-          if (!module) {
-            throw new NotFoundException(
-              RESPONSE_MESSAGES.ERROR.MODULE_NOT_FOUND_IN_COURSE(
-                createLessonDto.moduleId,
-              ),
-            );
-          }
-        }
-      }
+      // Validate course/module context (independent lesson when both are absent)
+      await this.validateLessonContext(
+        createLessonDto.courseId,
+        createLessonDto.moduleId,
+        createLessonDto.format,
+        tenantId,
+        organisationId,
+      );
 
       if (!createLessonDto.alias) {
         createLessonDto.alias = await HelperUtil.generateUniqueAliasWithRepo(
@@ -224,9 +254,13 @@ export class LessonsService {
         updatedBy: userId,
         tenantId: tenantId,
         organisationId: organisationId,
-        // Course-specific fields
-        courseId: createLessonDto.courseId,
-        moduleId: createLessonDto.moduleId,
+        // Course-specific fields: only set for course lessons (independent lessons store NULL)
+        ...(createLessonDto.courseId && createLessonDto.moduleId
+          ? {
+              courseId: createLessonDto.courseId,
+              moduleId: createLessonDto.moduleId,
+            }
+          : {}),
         sampleLesson: createLessonDto.sampleLesson,
         considerForPassing: createLessonDto.considerForPassing,
         allowResubmission: createLessonDto.allowResubmission,
@@ -705,42 +739,19 @@ export class LessonsService {
         throw new NotFoundException(RESPONSE_MESSAGES.ERROR.LESSON_NOT_FOUND);
       }
 
-      // Validate course and module existence if provided in update
-      if (updateLessonDto.courseId) {
-        // Check if course exists
-        const course = await this.courseRepository.findOne({
-          where: {
-            courseId: updateLessonDto.courseId,
-            status: Not(CourseStatus.ARCHIVED),
-            tenantId,
-            organisationId,
-          },
-        });
-
-        if (!course) {
-          throw new NotFoundException(RESPONSE_MESSAGES.ERROR.COURSE_NOT_FOUND);
-        }
-
-        // If moduleId is provided, validate it belongs to the course
-        if (updateLessonDto.moduleId) {
-          const module = await this.moduleRepository.findOne({
-            where: {
-              moduleId: updateLessonDto.moduleId,
-              courseId: updateLessonDto.courseId,
-              status: Not(ModuleStatus.ARCHIVED),
-              tenantId,
-              organisationId,
-            },
-          });
-
-          if (!module) {
-            throw new NotFoundException(
-              RESPONSE_MESSAGES.ERROR.MODULE_NOT_FOUND_IN_COURSE(
-                updateLessonDto.moduleId,
-              ),
-            );
-          }
-        }
+      // Course/module association cannot be changed or detached via update.
+      // Re-sending the current values is accepted as a no-op for backward compatibility.
+      const isContextChanged = (
+        incoming: string | null | undefined,
+        current: string | null | undefined,
+      ) => incoming !== undefined && (incoming || null) !== (current || null);
+      if (
+        isContextChanged(updateLessonDto.courseId, lesson.courseId) ||
+        isContextChanged(updateLessonDto.moduleId, lesson.moduleId)
+      ) {
+        throw new BadRequestException(
+          RESPONSE_MESSAGES.ERROR.LESSON_COURSE_MODULE_UPDATE_NOT_ALLOWED,
+        );
       }
 
       // Check if lesson has a checked out status (if that property exists)
@@ -928,15 +939,6 @@ export class LessonsService {
 
       if (updateLessonDto.params !== undefined) {
         updateData.params = updateLessonDto.params;
-      }
-
-      // Handle course and module association fields
-      if (updateLessonDto.courseId !== undefined) {
-        updateData.courseId = updateLessonDto.courseId;
-      }
-
-      if (updateLessonDto.moduleId !== undefined) {
-        updateData.moduleId = updateLessonDto.moduleId;
       }
 
       if (updateLessonDto.considerForPassing !== undefined) {

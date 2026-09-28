@@ -13,16 +13,28 @@ import {
   MaxLength,
   Validate,
   IsNumber,
-  IsUrl,
+  // IsUrl,
   IsArray,
-  MinLength,
+  // MinLength,
 } from 'class-validator';
 import { Type, Transform } from 'class-transformer';
 import { VALIDATION_MESSAGES } from '../../common/constants/response-messages.constant';
-import { LessonStatus, LessonSubFormat } from '../entities/lesson.entity';
-import { LessonFormat, AttemptsGradeMethod } from '../entities/lesson.entity';
-import { HelperUtil, ValidateDatetimeConstraints } from '../../common/utils/helper.util';
+import {
+  LessonStatus,
+  LessonSubFormat,
+  LessonFormat,
+  AttemptsGradeMethod,
+  COURSE_CONTEXT_REQUIRED_FORMATS,
+} from '../entities/lesson.entity';
+import {
+  // HelperUtil,
+  ValidateDatetimeConstraints
+} from '../../common/utils/helper.util';
 
+const requiresCourseContext = (o: CreateLessonDto): boolean =>
+  (o.courseId !== undefined && o.courseId !== null) ||
+  (o.moduleId !== undefined && o.moduleId !== null) ||
+  COURSE_CONTEXT_REQUIRED_FORMATS.includes(o.format);
 
 export class CreateLessonDto {
   @ApiProperty({
@@ -89,11 +101,10 @@ export class CreateLessonDto {
 
   @ApiProperty({
     description: 'User ID who checked out the lesson',
-    format: 'uuid',
-    required: false
+    type: 'string',
+    required: false,
   })
   @IsOptional()
-  @IsUUID('4', { message: VALIDATION_MESSAGES.COMMON.UUID('Checked out user ID') })
   checkedOut?: string;
 
   @ApiProperty({
@@ -242,23 +253,31 @@ export class CreateLessonDto {
   @IsOptional()
   params?: Record<string, any>;
   
+  // courseId and moduleId are optional together (independent lesson), but if either is
+  // provided both are required, and they are always required for course-bound formats
   @ApiProperty({
-    description: VALIDATION_MESSAGES.LESSON.COURSE_ID,
+    description: `${VALIDATION_MESSAGES.LESSON.COURSE_ID} Omit both courseId and moduleId to create an independent lesson (not allowed for test/event formats).`,
     format: 'uuid',
     required: false,
+    nullable: true,
   })
+  @Transform(({ value }) => (value === '' || value === 'null' ? null : value))
+  @ValidateIf((o) => requiresCourseContext(o))
   @IsNotEmpty({ message: VALIDATION_MESSAGES.COMMON.REQUIRED('Course ID') })
   @IsUUID('4', { message: VALIDATION_MESSAGES.COMMON.UUID('Course ID') })
-  courseId?: string;
+  courseId?: string | null;
 
   @ApiProperty({
-    description: VALIDATION_MESSAGES.LESSON.MODULE_ID,
+    description: `${VALIDATION_MESSAGES.LESSON.MODULE_ID} Omit both courseId and moduleId to create an independent lesson (not allowed for test/event formats).`,
     format: 'uuid',
     required: false,
+    nullable: true,
   })
+  @Transform(({ value }) => (value === '' || value === 'null' ? null : value))
+  @ValidateIf((o) => requiresCourseContext(o))
   @IsNotEmpty({ message: VALIDATION_MESSAGES.COMMON.REQUIRED('Module ID') })
   @IsUUID('4', { message: VALIDATION_MESSAGES.COMMON.UUID('Module ID') })
-  moduleId?: string;
+  moduleId?: string | null;
 
   @ApiProperty({
     description: 'Whether this is a free lesson',
