@@ -222,8 +222,6 @@ export class TrackingService {
       throw new NotFoundException(RESPONSE_MESSAGES.ERROR.LESSON_NOT_FOUND);
     }
 
-    // Independent lessons have no course; their tracks are stored with courseId = null
-    const courseId = lesson.courseId || null;
 
     // OPTIMIZED: Check prerequisites and get existing tracks in parallel
     // This reduces sequential queries from 2 to 1 (parallel execution)
@@ -231,7 +229,6 @@ export class TrackingService {
       this.checkLessonsPrerequisites(
         lesson,
         userId,
-        courseId,
         tenantId,
         organisationId
       ),
@@ -239,7 +236,6 @@ export class TrackingService {
         where: { 
           lessonId, 
           userId,
-          courseId: courseId ?? IsNull(),
           tenantId,
           organisationId,
         } as FindOptionsWhere<LessonTrack>,
@@ -283,7 +279,6 @@ export class TrackingService {
     const lessonTrack = this.lessonTrackRepository.create({
       userId,
       lessonId,
-      courseId,
       tenantId,
       organisationId,
       attempt: existingTracks.length > 0 ? existingTracks[0].attempt + 1 : 1,
@@ -323,7 +318,6 @@ export class TrackingService {
   private async checkLessonsPrerequisites(
     lesson: Lesson,
     userId: string,
-    courseId: string | null,
     tenantId: string,
     organisationId: string
   ): Promise<{isEligible: boolean, requiredLessons: any[]}> {
@@ -353,7 +347,6 @@ export class TrackingService {
       where: {
         lessonId: In(prerequisiteLessonIds),
         userId,
-        courseId: courseId ?? IsNull(),
         tenantId,
         organisationId,
         status: TrackingStatus.COMPLETED
@@ -526,15 +519,11 @@ export class TrackingService {
       throw new NotFoundException(RESPONSE_MESSAGES.ERROR.LESSON_NOT_FOUND);
     }
 
-    // Independent lessons have no course; their tracks are stored with courseId = null
-    const courseId = lesson.courseId || null;
-
     // Find latest attempt
     const latestTrack = await this.lessonTrackRepository.findOne({
       where: { 
         lessonId, 
         userId,
-        courseId: courseId ?? IsNull(),
         tenantId,
         organisationId
       } as FindOptionsWhere<LessonTrack>,
@@ -545,7 +534,6 @@ export class TrackingService {
     const prerequisiteCheck = await this.checkLessonsPrerequisites(
       lesson,
       userId,
-      courseId,
       tenantId,
       organisationId
     );
@@ -631,7 +619,7 @@ export class TrackingService {
     const lesson = await this.lessonsService.findOne(
       attempt.lessonId,
       tenantId,
-      organisationId
+      organisationId,
     );
 
     // Attach lesson to attempt to maintain identical response structure
