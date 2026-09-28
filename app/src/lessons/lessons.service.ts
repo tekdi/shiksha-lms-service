@@ -254,9 +254,13 @@ export class LessonsService {
         updatedBy: userId,
         tenantId: tenantId,
         organisationId: organisationId,
-        // Course-specific fields (null for independent lessons)
-        courseId: createLessonDto.courseId || undefined,
-        moduleId: createLessonDto.moduleId || undefined,
+        // Course-specific fields: only set for course lessons (independent lessons store NULL)
+        ...(createLessonDto.courseId && createLessonDto.moduleId
+          ? {
+              courseId: createLessonDto.courseId,
+              moduleId: createLessonDto.moduleId,
+            }
+          : {}),
         sampleLesson: createLessonDto.sampleLesson,
         considerForPassing: createLessonDto.considerForPassing,
         allowResubmission: createLessonDto.allowResubmission,
