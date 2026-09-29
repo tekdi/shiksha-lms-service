@@ -156,6 +156,12 @@ export class Course {
   @Column({ type: 'boolean', default: false })
   notification_send: boolean;
 
+  // Nullable at DB level for courses created before categories existed; required by the API on create
+  @ApiProperty({ description: 'Category ID of the course', example: '123', required: false, nullable: true })
+  @Column({ type: 'varchar', nullable: true })
+  @Index()
+  categoryId: string;
+
   @ApiProperty({ description: 'User who created the course', example: '123e4567-e89b-12d3-a456-426614174000' })
   @Column({ type: 'uuid' })
   createdBy: string;

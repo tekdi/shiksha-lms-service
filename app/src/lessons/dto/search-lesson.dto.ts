@@ -2,8 +2,10 @@ import { ParseUUIDPipe } from "@nestjs/common/pipes/parse-uuid.pipe"
 import { LessonFormat, LessonStatus } from "../entities/lesson.entity"
 import { LessonSubFormat } from "../entities/lesson.entity"
 import { ApiPropertyOptional } from "@nestjs/swagger";
-import { IsEnum, IsOptional } from "class-validator";
+import { IsArray, IsEnum, IsOptional } from "class-validator";
 import { IsString } from "class-validator";
+import { Transform } from "class-transformer";
+import { HelperUtil } from "../../common/utils/helper.util";
 
 
 export class SearchLessonDto {
@@ -43,5 +45,16 @@ courseId?: string;
 @IsOptional()
 @IsString()
 moduleId?: string;
+
+@ApiPropertyOptional({
+  description: 'Filter by one or more category IDs (comma-separated or repeated). Returns lessons in any of the given categories.',
+  type: [String],
+  example: '123,456',
+})
+@IsOptional()
+@Transform(({ obj, key }) => HelperUtil.toStringArray(obj[key]))
+@IsArray()
+@IsString({ each: true, message: 'Each category ID must be a string' })
+categoryId?: string[];
 
 }

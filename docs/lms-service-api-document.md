@@ -429,6 +429,7 @@ organisationid: <organisation-id>
 - `certificateTerm` (object, optional): Certificate configuration
 - `rewardType` (enum, optional): Reward type - 'certificate', 'badge'
 - `templateId` (UUID, optional): Template ID for rewards
+- `categoryId` (string, required): Category ID of the course
 - `prerequisites` (array, optional): Array of prerequisite course IDs
 - `params` (object, optional): Additional parameters (JSON object)
 
@@ -541,6 +542,7 @@ organisationid: <organisation-id>
 - `endDateFrom` (string, optional): Filter by end date (from) - ISO date format
 - `endDateTo` (string, optional): Filter by end date (to) - ISO date format
 - `createdBy` (UUID, optional): Filter by creator user ID
+- `categoryId` (string list, optional): Filter by one or more categories, comma-separated (`categoryId=id1,id2`) or repeated (`categoryId=id1&categoryId=id2`). Returns courses in any of the given categories
 - `offset` (number, optional): Number of items to skip (default: 0)
 - `limit` (number, optional): Number of items to return (default: 10)
 - `sortBy` (enum, optional): Field to sort by - 'createdAt', 'updatedAt', 'title', 'startDatetime', 'endDatetime', 'featured', 'free' (default: 'createdAt')
@@ -1404,7 +1406,7 @@ organisationid: <organisation-id>
 **Path Parameters**:
 - `courseId` (UUID, required): Course ID
 
-**Request Parameters**: Same as Create Course (all optional)
+**Request Parameters**: Same as Create Course (all optional). `categoryId` can be changed but not removed
 
 **Query Parameters**:
 - `userId` (UUID, required): User ID updating the course
@@ -2246,6 +2248,7 @@ organisationid: <organisation-id>
 - `description` (string, optional): Lesson description (optional field)
 - `moduleId` (UUID, required): Parent module ID
 - `courseId` (UUID, optional): Course ID
+- `categoryId` (string, required): Category ID of the lesson, required for independent lessons too
 - `format` (enum, required): Lesson format - 'video', 'document', 'test', 'event', 'text_and_media'
 - `mediaContentSource` (string, required): Media content source (URL for video/external content)
 - `mediaContentPath` (string, required for document format): Media content path
@@ -2395,6 +2398,7 @@ organisationid: <organisation-id>
 - `cohortId` (string, optional): Filter by course cohort parameter
 - `courseId` (string, optional): Filter by specific course ID
 - `moduleId` (string, optional): Filter by specific module ID
+- `categoryId` (string list, optional): Filter by one or more categories, comma-separated (`categoryId=id1,id2`) or repeated (`categoryId=id1&categoryId=id2`). Returns lessons in any of the given categories
 - `offset` (number, optional): Number of items to skip for pagination (default: 0)
 - `limit` (number, optional): Number of items to return (default: 10)
 
@@ -2674,7 +2678,7 @@ organisationid: <organisation-id>
 **Path Parameters**:
 - `lessonId` (UUID, required): Lesson ID
 
-**Request Parameters**: Same as Create Lesson (all optional)
+**Request Parameters**: Same as Create Lesson (all optional). `categoryId` can be changed but not removed
 
 **Query Parameters**:
 - `userId` (UUID, required): User ID updating the lesson

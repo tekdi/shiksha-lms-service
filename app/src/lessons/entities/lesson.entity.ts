@@ -178,6 +178,11 @@ export class Lesson {
   @Index()
   moduleId: string;
 
+  // Nullable at DB level for lessons created before categories existed; required by the API on create
+  @Column({ type: 'varchar', nullable: true })
+  @Index()
+  categoryId: string;
+
   @Column({ type: 'boolean', default: false })
   sampleLesson: boolean;
 

@@ -130,6 +130,15 @@ export class CreateCourseDto {
   @IsEnum(RewardType, { message: VALIDATION_MESSAGES.COMMON.ENUM('Reward type') })
   rewardType?: RewardType;
 
+  @ApiProperty({
+    description: 'Category ID of the course',
+    example: '123',
+    required: true,
+  })
+  @IsNotEmpty({ message: VALIDATION_MESSAGES.COMMON.REQUIRED('Category ID') })
+  @IsString({ message: VALIDATION_MESSAGES.COMMON.STRING('Category ID') })
+  categoryId: string;
+
   @ApiPropertyOptional({ 
     description: VALIDATION_MESSAGES.COURSE.TEMPLATE_ID,
     example: '123e4567-e89b-12d3-a456-426614174000'

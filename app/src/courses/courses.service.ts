@@ -36,7 +36,10 @@ import {
   UserEnrollment,
   EnrollmentStatus,
 } from '../enrollments/entities/user-enrollment.entity';
-import { RESPONSE_MESSAGES } from '../common/constants/response-messages.constant';
+import {
+  RESPONSE_MESSAGES,
+  VALIDATION_MESSAGES,
+} from '../common/constants/response-messages.constant';
 import { HelperUtil } from '../common/utils/helper.util';
 import { CreateCourseDto } from './dto/create-course.dto';
 import {
@@ -175,6 +178,7 @@ export class CoursesService {
       certificateIssueDateTime:
         createCourseDto.certificateIssueDateTime || undefined,
       ordering: nextOrdering,
+      categoryId: createCourseDto.categoryId,
       tenantId,
       organisationId,
       createdBy: userId,
@@ -308,6 +312,11 @@ export class CoursesService {
         whereClause[filter] = filters[filter];
       }
     });
+
+    // Category filter - matches courses in any of the given categories
+    if (filters?.categoryId?.length) {
+      whereClause.categoryId = In(filters.categoryId);
+    }
 
     // Creator filter
     if (filters?.createdBy) {
@@ -1853,6 +1862,16 @@ export class CoursesService {
           `Alias '${originalAlias}' already exists. Generated new alias: ${updateCourseDto.alias}`,
         );
       }
+    }
+
+    // Category can be changed but not removed
+    if (
+      updateCourseDto.categoryId !== undefined &&
+      !updateCourseDto.categoryId
+    ) {
+      throw new BadRequestException(
+        VALIDATION_MESSAGES.COMMON.REQUIRED('Category ID'),
+      );
     }
 
     // Handle rewardType and templateId - handle boolean values for backward compatibility

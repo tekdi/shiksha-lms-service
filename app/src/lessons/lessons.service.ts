@@ -25,7 +25,10 @@ import { CreateLessonDto } from './dto/create-lesson.dto';
 import { UpdateLessonDto } from './dto/update-lesson.dto';
 import { PaginationDto } from '../common/dto/pagination.dto';
 import { HelperUtil } from '../common/utils/helper.util';
-import { RESPONSE_MESSAGES } from '../common/constants/response-messages.constant';
+import {
+  RESPONSE_MESSAGES,
+  VALIDATION_MESSAGES,
+} from '../common/constants/response-messages.constant';
 import { CacheService } from '../cache/cache.service';
 import { ConfigService } from '@nestjs/config';
 import { CacheConfigService } from '../cache/cache-config.service';
@@ -261,6 +264,7 @@ export class LessonsService {
               moduleId: createLessonDto.moduleId,
             }
           : {}),
+        categoryId: createLessonDto.categoryId,
         sampleLesson: createLessonDto.sampleLesson,
         considerForPassing: createLessonDto.considerForPassing,
         allowResubmission: createLessonDto.allowResubmission,
@@ -407,6 +411,9 @@ export class LessonsService {
         (searchDto.subFormat ? `:subFormat:${searchDto.subFormat}` : '') +
         (searchDto.status ? `:status:${searchDto.status}` : '') +
         (searchDto.query ? `:query:${searchDto.query}` : '') +
+        (searchDto.categoryId?.length
+          ? `:categoryId:${[...searchDto.categoryId].sort().join(',')}`
+          : '') +
         `:offset:${offset}:limit:${limit}`;
 
       // Try to get from cache first
@@ -449,6 +456,14 @@ export class LessonsService {
         queryBuilder = queryBuilder.andWhere('media.subFormat = :subFormat', {
           subFormat: searchDto.subFormat,
         });
+      }
+
+      // Category filter - matches lessons in any of the given categories
+      if (searchDto.categoryId?.length) {
+        queryBuilder = queryBuilder.andWhere(
+          'lesson.categoryId IN (:...categoryIds)',
+          { categoryIds: searchDto.categoryId },
+        );
       }
 
       // Add search query filter for title and description
@@ -754,6 +769,16 @@ export class LessonsService {
         );
       }
 
+      // Category can be changed but not removed
+      if (
+        updateLessonDto.categoryId !== undefined &&
+        !updateLessonDto.categoryId
+      ) {
+        throw new BadRequestException(
+          VALIDATION_MESSAGES.COMMON.REQUIRED('Category ID'),
+        );
+      }
+
       // Check if lesson has a checked out status (if that property exists)
       if (updateLessonDto.checkedOut !== undefined) {
         throw new BadRequestException(
@@ -951,6 +976,10 @@ export class LessonsService {
 
       if (updateLessonDto.allowResubmission !== undefined) {
         updateData.allowResubmission = updateLessonDto.allowResubmission;
+      }
+
+      if (updateLessonDto.categoryId !== undefined) {
+        updateData.categoryId = updateLessonDto.categoryId;
       }
 
       // Validate associated lesson if provided (and not null)

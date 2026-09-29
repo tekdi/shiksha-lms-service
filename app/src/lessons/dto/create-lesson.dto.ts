@@ -279,6 +279,16 @@ export class CreateLessonDto {
   @IsUUID('4', { message: VALIDATION_MESSAGES.COMMON.UUID('Module ID') })
   moduleId?: string | null;
 
+  // Category is mandatory for every lesson, including independent lessons
+  @ApiProperty({
+    description: 'Category ID of the lesson',
+    example: '123',
+    required: true,
+  })
+  @IsNotEmpty({ message: VALIDATION_MESSAGES.COMMON.REQUIRED('Category ID') })
+  @IsString({ message: VALIDATION_MESSAGES.COMMON.STRING('Category ID') })
+  categoryId: string;
+
   @ApiProperty({
     description: 'Whether this is a free lesson',
     example: false,
