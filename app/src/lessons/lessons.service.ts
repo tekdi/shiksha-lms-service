@@ -264,7 +264,7 @@ export class LessonsService {
               moduleId: createLessonDto.moduleId,
             }
           : {}),
-        categoryId: createLessonDto.categoryId,
+        categoryIds: createLessonDto.categoryIds,
         sampleLesson: createLessonDto.sampleLesson,
         considerForPassing: createLessonDto.considerForPassing,
         allowResubmission: createLessonDto.allowResubmission,
@@ -411,8 +411,8 @@ export class LessonsService {
         (searchDto.subFormat ? `:subFormat:${searchDto.subFormat}` : '') +
         (searchDto.status ? `:status:${searchDto.status}` : '') +
         (searchDto.query ? `:query:${searchDto.query}` : '') +
-        (searchDto.categoryId?.length
-          ? `:categoryId:${[...searchDto.categoryId].sort().join(',')}`
+        (searchDto.categoryIds?.length
+          ? `:categoryIds:${[...searchDto.categoryIds].sort((a, b) => a.localeCompare(b)).join(',')}`
           : '') +
         `:offset:${offset}:limit:${limit}`;
 
@@ -458,11 +458,11 @@ export class LessonsService {
         });
       }
 
-      // Category filter - matches lessons in any of the given categories
-      if (searchDto.categoryId?.length) {
+      // Category filter - matches lessons having ANY of the given categories (array overlap)
+      if (searchDto.categoryIds?.length) {
         queryBuilder = queryBuilder.andWhere(
-          'lesson.categoryId IN (:...categoryIds)',
-          { categoryIds: searchDto.categoryId },
+          'lesson.categoryIds && :categoryIds',
+          { categoryIds: searchDto.categoryIds },
         );
       }
 
@@ -771,11 +771,11 @@ export class LessonsService {
 
       // Category can be changed but not removed
       if (
-        updateLessonDto.categoryId !== undefined &&
-        !updateLessonDto.categoryId
+        updateLessonDto.categoryIds !== undefined &&
+        !updateLessonDto.categoryIds?.length
       ) {
         throw new BadRequestException(
-          VALIDATION_MESSAGES.COMMON.REQUIRED('Category ID'),
+          VALIDATION_MESSAGES.COMMON.REQUIRED('Category IDs'),
         );
       }
 
@@ -978,8 +978,8 @@ export class LessonsService {
         updateData.allowResubmission = updateLessonDto.allowResubmission;
       }
 
-      if (updateLessonDto.categoryId !== undefined) {
-        updateData.categoryId = updateLessonDto.categoryId;
+      if (updateLessonDto.categoryIds !== undefined) {
+        updateData.categoryIds = updateLessonDto.categoryIds;
       }
 
       // Validate associated lesson if provided (and not null)

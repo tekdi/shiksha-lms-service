@@ -65,7 +65,7 @@ describe('CoursesService - category', () => {
       title: 'Course',
       alias: 'course',
       description: 'Description',
-      categoryId: CATEGORY_ID,
+      categoryIds: [CATEGORY_ID],
       ...overrides,
     }) as CreateCourseDto;
 
@@ -74,12 +74,22 @@ describe('CoursesService - category', () => {
       const course = await service.create(createDto(), USER, TENANT, ORG);
 
       expect(course).toMatchObject({
-        categoryId: CATEGORY_ID,
+        categoryIds: [CATEGORY_ID],
         title: 'Course',
         tenantId: TENANT,
         organisationId: ORG,
       });
     });
+  });
+
+  it('creates a course with multiple categories', async () => {
+    const course = await service.create(
+      createDto({ categoryIds: ['category-1', 'category-2'] }),
+      USER,
+      TENANT,
+      ORG,
+    );
+    expect(course.categoryIds).toEqual(['category-1', 'category-2']);
   });
 
   describe('update', () => {
@@ -88,7 +98,7 @@ describe('CoursesService - category', () => {
       title: 'Course',
       alias: 'course',
       description: 'Description',
-      categoryId: CATEGORY_ID,
+      categoryIds: [CATEGORY_ID],
       tenantId: TENANT,
       organisationId: ORG,
     };
@@ -100,7 +110,7 @@ describe('CoursesService - category', () => {
     it('changes only the category', async () => {
       const course = await service.update(
         'course-1',
-        { categoryId: 'category-2' },
+        { categoryIds: ['category-2', 'category-3'] },
         USER,
         TENANT,
         ORG,
@@ -108,19 +118,19 @@ describe('CoursesService - category', () => {
 
       expect(course).toMatchObject({
         ...existing,
-        categoryId: 'category-2',
+        categoryIds: ['category-2', 'category-3'],
         updatedBy: USER,
       });
     });
 
-    it.each([null, ''])(
+    it.each([null, []])(
       'rejects removing the category (%p)',
-      async (categoryId) => {
+      async (categoryIds) => {
         await expect(
-          service.update('course-1', { categoryId }, USER, TENANT, ORG),
+          service.update('course-1', { categoryIds }, USER, TENANT, ORG),
         ).rejects.toThrow(
           new BadRequestException(
-            VALIDATION_MESSAGES.COMMON.REQUIRED('Category ID'),
+            VALIDATION_MESSAGES.COMMON.REQUIRED('Category IDs'),
           ),
         );
         expect(courseRepository.save).not.toHaveBeenCalled();
@@ -137,7 +147,7 @@ describe('CoursesService - category', () => {
       );
 
       expect(courseRepository.save).toHaveBeenCalledWith(
-        expect.objectContaining({ categoryId: CATEGORY_ID }),
+        expect.objectContaining({ categoryIds: [CATEGORY_ID] }),
       );
     });
   });
@@ -150,20 +160,20 @@ describe('CoursesService - category', () => {
       ['one category', [CATEGORY_ID]],
       ['multiple categories', [CATEGORY_ID, 'category-2', 'category-3']],
     ])('filters by %s', async (_label, categoryIds) => {
-      await service.search({ categoryId: categoryIds }, TENANT, ORG);
+      await service.search({ categoryIds: categoryIds }, TENANT, ORG);
 
       const where = searchWhere();
-      expect(where.categoryId).toBeInstanceOf(FindOperator);
-      expect(where.categoryId.type).toBe('in');
-      expect(where.categoryId.value).toEqual(categoryIds);
+      expect(where.categoryIds).toBeInstanceOf(FindOperator);
+      expect(where.categoryIds.type).toBe('arrayOverlap');
+      expect(where.categoryIds.value).toEqual(categoryIds);
       expect(where).toMatchObject({ tenantId: TENANT, organisationId: ORG });
     });
 
-    it('keeps the existing filters when categoryId is not provided', async () => {
+    it('keeps the existing filters when categoryIds is not provided', async () => {
       await service.search({}, TENANT, ORG);
 
       const where = searchWhere();
-      expect(where).not.toHaveProperty('categoryId');
+      expect(where).not.toHaveProperty('categoryIds');
       expect(Object.keys(where).sort()).toEqual([
         'organisationId',
         'status',
@@ -174,7 +184,7 @@ describe('CoursesService - category', () => {
 
     it('applies the category filter to every keyword-search branch', async () => {
       await service.search(
-        { query: 'intro', categoryId: [CATEGORY_ID] },
+        { query: 'intro', categoryIds: [CATEGORY_ID] },
         TENANT,
         ORG,
       );
@@ -182,7 +192,7 @@ describe('CoursesService - category', () => {
       const where = searchWhere();
       expect(Array.isArray(where)).toBe(true);
       where.forEach((branch: any) =>
-        expect(branch.categoryId.value).toEqual([CATEGORY_ID]),
+        expect(branch.categoryIds.value).toEqual([CATEGORY_ID]),
       );
     });
   });

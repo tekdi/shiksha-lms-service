@@ -95,7 +95,7 @@ export class SearchCourseDto {
   @Transform(({ obj, key }) => HelperUtil.toStringArray(obj[key]))
   @IsArray()
   @IsString({ each: true, message: 'Each category ID must be a string' })
-  categoryId?: string[];
+  categoryIds?: string[];
 
   @ApiPropertyOptional({ description: 'Filter by creator user ID' })
   @IsOptional()

@@ -83,7 +83,7 @@ describe('LessonsService - independent lessons', () => {
       mediaContentSource: 'https://youtube.com/watch?v=x',
       mediaContentSubFormat: LessonSubFormat.YOUTUBE,
       considerForPassing: true,
-      categoryId: CATEGORY_ID,
+      categoryIds: [CATEGORY_ID],
       ...overrides,
     }) as CreateLessonDto;
 
@@ -231,16 +231,26 @@ describe('LessonsService - independent lessons', () => {
       lessonId: 'lesson-1',
       courseId: null,
       moduleId: null,
-      categoryId: CATEGORY_ID,
+      categoryIds: [CATEGORY_ID],
       format: LessonFormat.VIDEO,
     };
 
     it('creates an independent lesson with its category', async () => {
       const lesson = await service.create(createDto(), USER, TENANT, ORG);
 
-      expect(lesson).toMatchObject({ categoryId: CATEGORY_ID });
+      expect(lesson).toMatchObject({ categoryIds: [CATEGORY_ID] });
       expect(lesson.courseId).toBeUndefined();
       expect(lesson.moduleId).toBeUndefined();
+    });
+
+    it('creates a lesson with multiple categories', async () => {
+      const lesson = await service.create(
+        createDto({ categoryIds: ['category-1', 'category-2'] }),
+        USER,
+        TENANT,
+        ORG,
+      );
+      expect(lesson.categoryIds).toEqual(['category-1', 'category-2']);
     });
 
     it('creates a course/module lesson with its category', async () => {
@@ -252,28 +262,28 @@ describe('LessonsService - independent lessons', () => {
       );
 
       expect(lesson).toMatchObject({
-        categoryId: CATEGORY_ID,
+        categoryIds: [CATEGORY_ID],
         courseId: COURSE_ID,
         moduleId: MODULE_ID,
       });
     });
 
-    it.each([null, ''])(
+    it.each([null, []])(
       'rejects removing the category on update (%p)',
-      async (categoryId) => {
+      async (categoryIds) => {
         lessonRepository.findOne.mockResolvedValue(existing);
 
         await expect(
           service.update(
             'lesson-1',
-            { categoryId } as UpdateLessonDto,
+            { categoryIds } as UpdateLessonDto,
             USER,
             TENANT,
             ORG,
           ),
         ).rejects.toThrow(
           new BadRequestException(
-            VALIDATION_MESSAGES.COMMON.REQUIRED('Category ID'),
+            VALIDATION_MESSAGES.COMMON.REQUIRED('Category IDs'),
           ),
         );
         expect(lessonRepository.save).not.toHaveBeenCalled();
@@ -287,7 +297,10 @@ describe('LessonsService - independent lessons', () => {
       await expect(
         service.update(
           'lesson-1',
-          { categoryId: 'category-2', checkedOut: 'x' } as UpdateLessonDto,
+          {
+            categoryIds: ['category-2', 'category-3'],
+            checkedOut: 'x',
+          } as UpdateLessonDto,
           USER,
           TENANT,
           ORG,
@@ -337,7 +350,7 @@ describe('LessonsService - independent lessons', () => {
 
       const categoryConditions = () =>
         queryBuilder.andWhere.mock.calls.filter(([sql]) =>
-          sql.includes('categoryId'),
+          sql.includes('categoryIds'),
         );
 
       it.each([
@@ -345,15 +358,15 @@ describe('LessonsService - independent lessons', () => {
         ['multiple categories', [CATEGORY_ID, 'category-2', 'category-3']],
       ])('filters by %s', async (_label, categoryIds) => {
         await service.getLessons(TENANT, ORG, { limit: 10, skip: 0 } as any, {
-          categoryId: categoryIds,
+          categoryIds: categoryIds,
         });
 
         expect(categoryConditions()).toEqual([
-          ['lesson.categoryId IN (:...categoryIds)', { categoryIds }],
+          ['lesson.categoryIds && :categoryIds', { categoryIds }],
         ]);
       });
 
-      it('does not filter by category when categoryId is not provided', async () => {
+      it('does not filter by category when categoryIds is not provided', async () => {
         await service.getLessons(
           TENANT,
           ORG,

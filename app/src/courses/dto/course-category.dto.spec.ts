@@ -17,36 +17,57 @@ const errorFields = async (dto: object) =>
 const baseCourse = (overrides: object = {}) => ({
   title: 'Course',
   description: 'Description',
-  categoryId: CATEGORY_ID,
+  categoryIds: [CATEGORY_ID],
   ...overrides,
 });
 
 describe('Course category DTOs', () => {
-  it('accepts a course with a category', async () => {
+  it('accepts a course with one category', async () => {
     expect(await errorFields(toDto(CreateCourseDto, baseCourse()))).toEqual([]);
   });
 
-  it('requires categoryId when creating a course', async () => {
-    const dto = toDto(CreateCourseDto, baseCourse({ categoryId: undefined }));
-    expect(await errorFields(dto)).toEqual(['categoryId']);
-  });
-
-  it('accepts a non-UUID string categoryId', async () => {
+  it('accepts a course with multiple categories', async () => {
     const dto = toDto(
       CreateCourseDto,
-      baseCourse({ categoryId: 'leadership' }),
+      baseCourse({ categoryIds: [CATEGORY_ID, CATEGORY_ID_2, 'leadership'] }),
     );
     expect(await errorFields(dto)).toEqual([]);
+    expect(dto.categoryIds).toEqual([CATEGORY_ID, CATEGORY_ID_2, 'leadership']);
   });
 
-  it('keeps categoryId optional on update and accepts any string', async () => {
+  it('requires categoryIds when creating a course', async () => {
+    const dto = toDto(CreateCourseDto, baseCourse({ categoryIds: undefined }));
+    expect(await errorFields(dto)).toEqual(['categoryIds']);
+  });
+
+  it.each([
+    ['an empty array', []],
+    ['an empty string element', ['']],
+    ['a non-string element', [123]],
+  ])('rejects %s', async (_label, categoryIds) => {
+    const dto = toDto(CreateCourseDto, baseCourse({ categoryIds }));
+    expect(await errorFields(dto)).toEqual(['categoryIds']);
+  });
+
+  it('wraps a single multipart value into an array', async () => {
+    const dto = toDto(
+      CreateCourseDto,
+      baseCourse({ categoryIds: 'leadership' }),
+    );
+    expect(await errorFields(dto)).toEqual([]);
+    expect(dto.categoryIds).toEqual(['leadership']);
+  });
+
+  it('keeps categoryIds optional on update and replaces the whole array', async () => {
     expect(await errorFields(toDto(UpdateCourseDto, {}))).toEqual([]);
+    const dto = toDto(UpdateCourseDto, {
+      categoryIds: [CATEGORY_ID, CATEGORY_ID_2],
+    });
+    expect(await errorFields(dto)).toEqual([]);
+    expect(dto.categoryIds).toEqual([CATEGORY_ID, CATEGORY_ID_2]);
     expect(
-      await errorFields(toDto(UpdateCourseDto, { categoryId: CATEGORY_ID })),
-    ).toEqual([]);
-    expect(
-      await errorFields(toDto(UpdateCourseDto, { categoryId: 'abc' })),
-    ).toEqual([]);
+      await errorFields(toDto(UpdateCourseDto, { categoryIds: [] })),
+    ).toEqual(['categoryIds']);
   });
 
   it.each([
@@ -62,20 +83,22 @@ describe('Course category DTOs', () => {
       [CATEGORY_ID, CATEGORY_ID_2],
     ],
   ])('parses the search filter from %s', async (_label, value, expected) => {
-    const dto = toDto(SearchCourseDto, { categoryId: value });
+    const dto = toDto(SearchCourseDto, { categoryIds: value });
     expect(await errorFields(dto)).toEqual([]);
-    expect(dto.categoryId).toEqual(expected);
+    expect(dto.categoryIds).toEqual(expected);
   });
 
-  it('leaves the search filter unset when categoryId is not provided', async () => {
+  it('leaves the search filter unset when categoryIds is not provided', async () => {
     const dto = toDto(SearchCourseDto, {});
     expect(await errorFields(dto)).toEqual([]);
-    expect(dto.categoryId).toBeUndefined();
+    expect(dto.categoryIds).toBeUndefined();
   });
 
   it('accepts non-UUID string values in the search filter', async () => {
-    const dto = toDto(SearchCourseDto, { categoryId: 'leadership,management' });
+    const dto = toDto(SearchCourseDto, {
+      categoryIds: 'leadership,management',
+    });
     expect(await errorFields(dto)).toEqual([]);
-    expect(dto.categoryId).toEqual(['leadership', 'management']);
+    expect(dto.categoryIds).toEqual(['leadership', 'management']);
   });
 });

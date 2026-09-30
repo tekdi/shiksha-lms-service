@@ -1,5 +1,5 @@
-import { IsNotEmpty, IsString, IsOptional, IsBoolean, IsEnum, IsNumber, IsUUID, IsObject, IsDateString, MinLength, MaxLength, Matches, ValidateIf, Validate, IsArray } from 'class-validator';
-import { Type } from 'class-transformer';
+import { IsNotEmpty, IsString, IsOptional, IsBoolean, IsEnum, IsNumber, IsUUID, IsObject, IsDateString, MinLength, MaxLength, Matches, ValidateIf, Validate, IsArray, ArrayNotEmpty } from 'class-validator';
+import { Type, Transform } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { CourseStatus, RewardType } from '../entities/course.entity';
 import { HelperUtil, ValidateDatetimeConstraints, ValidateCertificateDateTime } from '../../common/utils/helper.util';
@@ -131,13 +131,30 @@ export class CreateCourseDto {
   rewardType?: RewardType;
 
   @ApiProperty({
-    description: 'Category ID of the course',
-    example: '123',
+    description: 'Category IDs of the course (at least one)',
+    example: ['category-1', 'category-2'],
+    type: [String],
     required: true,
   })
-  @IsNotEmpty({ message: VALIDATION_MESSAGES.COMMON.REQUIRED('Category ID') })
-  @IsString({ message: VALIDATION_MESSAGES.COMMON.STRING('Category ID') })
-  categoryId: string;
+  // multipart/form-data sends a single value as a plain string; normalise it to an array
+  @Transform(({ value }) =>
+    value === undefined || value === null || Array.isArray(value)
+      ? value
+      : [value],
+  )
+  @IsArray({ message: VALIDATION_MESSAGES.COMMON.ARRAY('Category IDs') })
+  @ArrayNotEmpty({
+    message: VALIDATION_MESSAGES.COMMON.REQUIRED('Category IDs'),
+  })
+  @IsString({
+    each: true,
+    message: VALIDATION_MESSAGES.COMMON.STRING('Category IDs'),
+  })
+  @IsNotEmpty({
+    each: true,
+    message: VALIDATION_MESSAGES.COMMON.REQUIRED('Category IDs'),
+  })
+  categoryIds: string[];
 
   @ApiPropertyOptional({ 
     description: VALIDATION_MESSAGES.COURSE.TEMPLATE_ID,

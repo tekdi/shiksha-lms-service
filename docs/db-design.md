@@ -17,7 +17,7 @@
 | certificateTerm | JSONB | Certificate term (nullable) |
 | rewardType | VARCHAR(50) | Type of reward for course completion (nullable) - (certificate, badge) |
 | templateId | UUID | Template ID for the reward (nullable) |
-| categoryId | VARCHAR | Category ID of the course (nullable for courses created before categories; required by the API on create) |
+| categoryIds | VARCHAR[] | Category IDs of the course, GIN-indexed (nullable for courses created before categories; required by the API on create) |
 | prerequisites | UUID[] | Prerequisites for the course - array of prerequisite course IDs (nullable) |
 | startDatetime | TIMESTAMPTZ | Course start date and time (nullable) |
 | endDatetime | TIMESTAMPTZ | Course end date and time (nullable) |
@@ -83,7 +83,7 @@
 | params | JSONB | Additional parameters (nullable) |
 | courseId | UUID | Course ID (nullable) |
 | moduleId | UUID | Module ID (nullable) |
-| categoryId | VARCHAR | Category ID of the lesson (nullable for lessons created before categories; required by the API on create) |
+| categoryIds | VARCHAR[] | Category IDs of the lesson, GIN-indexed (nullable for lessons created before categories; required by the API on create) |
 | sampleLesson | BOOLEAN | Whether this is a sample lesson (default: FALSE) |
 | considerForPassing | BOOLEAN | Should consider this lesson for course passing (default: TRUE) |
 | ordering | INTEGER | Lesson order (default: 0) |

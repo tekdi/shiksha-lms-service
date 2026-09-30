@@ -22,7 +22,7 @@ const baseLesson = (overrides: object = {}) => ({
   format: LessonFormat.VIDEO,
   mediaContentSource: 'https://youtube.com/watch?v=x',
   mediaContentSubFormat: LessonSubFormat.YOUTUBE,
-  categoryId: CATEGORY_ID,
+  categoryIds: [CATEGORY_ID],
   ...overrides,
 });
 
@@ -117,34 +117,60 @@ describe('UpdateLessonDto course/module fields', () => {
 });
 
 describe('Lesson category', () => {
-  it('requires categoryId when creating a lesson', async () => {
-    const dto = toDto(CreateLessonDto, baseLesson({ categoryId: undefined }));
-    expect(await errorFields(dto)).toEqual(['categoryId']);
+  it('accepts a lesson with one category', async () => {
+    expect(await errorFields(toDto(CreateLessonDto, baseLesson()))).toEqual([]);
   });
 
-  it('requires categoryId for an independent lesson too', async () => {
+  it('accepts a lesson with multiple categories', async () => {
     const dto = toDto(
       CreateLessonDto,
-      baseLesson({ categoryId: '', courseId: '', moduleId: '' }),
-    );
-    expect(await errorFields(dto)).toEqual(['categoryId']);
-  });
-
-  it('accepts a non-UUID string categoryId', async () => {
-    const dto = toDto(
-      CreateLessonDto,
-      baseLesson({ categoryId: 'leadership' }),
+      baseLesson({ categoryIds: [CATEGORY_ID, CATEGORY_ID_2, 'leadership'] }),
     );
     expect(await errorFields(dto)).toEqual([]);
+    expect(dto.categoryIds).toEqual([CATEGORY_ID, CATEGORY_ID_2, 'leadership']);
   });
 
-  it('keeps categoryId optional on update and accepts any string', async () => {
+  it('requires categoryIds when creating a lesson', async () => {
+    const dto = toDto(CreateLessonDto, baseLesson({ categoryIds: undefined }));
+    expect(await errorFields(dto)).toEqual(['categoryIds']);
+  });
+
+  it('requires categoryIds for an independent lesson too', async () => {
+    const dto = toDto(
+      CreateLessonDto,
+      baseLesson({ categoryIds: undefined, courseId: '', moduleId: '' }),
+    );
+    expect(await errorFields(dto)).toEqual(['categoryIds']);
+  });
+
+  it.each([
+    ['an empty array', []],
+    ['an empty string element', ['']],
+    ['a non-string element', [123]],
+  ])('rejects %s', async (_label, categoryIds) => {
+    const dto = toDto(CreateLessonDto, baseLesson({ categoryIds }));
+    expect(await errorFields(dto)).toEqual(['categoryIds']);
+  });
+
+  it('wraps a single multipart value into an array', async () => {
+    const dto = toDto(
+      CreateLessonDto,
+      baseLesson({ categoryIds: 'leadership' }),
+    );
+    expect(await errorFields(dto)).toEqual([]);
+    expect(dto.categoryIds).toEqual(['leadership']);
+  });
+
+  it('keeps categoryIds optional on update and replaces the whole array', async () => {
+    expect(await errorFields(toDto(UpdateLessonDto, {}))).toEqual([]);
+    const dto = toDto(UpdateLessonDto, {
+      categoryIds: [CATEGORY_ID, CATEGORY_ID_2],
+    });
+    expect(await errorFields(dto)).toEqual([]);
+    expect(dto.categoryIds).toEqual([CATEGORY_ID, CATEGORY_ID_2]);
     expect(
-      await errorFields(toDto(UpdateLessonDto, { categoryId: CATEGORY_ID })),
-    ).toEqual([]);
-    expect(
-      await errorFields(toDto(UpdateLessonDto, { categoryId: 'abc' })),
-    ).toEqual([]);
+      await errorFields(toDto(UpdateLessonDto, { categoryIds: [] })),
+    ).toEqual(['categoryIds']);
   });
 
   it.each([
@@ -160,20 +186,22 @@ describe('Lesson category', () => {
       [CATEGORY_ID, CATEGORY_ID_2],
     ],
   ])('parses the list filter from %s', async (_label, value, expected) => {
-    const dto = toDto(SearchLessonDto, { categoryId: value });
+    const dto = toDto(SearchLessonDto, { categoryIds: value });
     expect(await errorFields(dto)).toEqual([]);
-    expect(dto.categoryId).toEqual(expected);
+    expect(dto.categoryIds).toEqual(expected);
   });
 
-  it('leaves the list filter unset when categoryId is not provided', async () => {
+  it('leaves the list filter unset when categoryIds is not provided', async () => {
     const dto = toDto(SearchLessonDto, {});
     expect(await errorFields(dto)).toEqual([]);
-    expect(dto.categoryId).toBeUndefined();
+    expect(dto.categoryIds).toBeUndefined();
   });
 
   it('accepts non-UUID string values in the list filter', async () => {
-    const dto = toDto(SearchLessonDto, { categoryId: 'leadership,management' });
+    const dto = toDto(SearchLessonDto, {
+      categoryIds: 'leadership,management',
+    });
     expect(await errorFields(dto)).toEqual([]);
-    expect(dto.categoryId).toEqual(['leadership', 'management']);
+    expect(dto.categoryIds).toEqual(['leadership', 'management']);
   });
 });

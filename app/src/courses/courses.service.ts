@@ -15,6 +15,7 @@ import {
   ILike,
   IsNull,
   In,
+  ArrayOverlap,
 } from 'typeorm';
 import { Course, CourseStatus } from './entities/course.entity';
 import { Module, ModuleStatus } from '../modules/entities/module.entity';
@@ -178,7 +179,7 @@ export class CoursesService {
       certificateIssueDateTime:
         createCourseDto.certificateIssueDateTime || undefined,
       ordering: nextOrdering,
-      categoryId: createCourseDto.categoryId,
+      categoryIds: createCourseDto.categoryIds,
       tenantId,
       organisationId,
       createdBy: userId,
@@ -313,9 +314,9 @@ export class CoursesService {
       }
     });
 
-    // Category filter - matches courses in any of the given categories
-    if (filters?.categoryId?.length) {
-      whereClause.categoryId = In(filters.categoryId);
+    // Category filter - matches courses having ANY of the given categories (array overlap: &&)
+    if (filters?.categoryIds?.length) {
+      whereClause.categoryIds = ArrayOverlap(filters.categoryIds);
     }
 
     // Creator filter
@@ -1866,11 +1867,11 @@ export class CoursesService {
 
     // Category can be changed but not removed
     if (
-      updateCourseDto.categoryId !== undefined &&
-      !updateCourseDto.categoryId
+      updateCourseDto.categoryIds !== undefined &&
+      !updateCourseDto.categoryIds?.length
     ) {
       throw new BadRequestException(
-        VALIDATION_MESSAGES.COMMON.REQUIRED('Category ID'),
+        VALIDATION_MESSAGES.COMMON.REQUIRED('Category IDs'),
       );
     }
 
