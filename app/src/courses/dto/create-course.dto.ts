@@ -4,6 +4,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { CourseStatus, RewardType } from '../entities/course.entity';
 import { HelperUtil, ValidateDatetimeConstraints, ValidateCertificateDateTime } from '../../common/utils/helper.util';
 import { VALIDATION_MESSAGES } from '../../common/constants/response-messages.constant';
+import { IsCategoryIds } from '../../common/decorators/category-ids.decorator';
 
 export class CreateCourseDto {
   @ApiProperty({ 
@@ -129,6 +130,9 @@ export class CreateCourseDto {
   @IsOptional()
   @IsEnum(RewardType, { message: VALIDATION_MESSAGES.COMMON.ENUM('Reward type') })
   rewardType?: RewardType;
+
+  @IsCategoryIds('course')
+  categoryIds: string[];
 
   @ApiPropertyOptional({ 
     description: VALIDATION_MESSAGES.COURSE.TEMPLATE_ID,

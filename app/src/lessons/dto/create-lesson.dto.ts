@@ -19,6 +19,7 @@ import {
 } from 'class-validator';
 import { Type, Transform } from 'class-transformer';
 import { VALIDATION_MESSAGES } from '../../common/constants/response-messages.constant';
+import { IsCategoryIds } from '../../common/decorators/category-ids.decorator';
 import {
   LessonStatus,
   LessonSubFormat,
@@ -278,6 +279,10 @@ export class CreateLessonDto {
   @IsNotEmpty({ message: VALIDATION_MESSAGES.COMMON.REQUIRED('Module ID') })
   @IsUUID('4', { message: VALIDATION_MESSAGES.COMMON.UUID('Module ID') })
   moduleId?: string | null;
+
+  // Category is mandatory for every lesson, including independent lessons
+  @IsCategoryIds('lesson')
+  categoryIds: string[];
 
   @ApiProperty({
     description: 'Whether this is a free lesson',

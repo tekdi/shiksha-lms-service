@@ -3,13 +3,17 @@ import { LessonsService } from './lessons.service';
 import { LessonFormat, LessonSubFormat } from './entities/lesson.entity';
 import { CreateLessonDto } from './dto/create-lesson.dto';
 import { UpdateLessonDto } from './dto/update-lesson.dto';
-import { RESPONSE_MESSAGES } from '../common/constants/response-messages.constant';
+import {
+  RESPONSE_MESSAGES,
+  VALIDATION_MESSAGES,
+} from '../common/constants/response-messages.constant';
 
 const TENANT = 'tenant-1';
 const ORG = 'org-1';
 const USER = 'user-1';
 const COURSE_ID = 'course-1';
 const MODULE_ID = 'module-1';
+const CATEGORY_ID = 'category-1';
 
 describe('LessonsService - independent lessons', () => {
   let service: LessonsService;
@@ -79,6 +83,7 @@ describe('LessonsService - independent lessons', () => {
       mediaContentSource: 'https://youtube.com/watch?v=x',
       mediaContentSubFormat: LessonSubFormat.YOUTUBE,
       considerForPassing: true,
+      categoryIds: [CATEGORY_ID],
       ...overrides,
     }) as CreateLessonDto;
 
@@ -218,6 +223,158 @@ describe('LessonsService - independent lessons', () => {
       ).rejects.toThrow(
         new BadRequestException(RESPONSE_MESSAGES.ERROR.LESSON_CHECKED_OUT),
       );
+    });
+  });
+
+  describe('category', () => {
+    const existing = {
+      lessonId: 'lesson-1',
+      courseId: null,
+      moduleId: null,
+      categoryIds: [CATEGORY_ID],
+      format: LessonFormat.VIDEO,
+    };
+
+    it('creates an independent lesson with its category', async () => {
+      const lesson = await service.create(createDto(), USER, TENANT, ORG);
+
+      expect(lesson).toMatchObject({ categoryIds: [CATEGORY_ID] });
+      expect(lesson.courseId).toBeUndefined();
+      expect(lesson.moduleId).toBeUndefined();
+    });
+
+    it('creates a lesson with multiple categories', async () => {
+      const lesson = await service.create(
+        createDto({ categoryIds: ['category-1', 'category-2'] }),
+        USER,
+        TENANT,
+        ORG,
+      );
+      expect(lesson.categoryIds).toEqual(['category-1', 'category-2']);
+    });
+
+    it('creates a course/module lesson with its category', async () => {
+      const lesson = await service.create(
+        createDto({ courseId: COURSE_ID, moduleId: MODULE_ID }),
+        USER,
+        TENANT,
+        ORG,
+      );
+
+      expect(lesson).toMatchObject({
+        categoryIds: [CATEGORY_ID],
+        courseId: COURSE_ID,
+        moduleId: MODULE_ID,
+      });
+    });
+
+    it.each([null, []])(
+      'rejects removing the category on update (%p)',
+      async (categoryIds) => {
+        lessonRepository.findOne.mockResolvedValue(existing);
+
+        await expect(
+          service.update(
+            'lesson-1',
+            { categoryIds } as UpdateLessonDto,
+            USER,
+            TENANT,
+            ORG,
+          ),
+        ).rejects.toThrow(
+          new BadRequestException(
+            VALIDATION_MESSAGES.COMMON.REQUIRED('Category IDs'),
+          ),
+        );
+        expect(lessonRepository.save).not.toHaveBeenCalled();
+      },
+    );
+
+    it('accepts a new category on update', async () => {
+      lessonRepository.findOne.mockResolvedValue(existing);
+
+      // checkedOut is rejected after the category step, proving the new category passed
+      await expect(
+        service.update(
+          'lesson-1',
+          {
+            categoryIds: ['category-2', 'category-3'],
+            checkedOut: 'x',
+          } as UpdateLessonDto,
+          USER,
+          TENANT,
+          ORG,
+        ),
+      ).rejects.toThrow(
+        new BadRequestException(RESPONSE_MESSAGES.ERROR.LESSON_CHECKED_OUT),
+      );
+    });
+
+    it('does not require the category when it is not part of the update', async () => {
+      lessonRepository.findOne.mockResolvedValue(existing);
+
+      // checkedOut is rejected after the category step, proving it was skipped without error
+      await expect(
+        service.update(
+          'lesson-1',
+          { checkedOut: 'x' } as UpdateLessonDto,
+          USER,
+          TENANT,
+          ORG,
+        ),
+      ).rejects.toThrow(
+        new BadRequestException(RESPONSE_MESSAGES.ERROR.LESSON_CHECKED_OUT),
+      );
+    });
+
+    describe('getLessons category filter', () => {
+      let queryBuilder: any;
+
+      beforeEach(() => {
+        queryBuilder = {
+          leftJoinAndSelect: jest.fn().mockReturnThis(),
+          leftJoin: jest.fn().mockReturnThis(),
+          where: jest.fn().mockReturnThis(),
+          andWhere: jest.fn().mockReturnThis(),
+          skip: jest.fn().mockReturnThis(),
+          take: jest.fn().mockReturnThis(),
+          orderBy: jest.fn().mockReturnThis(),
+          getManyAndCount: jest.fn().mockResolvedValue([[], 0]),
+        };
+        lessonRepository.createQueryBuilder = jest.fn(() => queryBuilder);
+        (service as any).cacheService.get = jest.fn().mockResolvedValue(null);
+        (service as any).cacheConfig.getLessonPattern = jest.fn(
+          () => 'lessons',
+        );
+      });
+
+      const categoryConditions = () =>
+        queryBuilder.andWhere.mock.calls.filter(([sql]) =>
+          sql.includes('categoryIds'),
+        );
+
+      it.each([
+        ['one category', [CATEGORY_ID]],
+        ['multiple categories', [CATEGORY_ID, 'category-2', 'category-3']],
+      ])('filters by %s', async (_label, categoryIds) => {
+        await service.getLessons(TENANT, ORG, { limit: 10, skip: 0 } as any, {
+          categoryIds: categoryIds,
+        });
+
+        expect(categoryConditions()).toEqual([
+          ['lesson.categoryIds && :categoryIds', { categoryIds }],
+        ]);
+      });
+
+      it('does not filter by category when categoryIds is not provided', async () => {
+        await service.getLessons(
+          TENANT,
+          ORG,
+          { limit: 10, skip: 0 } as any,
+          {},
+        );
+        expect(categoryConditions()).toEqual([]);
+      });
     });
   });
 });

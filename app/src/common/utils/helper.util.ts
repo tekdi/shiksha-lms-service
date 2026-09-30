@@ -173,6 +173,19 @@ export class HelperUtil {
   }
 
   /**
+   * Normalise a multi-value query parameter into a string array.
+   * Supports comma-separated values (?ids=a,b) and repeated params (?ids=a&ids=b).
+   */
+  static toStringArray(value: unknown): unknown {
+    if (value === undefined || value === null || value === '') return undefined;
+    const values = Array.isArray(value) ? value : [value];
+    return values
+      .flatMap((v) => (typeof v === 'string' ? v.split(',') : [v]))
+      .map((v) => (typeof v === 'string' ? v.trim() : v))
+      .filter((v) => v !== '');
+  }
+
+  /**
    * Generate a URL-friendly alias from a title
    * @param title The title to convert to an alias
    * @returns A URL-friendly alias string

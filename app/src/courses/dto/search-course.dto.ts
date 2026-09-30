@@ -1,8 +1,9 @@
 import { ApiPropertyOptional, ApiProperty } from '@nestjs/swagger';
-import { IsOptional, IsBoolean, IsString, IsEnum, IsUUID, IsDateString, IsNumber, Min } from 'class-validator';
+import { IsOptional, IsBoolean, IsString, IsEnum, IsUUID, IsDateString, IsNumber, Min, IsArray } from 'class-validator';
 import { Transform, Type } from 'class-transformer';
 import { CourseStatus } from '../entities/course.entity';
 import { Course } from '../entities/course.entity';
+import { HelperUtil } from '../../common/utils/helper.util';
 
 export enum SortOrder {
   ASC = 'ASC',
@@ -84,6 +85,17 @@ export class SearchCourseDto {
   @IsDateString()
   @Type(() => Date)
   endDateTo?: Date;
+
+  @ApiPropertyOptional({
+    description: 'Filter by one or more category IDs (comma-separated or repeated). Returns courses in any of the given categories.',
+    type: [String],
+    example: '123,456',
+  })
+  @IsOptional()
+  @Transform(({ obj, key }) => HelperUtil.toStringArray(obj[key]))
+  @IsArray()
+  @IsString({ each: true, message: 'Each category ID must be a string' })
+  categoryIds?: string[];
 
   @ApiPropertyOptional({ description: 'Filter by creator user ID' })
   @IsOptional()

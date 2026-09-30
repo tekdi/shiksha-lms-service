@@ -15,6 +15,7 @@ import {
   ILike,
   IsNull,
   In,
+  ArrayOverlap,
 } from 'typeorm';
 import { Course, CourseStatus } from './entities/course.entity';
 import { Module, ModuleStatus } from '../modules/entities/module.entity';
@@ -36,7 +37,10 @@ import {
   UserEnrollment,
   EnrollmentStatus,
 } from '../enrollments/entities/user-enrollment.entity';
-import { RESPONSE_MESSAGES } from '../common/constants/response-messages.constant';
+import {
+  RESPONSE_MESSAGES,
+  VALIDATION_MESSAGES,
+} from '../common/constants/response-messages.constant';
 import { HelperUtil } from '../common/utils/helper.util';
 import { CreateCourseDto } from './dto/create-course.dto';
 import {
@@ -175,6 +179,7 @@ export class CoursesService {
       certificateIssueDateTime:
         createCourseDto.certificateIssueDateTime || undefined,
       ordering: nextOrdering,
+      categoryIds: createCourseDto.categoryIds,
       tenantId,
       organisationId,
       createdBy: userId,
@@ -308,6 +313,11 @@ export class CoursesService {
         whereClause[filter] = filters[filter];
       }
     });
+
+    // Category filter - matches courses having ANY of the given categories (array overlap: &&)
+    if (filters?.categoryIds?.length) {
+      whereClause.categoryIds = ArrayOverlap(filters.categoryIds);
+    }
 
     // Creator filter
     if (filters?.createdBy) {
@@ -1853,6 +1863,16 @@ export class CoursesService {
           `Alias '${originalAlias}' already exists. Generated new alias: ${updateCourseDto.alias}`,
         );
       }
+    }
+
+    // Category can be changed but not removed
+    if (
+      updateCourseDto.categoryIds !== undefined &&
+      !updateCourseDto.categoryIds?.length
+    ) {
+      throw new BadRequestException(
+        VALIDATION_MESSAGES.COMMON.REQUIRED('Category IDs'),
+      );
     }
 
     // Handle rewardType and templateId - handle boolean values for backward compatibility

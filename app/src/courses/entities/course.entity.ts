@@ -156,6 +156,18 @@ export class Course {
   @Column({ type: 'boolean', default: false })
   notification_send: boolean;
 
+  // Nullable at DB level for courses created before categories existed; required by the API on create.
+  // Indexed with GIN (see migrations) for array-overlap filtering.
+  @ApiProperty({
+    description: 'Category IDs of the course',
+    example: ['category-1', 'category-2'],
+    type: [String],
+    required: false,
+    nullable: true,
+  })
+  @Column({ type: 'varchar', array: true, nullable: true })
+  categoryIds: string[];
+
   @ApiProperty({ description: 'User who created the course', example: '123e4567-e89b-12d3-a456-426614174000' })
   @Column({ type: 'uuid' })
   createdBy: string;
