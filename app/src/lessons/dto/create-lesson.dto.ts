@@ -15,11 +15,11 @@ import {
   IsNumber,
   // IsUrl,
   IsArray,
-  ArrayNotEmpty,
   // MinLength,
 } from 'class-validator';
 import { Type, Transform } from 'class-transformer';
 import { VALIDATION_MESSAGES } from '../../common/constants/response-messages.constant';
+import { IsCategoryIds } from '../../common/decorators/category-ids.decorator';
 import {
   LessonStatus,
   LessonSubFormat,
@@ -281,30 +281,7 @@ export class CreateLessonDto {
   moduleId?: string | null;
 
   // Category is mandatory for every lesson, including independent lessons
-  @ApiProperty({
-    description: 'Category IDs of the lesson (at least one)',
-    example: ['category-1', 'category-2'],
-    type: [String],
-    required: true,
-  })
-  // multipart/form-data sends a single value as a plain string; normalise it to an array
-  @Transform(({ value }) =>
-    value === undefined || value === null || Array.isArray(value)
-      ? value
-      : [value],
-  )
-  @IsArray({ message: VALIDATION_MESSAGES.COMMON.ARRAY('Category IDs') })
-  @ArrayNotEmpty({
-    message: VALIDATION_MESSAGES.COMMON.REQUIRED('Category IDs'),
-  })
-  @IsString({
-    each: true,
-    message: VALIDATION_MESSAGES.COMMON.STRING('Category IDs'),
-  })
-  @IsNotEmpty({
-    each: true,
-    message: VALIDATION_MESSAGES.COMMON.REQUIRED('Category IDs'),
-  })
+  @IsCategoryIds('lesson')
   categoryIds: string[];
 
   @ApiProperty({

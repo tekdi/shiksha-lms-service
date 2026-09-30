@@ -1,9 +1,10 @@
-import { IsNotEmpty, IsString, IsOptional, IsBoolean, IsEnum, IsNumber, IsUUID, IsObject, IsDateString, MinLength, MaxLength, Matches, ValidateIf, Validate, IsArray, ArrayNotEmpty } from 'class-validator';
-import { Type, Transform } from 'class-transformer';
+import { IsNotEmpty, IsString, IsOptional, IsBoolean, IsEnum, IsNumber, IsUUID, IsObject, IsDateString, MinLength, MaxLength, Matches, ValidateIf, Validate, IsArray } from 'class-validator';
+import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { CourseStatus, RewardType } from '../entities/course.entity';
 import { HelperUtil, ValidateDatetimeConstraints, ValidateCertificateDateTime } from '../../common/utils/helper.util';
 import { VALIDATION_MESSAGES } from '../../common/constants/response-messages.constant';
+import { IsCategoryIds } from '../../common/decorators/category-ids.decorator';
 
 export class CreateCourseDto {
   @ApiProperty({ 
@@ -130,30 +131,7 @@ export class CreateCourseDto {
   @IsEnum(RewardType, { message: VALIDATION_MESSAGES.COMMON.ENUM('Reward type') })
   rewardType?: RewardType;
 
-  @ApiProperty({
-    description: 'Category IDs of the course (at least one)',
-    example: ['category-1', 'category-2'],
-    type: [String],
-    required: true,
-  })
-  // multipart/form-data sends a single value as a plain string; normalise it to an array
-  @Transform(({ value }) =>
-    value === undefined || value === null || Array.isArray(value)
-      ? value
-      : [value],
-  )
-  @IsArray({ message: VALIDATION_MESSAGES.COMMON.ARRAY('Category IDs') })
-  @ArrayNotEmpty({
-    message: VALIDATION_MESSAGES.COMMON.REQUIRED('Category IDs'),
-  })
-  @IsString({
-    each: true,
-    message: VALIDATION_MESSAGES.COMMON.STRING('Category IDs'),
-  })
-  @IsNotEmpty({
-    each: true,
-    message: VALIDATION_MESSAGES.COMMON.REQUIRED('Category IDs'),
-  })
+  @IsCategoryIds('course')
   categoryIds: string[];
 
   @ApiPropertyOptional({ 
