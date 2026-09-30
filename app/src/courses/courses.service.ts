@@ -41,6 +41,7 @@ import { RESPONSE_MESSAGES } from '../common/constants/response-messages.constan
 import { HelperUtil } from '../common/utils/helper.util';
 import { CreateCourseDto } from './dto/create-course.dto';
 import {
+  CourseContextType,
   SearchCourseDto,
   SearchCourseResponseDto,
   SortBy,
@@ -301,12 +302,15 @@ export class CoursesService {
         ...(whereClause.params || {}),
         pathwayId: filters.pathwayId,
       };
-    } else if (filters?.pathwayIds?.length) {
-      // Courses in any of the given pathways (e.g. all STANDARD or all VOLUNTEER pathways)
-      const pathwayIds = filters.pathwayIds;
+    }
+    // Only cohort courses or only pathway courses, when no specific ID is given
+    if (!filters?.cohortId && !filters?.pathwayId && filters?.contextType) {
+      const key =
+        filters.contextType === CourseContextType.PATHWAY
+          ? 'pathwayId'
+          : 'cohortId';
       whereClause.params = Raw(
-        (alias) => `${alias} ->> 'pathwayId' IN (:...pathwayIds)`,
-        { pathwayIds },
+        (alias) => `${alias} ->> '${key}' IS NOT NULL AND ${alias} ->> '${key}' <> ''`,
       );
     }
     // Boolean filters
