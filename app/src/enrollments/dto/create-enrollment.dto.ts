@@ -1,5 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import {
+  IsNotEmpty,
   IsString,
   IsOptional,
   IsDateString,
@@ -20,7 +21,8 @@ export class CreateEnrollmentDto {
     example: '123e4567-e89b-12d3-a456-426614174000',
     required: true,
   })
-  @IsUUID('4', { message: VALIDATION_MESSAGES.COMMON.UUID('Learner ID') })
+  @IsNotEmpty({ message: VALIDATION_MESSAGES.COMMON.REQUIRED('Learner ID') })
+  @IsString({ message: VALIDATION_MESSAGES.COMMON.STRING('Learner ID') })
   learnerId: string;
 
   @ApiProperty({
@@ -97,6 +99,6 @@ export class CreateEnrollmentDto {
     required: false,
   })
   @IsOptional()
-  @IsUUID('4', { message: VALIDATION_MESSAGES.COMMON.UUID('Enrolled by') })
+  @IsString({ message: VALIDATION_MESSAGES.COMMON.STRING('Enrolled by') })
   enrolledBy?: string;
 }

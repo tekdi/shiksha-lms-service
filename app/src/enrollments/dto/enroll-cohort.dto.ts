@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsString, IsUUID } from 'class-validator';
+import { IsNotEmpty, IsString } from 'class-validator';
 import { VALIDATION_MESSAGES } from '../../common/constants/response-messages.constant';
 
 export class EnrollCohortDto {
@@ -8,7 +8,8 @@ export class EnrollCohortDto {
     example: '123e4567-e89b-12d3-a456-426614174000',
     required: true,
   })
-  @IsUUID('4', { message: VALIDATION_MESSAGES.COMMON.UUID('Learner ID') })
+  @IsNotEmpty({ message: VALIDATION_MESSAGES.COMMON.REQUIRED('Learner ID') })
+  @IsString({ message: VALIDATION_MESSAGES.COMMON.STRING('Learner ID') })
   learnerId: string;
 
   @ApiProperty({
