@@ -36,6 +36,20 @@ export class SearchCourseDto {
   @IsString()
   pathwayId?: string;
 
+  @ApiPropertyOptional({
+    description: 'Filter by any of these pathway IDs (comma-separated)',
+    type: String,
+    example: '123e4567-e89b-12d3-a456-426614174000,223e4567-e89b-12d3-a456-426614174000',
+  })
+  @IsOptional()
+  @Transform(({ value }) =>
+    typeof value === 'string'
+      ? value.split(',').map((id) => id.trim()).filter(Boolean)
+      : value,
+  )
+  @IsUUID('4', { each: true })
+  pathwayIds?: string[];
+
   @ApiPropertyOptional({ enum: CourseStatus, description: 'Filter by course status' })
   @IsOptional()
   @IsEnum(CourseStatus)
