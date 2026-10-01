@@ -832,10 +832,12 @@ export class TrackingService {
   /**
    * Runs when a course track is COMPLETED and notification_sent is still false.
    *
-   * notification_sent is set to true only AFTER user-service confirms (2xx) the
-   * pathway completion — never before — so a failed call leaves it false and the
-   * next trigger on this course retries. Courses in a pathway that isn't fully
-   * completed yet keep notification_sent = false and skip the user-service call.
+   * notification_sent is set to true ONLY for VOLUNTEER pathway courses, and only
+   * AFTER user-service confirms (2xx) the pathway completion — never before — so a
+   * failed call leaves it false and the next trigger on this course retries.
+   * Normal courses (no pathway) and STANDARD pathway courses always keep
+   * notification_sent = false. Courses in a pathway that isn't fully completed yet
+   * keep it false and skip the user-service call.
    * Concurrent calls are safe: user-service completes the pathway with an atomic
    * UPDATE ... WHERE status = ACTIVE and answers "already processed" otherwise.
    */
@@ -853,19 +855,51 @@ export class TrackingService {
     });
     const pathwayId = course?.params?.pathwayId;
 
-    // Not part of a pathway — nothing to notify, mark done.
+    // Not part of a pathway — nothing to notify; notification_sent stays false.
     if (!pathwayId) {
-      await this.courseTrackRepository.update(
-        { courseTrackId: courseTrack.courseTrackId },
-        { notification_sent: true },
-      );
-      courseTrack.notification_sent = true;
       return;
     }
 
     // Skip the user-service call until every course in the pathway is completed.
     const pathwayStatus = await this.getPathwayCompletionStatus(pathwayId, userId, tenantId, organisationId);
     if (!pathwayStatus.allCompleted) {
+      return;
+    }
+
+    // Pathway completion — retried up to 3 times with a short backoff.
+    // 404 means user-service has no pathway history row for this user+pathway;
+    // retrying right away can't fix that, so stop the loop.
+    let pathwayNotifyResult: { pathwayType?: string; allCoursesCompleted?: boolean } | null = null;
+    for (let attempt = 1; attempt <= 3 && !pathwayNotifyResult; attempt++) {
+      try {
+        pathwayNotifyResult = await this.notifyPathwayCourseCompleted(
+          userId,
+          courseId,
+          tenantId,
+          organisationId,
+          authorization,
+          pathwayId,
+        );
+      } catch (err) {
+        if (err?.response?.status === 404) {
+          this.logger.warn(`Pathway completion callback: no pathway history for user=${userId} pathway=${pathwayId} — not retrying`);
+          break;
+        }
+        this.logger.error(`Pathway completion callback attempt ${attempt}/3 failed for user=${userId} course=${courseId} pathway=${pathwayId}: ${err?.message}`);
+        if (attempt < 3) {
+          await new Promise((resolve) => setTimeout(resolve, attempt * 1000));
+        }
+      }
+    }
+
+    if (!pathwayNotifyResult) {
+      // All attempts failed — leave notification_sent = false so the next trigger retries.
+      this.logger.error(`Pathway completion callback gave up for user=${userId} course=${courseId} pathway=${pathwayId}; will retry on next trigger`);
+      return;
+    }
+
+    // Only VOLUNTEER pathways are marked — STANDARD keeps notification_sent = false.
+    if (pathwayNotifyResult.pathwayType !== 'VOLUNTEER') {
       return;
     }
 
@@ -879,43 +913,9 @@ export class TrackingService {
       .getMany();
     const pathwayCourseIds = pathwayCourses.map((c) => c.courseId);
 
-    // Pathway completion — retried up to 3 times with a short backoff.
-    // 404 means user-service has no pathway history row for this user+pathway;
-    // retrying can't fix that, so it's treated as final.
-    let pathwayNotifyResult: { pathwayType?: string; allCoursesCompleted?: boolean } | null = null;
-    let historyNotFound = false;
-    for (let attempt = 1; attempt <= 3 && !pathwayNotifyResult; attempt++) {
-      try {
-        pathwayNotifyResult = await this.notifyPathwayCourseCompleted(
-          userId,
-          courseId,
-          tenantId,
-          organisationId,
-          authorization,
-          pathwayId,
-        );
-      } catch (err) {
-        if (err?.response?.status === 404) {
-          historyNotFound = true;
-          this.logger.warn(`Pathway completion callback: no pathway history for user=${userId} pathway=${pathwayId} — not retrying`);
-          break;
-        }
-        this.logger.error(`Pathway completion callback attempt ${attempt}/3 failed for user=${userId} course=${courseId} pathway=${pathwayId}: ${err?.message}`);
-        if (attempt < 3) {
-          await new Promise((resolve) => setTimeout(resolve, attempt * 1000));
-        }
-      }
-    }
-
-    if (!pathwayNotifyResult && !historyNotFound) {
-      // All attempts failed — leave notification_sent = false so the next trigger retries.
-      this.logger.error(`Pathway completion callback gave up for user=${userId} course=${courseId} pathway=${pathwayId}; will retry on next trigger`);
-      return;
-    }
-
-    // user-service accepted (or there's nothing to complete) — mark every
-    // course_track row of this user across the pathway as notified, so later
-    // activity on any of these courses doesn't call user-service again.
+    // user-service accepted — mark every course_track row of this user across the
+    // VOLUNTEER pathway as notified, so later activity on any of these courses
+    // doesn't call user-service again.
     await this.courseTrackRepository.update(
       { userId, courseId: In(pathwayCourseIds) } as FindOptionsWhere<CourseTrack>,
       { notification_sent: true },
