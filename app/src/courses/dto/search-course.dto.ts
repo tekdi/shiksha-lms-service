@@ -20,6 +20,11 @@ export enum SortBy {
   FREE = 'free'
 }
 
+export enum CourseContextType {
+  COHORT = 'cohort',
+  PATHWAY = 'pathway'
+}
+
 export class SearchCourseDto {
   @ApiPropertyOptional({ description: 'Search keyword to match in title, description, or short description' })
   @IsOptional()
@@ -35,6 +40,15 @@ export class SearchCourseDto {
   @IsOptional()
   @IsString()
   pathwayId?: string;
+
+  @ApiPropertyOptional({
+    enum: CourseContextType,
+    description:
+      'Only courses that belong to a cohort (params.cohortId set) or to a pathway (params.pathwayId set)',
+  })
+  @IsOptional()
+  @IsEnum(CourseContextType)
+  contextType?: CourseContextType;
 
   @ApiPropertyOptional({ enum: CourseStatus, description: 'Filter by course status' })
   @IsOptional()

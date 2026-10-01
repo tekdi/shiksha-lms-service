@@ -13,6 +13,7 @@ import {
   Not,
   Equal,
   ILike,
+  Raw,
   IsNull,
   In,
 } from 'typeorm';
@@ -40,6 +41,7 @@ import { RESPONSE_MESSAGES } from '../common/constants/response-messages.constan
 import { HelperUtil } from '../common/utils/helper.util';
 import { CreateCourseDto } from './dto/create-course.dto';
 import {
+  CourseContextType,
   SearchCourseDto,
   SearchCourseResponseDto,
   SortBy,
@@ -300,6 +302,16 @@ export class CoursesService {
         ...(whereClause.params || {}),
         pathwayId: filters.pathwayId,
       };
+    }
+    // Only cohort courses or only pathway courses, when no specific ID is given
+    if (!filters?.cohortId && !filters?.pathwayId && filters?.contextType) {
+      const key =
+        filters.contextType === CourseContextType.PATHWAY
+          ? 'pathwayId'
+          : 'cohortId';
+      whereClause.params = Raw(
+        (alias) => `${alias} ->> '${key}' IS NOT NULL AND ${alias} ->> '${key}' <> ''`,
+      );
     }
     // Boolean filters
     const booleanFilters = ['featured', 'free'];
@@ -1986,8 +1998,15 @@ export class CoursesService {
     organisationId: string,
     authorization: string,
     newCohortId?: string,
+    newPathwayId?: string,
   ): Promise<Course> {
     this.logger.log(`Cloneing course: ${courseId}`);
+
+    if (newCohortId && newPathwayId) {
+      throw new BadRequestException(
+        'Either newCohortId or newPathwayId must be provided, but not both.',
+      );
+    }
 
     try {
       // Use a database transaction to ensure data consistency
@@ -2039,12 +2058,11 @@ export class CoursesService {
             certificateGenDateTime: undefined,
             certificateIssueDateTime: undefined,
             prerequisites: undefined,
-            params: newCohortId
-              ? {
-                  ...originalCourse.params,
-                  cohortId: newCohortId,
-                }
-              : originalCourse.params,
+            params: this.buildClonedCourseParams(
+              originalCourse.params,
+              newCohortId,
+              newPathwayId,
+            ),
           };
 
           this.logger.log(`Creating new course with title: ${newTitle}`);
@@ -2093,6 +2111,25 @@ export class CoursesService {
 
       throw error;
     }
+  }
+
+  /**
+   * Point the cloned course at the target cohort or pathway.
+   * A pathway target drops cohortId so the copy only shows under that pathway.
+   */
+  private buildClonedCourseParams(
+    originalParams: Record<string, any>,
+    newCohortId?: string,
+    newPathwayId?: string,
+  ): Record<string, any> {
+    if (newPathwayId) {
+      const { cohortId, ...rest } = originalParams ?? {};
+      return { ...rest, pathwayId: newPathwayId };
+    }
+    if (newCohortId) {
+      return { ...originalParams, cohortId: newCohortId };
+    }
+    return originalParams;
   }
 
   /**

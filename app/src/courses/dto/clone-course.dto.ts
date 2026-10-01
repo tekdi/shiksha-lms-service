@@ -9,6 +9,7 @@ import { VALIDATION_MESSAGES } from '../../common/constants/response-messages.co
 /**
  * DTO for creating a new module
  * Note: tenantId and organisationId are handled automatically through the authenticated user's context
+ * Provide either newCohortId (Module Management) or newPathwayId (Pathway Management), not both.
  */
 export class CloneCourseDto {
   @ApiProperty({
@@ -19,4 +20,13 @@ export class CloneCourseDto {
   @IsOptional()
   @IsUUID('4', { message: VALIDATION_MESSAGES.COMMON.UUID('New Cohort ID') })
   newCohortId: string;
+
+  @ApiProperty({
+    description: 'New Pathway ID',
+    example: '123e4567-e89b-12d3-a456-426614174000',
+    required: false,
+  })
+  @IsOptional()
+  @IsUUID('4', { message: VALIDATION_MESSAGES.COMMON.UUID('New Pathway ID') })
+  newPathwayId: string;
 }
