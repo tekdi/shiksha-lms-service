@@ -542,6 +542,7 @@ export class CoursesController {
       tenantOrg.organisationId,
       authorization,
       requestBody.newCohortId,
+      requestBody.newPathwayId,
     );
     return copiedCourse;
   }
