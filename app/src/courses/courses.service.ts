@@ -15,6 +15,7 @@ import {
   ILike,
   IsNull,
   In,
+  Raw,
   ArrayOverlap,
 } from 'typeorm';
 import { Course, CourseStatus } from './entities/course.entity';
@@ -30,7 +31,10 @@ import {
   TrackingStatus,
 } from '../tracking/entities/course-track.entity';
 import { LessonTrack } from '../tracking/entities/lesson-track.entity';
-import { ModuleTrack } from '../tracking/entities/module-track.entity';
+import {
+  ModuleTrack,
+  ModuleTrackStatus,
+} from '../tracking/entities/module-track.entity';
 import { Media } from '../media/entities/media.entity';
 import { AssociatedFile } from '../media/entities/associated-file.entity';
 import {
@@ -46,6 +50,7 @@ import { CreateCourseDto } from './dto/create-course.dto';
 import {
   SearchCourseDto,
   SearchCourseResponseDto,
+  SearchCourseItemDto,
   SortBy,
   SortOrder,
 } from './dto/search-course.dto';
@@ -241,9 +246,13 @@ export class CoursesService {
       limit,
     );
 
+    // hasEnroll results are user-specific and change on (un)enrollment, so they are never cached
+    const hasEnrollFilter = filters?.hasEnroll !== undefined;
+
     // Check cache
-    const cachedResult =
-      await this.cacheService.get<SearchCourseResponseDto>(cacheKey);
+    const cachedResult = hasEnrollFilter
+      ? null
+      : await this.cacheService.get<SearchCourseResponseDto>(cacheKey);
     if (cachedResult) {
       return cachedResult;
     }
@@ -257,6 +266,27 @@ export class CoursesService {
 
     // Apply filters
     this.applyFilters(filters, whereClause);
+
+    // Enrollment filter (database level): only courses the user is / is not enrolled in.
+    // Part of the base where clause, so it applies to every keyword-search branch and to the count.
+    if (hasEnrollFilter) {
+      whereClause.courseId = Raw(
+        (alias) =>
+          `${filters.hasEnroll ? '' : 'NOT '}EXISTS (` +
+          'SELECT 1 FROM "user_enrollments" "enrollmentFilter" ' +
+          `WHERE "enrollmentFilter"."courseId" = ${alias} ` +
+          'AND "enrollmentFilter"."userId" = :enrollmentUserId ' +
+          'AND "enrollmentFilter"."tenantId" = :enrollmentTenantId ' +
+          'AND "enrollmentFilter"."organisationId" = :enrollmentOrganisationId ' +
+          'AND "enrollmentFilter"."status" = :enrollmentStatus)',
+        {
+          enrollmentUserId: filters.userId,
+          enrollmentTenantId: tenantId,
+          enrollmentOrganisationId: organisationId,
+          enrollmentStatus: EnrollmentStatus.PUBLISHED,
+        },
+      );
+    }
 
     // Build order clause - TypeORM expects 'ASC' or 'DESC' as string literals
     const orderClause: any = {};
@@ -273,10 +303,20 @@ export class CoursesService {
     });
 
     // Batch fetch module and enrollment counts
-    const coursesWithCounts = await this.enrichCoursesWithCounts(
+    let coursesWithCounts = await this.enrichCoursesWithCounts(
       courses,
       tenantId,
     );
+
+    // The user's progress, tracking and enrollment for the page (only for hasEnroll=true)
+    if (filters?.hasEnroll === true && filters.userId) {
+      coursesWithCounts = await this.enrichCoursesWithUserEnrollment(
+        coursesWithCounts,
+        filters.userId,
+        tenantId,
+        organisationId,
+      );
+    }
 
     const result: SearchCourseResponseDto = {
       courses: coursesWithCounts,
@@ -285,8 +325,14 @@ export class CoursesService {
       limit,
     };
 
-    // Cache result
-    await this.cacheService.set(cacheKey, result, this.cacheConfig.COURSE_TTL);
+    // Cache result (user-specific hasEnroll results are not cached)
+    if (!hasEnrollFilter) {
+      await this.cacheService.set(
+        cacheKey,
+        result,
+        this.cacheConfig.COURSE_TTL,
+      );
+    }
 
     return result;
   }
@@ -365,7 +411,7 @@ export class CoursesService {
   private async enrichCoursesWithCounts(
     courses: Course[],
     tenantId: string,
-  ): Promise<Course[]> {
+  ): Promise<SearchCourseItemDto[]> {
     if (courses.length === 0) return [];
 
     const courseIds = courses.map((c) => c.courseId);
@@ -411,6 +457,95 @@ export class CoursesService {
       ...course,
       moduleCount: moduleCountMap.get(course.courseId) || 0,
       enrolledUsersCount: enrollmentCountMap.get(course.courseId) || 0,
+    }));
+  }
+
+  /**
+   * Adds the user's completed module count, latest course tracking and latest published
+   * enrollment to a page of courses. Three batched queries for the whole page (no per-course
+   * queries); counting and "latest" selection happen in the database.
+   */
+  private async enrichCoursesWithUserEnrollment(
+    courses: SearchCourseItemDto[],
+    userId: string,
+    tenantId: string,
+    organisationId: string,
+  ): Promise<SearchCourseItemDto[]> {
+    if (courses.length === 0) return courses;
+
+    const courseIds = courses.map((c) => c.courseId);
+
+    const [completedModuleCounts, courseTracks, enrollments] =
+      await Promise.all([
+        // module_track has no courseId; the course comes from the tracked module.
+        // Same module scope as moduleCount (non-archived modules).
+        this.moduleTrackRepository
+          .createQueryBuilder('moduleTrack')
+          .innerJoin(Module, 'module', 'module.moduleId = moduleTrack.moduleId')
+          .select('module.courseId', 'courseId')
+          .addSelect('COUNT(DISTINCT moduleTrack.moduleId)', 'count')
+          .where('module.courseId IN (:...courseIds)', { courseIds })
+          .andWhere('module.status != :archivedStatus', {
+            archivedStatus: ModuleStatus.ARCHIVED,
+          })
+          .andWhere('moduleTrack.userId = :userId', { userId })
+          .andWhere('moduleTrack.tenantId = :tenantId', { tenantId })
+          .andWhere('moduleTrack.organisationId = :organisationId', {
+            organisationId,
+          })
+          .andWhere('moduleTrack.status = :completedStatus', {
+            completedStatus: ModuleTrackStatus.COMPLETED,
+          })
+          .groupBy('module.courseId')
+          .getRawMany<{ courseId: string; count: string }>(),
+
+        // course_track is unique per (userId, courseId); DISTINCT ON still guarantees
+        // one (the most recently accessed) row per course.
+        this.courseTrackRepository
+          .createQueryBuilder('courseTrack')
+          .distinctOn(['courseTrack.courseId'])
+          .where('courseTrack.courseId IN (:...courseIds)', { courseIds })
+          .andWhere('courseTrack.userId = :userId', { userId })
+          .andWhere('courseTrack.tenantId = :tenantId', { tenantId })
+          .andWhere('courseTrack.organisationId = :organisationId', {
+            organisationId,
+          })
+          .orderBy('courseTrack.courseId')
+          .addOrderBy('courseTrack.lastAccessedDate', 'DESC', 'NULLS LAST')
+          .getMany(),
+
+        // A user can have several enrollment rows per course; take the latest published one
+        this.userEnrollmentRepository
+          .createQueryBuilder('enrollment')
+          .distinctOn(['enrollment.courseId'])
+          .where('enrollment.courseId IN (:...courseIds)', { courseIds })
+          .andWhere('enrollment.userId = :userId', { userId })
+          .andWhere('enrollment.tenantId = :tenantId', { tenantId })
+          .andWhere('enrollment.organisationId = :organisationId', {
+            organisationId,
+          })
+          .andWhere('enrollment.status = :publishedStatus', {
+            publishedStatus: EnrollmentStatus.PUBLISHED,
+          })
+          .orderBy('enrollment.courseId')
+          .addOrderBy('enrollment.enrolledAt', 'DESC')
+          .getMany(),
+      ]);
+
+    const completedModuleCountMap = new Map(
+      completedModuleCounts.map((row) => [
+        row.courseId,
+        Number.parseInt(row.count, 10),
+      ]),
+    );
+    const courseTrackMap = new Map(courseTracks.map((t) => [t.courseId, t]));
+    const enrollmentMap = new Map(enrollments.map((e) => [e.courseId, e]));
+
+    return courses.map((course) => ({
+      ...course,
+      completedModuleCount: completedModuleCountMap.get(course.courseId) || 0,
+      courseTracking: courseTrackMap.get(course.courseId) ?? null,
+      enrollment: enrollmentMap.get(course.courseId) ?? null,
     }));
   }
 
