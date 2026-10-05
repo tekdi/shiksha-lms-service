@@ -101,7 +101,7 @@ export class Module {
   createdAt: Date;
 
   @ApiProperty({ description: 'User who created the module', example: '123e4567-e89b-12d3-a456-426614174000' })
-  @Column({ type: 'varchar' })
+  @Column({ type: 'varchar', nullable: true })
   createdBy: string;
 
   @ApiProperty({ description: 'Last update timestamp', example: '2023-01-01T00:00:00Z' })
@@ -109,7 +109,7 @@ export class Module {
   updatedAt: Date;
 
   @ApiProperty({ description: 'User who last updated the module', example: '123e4567-e89b-12d3-a456-426614174000' })
-  @Column({ type: 'varchar' })
+  @Column({ type: 'varchar', nullable: true })
   updatedBy: string;
 
   // Relationships
