@@ -24,6 +24,7 @@ import { UpdateLessonTrackingDto } from './dto/update-lesson-tracking.dto';
 import { UpdateCourseTrackingDto } from './dto/update-course-tracking.dto';
 import { UpdateEventProgressDto } from './dto/update-event-progress.dto';
 import { LessonStatusDto } from './dto/lesson-status.dto';
+import { SearchTrackedLessonsDto, TrackedLessonsResponseDto } from './dto/search-tracked-lessons.dto';
 import { ConfigService } from '@nestjs/config';
 import { ModuleTrack, ModuleTrackStatus } from './entities/module-track.entity';
 import { LessonsService } from '../lessons/lessons.service';
@@ -82,6 +83,116 @@ export class TrackingService {
     private readonly cacheService: CacheService,
     private readonly lmsNotificationService: LmsNotificationService,
   ) {}
+
+  /**
+   * Get standalone lessons with optional tracking data for the user
+   */
+  async getUserTrackedLessons(
+    userId: string,
+    filters: SearchTrackedLessonsDto,
+    tenantId: string,
+    organisationId: string
+  ): Promise<TrackedLessonsResponseDto> {
+    try {
+      const { lessonsFromLibrary, categoryId, search, hasTracking, limit = 10, offset = 0 } = filters;
+
+      const queryBuilder = this.lessonRepository.createQueryBuilder('lesson');
+
+      queryBuilder.where('lesson.tenantId = :tenantId', { tenantId });
+      queryBuilder.andWhere('lesson.organisationId = :organisationId', { organisationId });
+      queryBuilder.andWhere('lesson.status != :archived', { archived: LessonStatus.ARCHIVED });
+
+      if (lessonsFromLibrary === '1') {
+        queryBuilder.andWhere('lesson.courseId IS NULL');
+        queryBuilder.andWhere('lesson.moduleId IS NULL');
+      }
+
+      if (categoryId) {
+        queryBuilder.andWhere(':categoryId = ANY(lesson.categoryIds)', { categoryId });
+      }
+
+      if (search) {
+        queryBuilder.andWhere('lesson.title ILIKE :search', { search: `%${search}%` });
+      }
+
+      // Left join lesson tracking data for this specific user
+      if (userId) {
+        queryBuilder.leftJoinAndMapOne(
+          'lesson.lessonTrack',
+          LessonTrack,
+          'lesson_track',
+          'lesson_track.lessonId = lesson.lessonId AND lesson_track.userId = :userId AND lesson_track.courseId IS NULL',
+          { userId }
+        );
+      }
+
+      if (hasTracking === 'true') {
+        queryBuilder.andWhere('lesson_track.lessonTrackId IS NOT NULL');
+      } else if (hasTracking === 'false') {
+        queryBuilder.andWhere('lesson_track.lessonTrackId IS NULL');
+      }
+
+      queryBuilder.skip(offset).take(limit);
+      queryBuilder.orderBy('lesson.createdAt', 'DESC');
+
+      const [lessons, totalElements] = await queryBuilder.getManyAndCount();
+
+      return {
+        lessons,
+        totalElements,
+        offset,
+        limit
+      };
+    } catch (error) {
+      this.logger.error(`Error fetching user standalone lessons: ${error.message}`);
+      throw new BadRequestException(RESPONSE_MESSAGES.FETCH_ERROR);
+    }
+  }
+
+  /**
+   * Get users tracking a standalone lesson
+   */
+  async getLessonUsers(
+    lessonId: string,
+    limit: number = 10,
+    offset: number = 0,
+    tenantId: string,
+    organisationId: string
+  ) {
+    try {
+      const queryBuilder = this.lessonTrackRepository.createQueryBuilder('lesson_track');
+
+      queryBuilder.where('lesson_track.tenantId = :tenantId', { tenantId });
+      queryBuilder.andWhere('lesson_track.organisationId = :organisationId', { organisationId });
+      
+      // Ensures it's a standalone tracking
+      queryBuilder.andWhere('lesson_track.courseId IS NULL');
+
+      if (lessonId) {
+        queryBuilder.andWhere('lesson_track.lessonId = :lessonId', { lessonId });
+      }
+
+      // Join lesson to ensure it actually represents a standalone lesson
+      queryBuilder.innerJoinAndSelect('lesson_track.lesson', 'lesson');
+      queryBuilder.andWhere('lesson.courseId IS NULL');
+      queryBuilder.andWhere('lesson.moduleId IS NULL');
+
+      queryBuilder.skip(offset).take(limit);
+      queryBuilder.orderBy('lesson_track.updatedAt', 'DESC');
+
+      const [users, totalElements] = await queryBuilder.getManyAndCount();
+
+      return {
+        users,
+        totalElements,
+        offset,
+        limit
+      };
+    } catch (error) {
+      this.logger.error(`Error searching lesson users: ${error.message}`);
+      throw new BadRequestException(RESPONSE_MESSAGES.FETCH_ERROR);
+    }
+  }
 
   /**
    * Get course tracking

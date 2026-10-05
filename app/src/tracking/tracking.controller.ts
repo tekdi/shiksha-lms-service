@@ -34,6 +34,7 @@ import { LessonStatusDto } from './dto/lesson-status.dto';
 import { LessonTrack } from './entities/lesson-track.entity';
 import { UserJourneyDto, UserJourneyResponseDto } from './dto/user-journey.dto';
 import { JobStatus } from './entities/progress-recalculation-job.entity';
+import { SearchTrackedLessonsDto, TrackedLessonsResponseDto } from './dto/search-tracked-lessons.dto';
 
 @ApiTags('Tracking')
 @ApiBearerAuth()
@@ -43,6 +44,57 @@ export class TrackingController {
     private readonly trackingService: TrackingService,
     private readonly recalculateProgressQueueService: RecalculateProgressQueueService,
   ) {}
+
+  @Get('lessons')
+  @HttpCode(HttpStatus.OK)
+  @ApiId(API_IDS.GET_USER_TRACKED_LESSONS)
+  @ApiOperation({
+    summary: 'Get user tracked lessons',
+    description: 'Get user tracked lessons with optional filter for standalone lessons',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'User tracked lessons retrieved successfully',
+    type: TrackedLessonsResponseDto,
+  })
+  async getUserTrackedLessons(
+    @Query() query: CommonQueryDto,
+    @Query() filters: SearchTrackedLessonsDto,
+    @TenantOrg() tenantOrg: { tenantId: string; organisationId: string },
+  ) {
+    return this.trackingService.getUserTrackedLessons(
+      query.userId,
+      filters,
+      tenantOrg.tenantId,
+      tenantOrg.organisationId
+    );
+  }
+
+  @Get('lessons/:lessonId/users')
+  @HttpCode(HttpStatus.OK)
+  @ApiId(API_IDS.GET_USER_TRACKED_LESSONS)
+  @ApiOperation({
+    summary: 'Get users tracking a standalone lesson',
+    description: 'Get users tracking a standalone lesson.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Lesson users retrieved successfully',
+  })
+  async getLessonUsers(
+    @Param('lessonId', ParseUUIDPipe) lessonId: string,
+    @Query('limit') limit: number = 10,
+    @Query('offset') offset: number = 0,
+    @TenantOrg() tenantOrg: { tenantId: string; organisationId: string },
+  ) {
+    return this.trackingService.getLessonUsers(
+      lessonId,
+      limit,
+      offset,
+      tenantOrg.tenantId,
+      tenantOrg.organisationId
+    );
+  }
 
   @Post('userjourney')
   @HttpCode(HttpStatus.OK)
