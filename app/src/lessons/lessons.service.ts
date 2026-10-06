@@ -416,7 +416,6 @@ export class LessonsService {
           : '') +
         (searchDto.hasTrack !== undefined ? `:hasTrack:${searchDto.hasTrack}:userId:${searchDto.userId}` : '') +
         (searchDto.isStandalone !== undefined ? `:isStandalone:${searchDto.isStandalone}` : '') +
-        (searchDto.hasCourse !== undefined ? `:hasCourse:${searchDto.hasCourse}` : '') +
         `:offset:${offset}:limit:${limit}`;
 
       // Try to get from cache first
@@ -426,9 +425,9 @@ export class LessonsService {
         limit: number;
         lessons: Lesson[];
       }>(cacheKey);
-      // if (cachedResult) {
-      //   return cachedResult;
-      // }
+      if (cachedResult) {
+        return cachedResult;
+      }
 
       // Execute query with pagination and joins to ensure only published courses and modules
       let queryBuilder = this.lessonRepository
@@ -516,10 +515,8 @@ export class LessonsService {
       const isHasCourseFalse = searchDto.hasCourse === false || String(searchDto.hasCourse) === 'false';
       const isHasCourseTrue = searchDto.hasCourse === true || String(searchDto.hasCourse) === 'true';
 
-      if (isStandaloneTrue || isHasCourseFalse) {
+      if (isStandaloneTrue) {
         queryBuilder = queryBuilder.andWhere('lesson.courseId IS NULL');
-      } else if (isStandaloneFalse || isHasCourseTrue) {
-        queryBuilder = queryBuilder.andWhere('lesson.courseId IS NOT NULL');
       }
 
       // Add hasTrack filter
@@ -532,9 +529,10 @@ export class LessonsService {
             'lesson.lessonTrack',
             LessonTrack,
             'lesson_track',
-            'lesson_track.lessonId = lesson.lessonId AND lesson_track.userId = :userId AND lesson_track."updatedAt" = (SELECT MAX(lt."updatedAt") FROM lesson_track lt WHERE lt."lessonId" = lesson."lessonId" AND lt."userId" = :userId)',
+            'lesson_track.lessonId = lesson.lessonId AND lesson_track.userId = :userId',
             { userId: searchDto.userId }
           );
+          queryBuilder = queryBuilder.orderBy('lesson_track."updatedAt"', 'DESC').limit(1);
         } else if (isHasTrackFalse) {
           queryBuilder = queryBuilder.leftJoin(
             LessonTrack,
@@ -545,9 +543,6 @@ export class LessonsService {
           queryBuilder = queryBuilder.andWhere('lesson_track.lessonTrackId IS NULL');
         }
       }
-
-      console.log('SQL:', queryBuilder.getSql());
-      console.log('Params:', queryBuilder.getParameters());
       const [lessons, totalElements] = await queryBuilder
         .skip(offset)
         .take(limit)
