@@ -168,16 +168,16 @@ export class Course {
   @Column({ type: 'varchar', array: true, nullable: true })
   categoryIds: string[];
 
-  @ApiProperty({ description: 'User who created the course', example: '123e4567-e89b-12d3-a456-426614174000' })
-  @Column({ type: 'uuid', nullable: true })
+  @ApiProperty({ description: 'User who created the course', example: '3078' })
+  @Column({ type: 'varchar', nullable: true })
   createdBy: string;
 
   @ApiProperty({ description: 'Creation timestamp', example: '2023-01-01T00:00:00Z' })
   @CreateDateColumn({ type: 'timestamptz' })
   createdAt: Date;
 
-  @ApiProperty({ description: 'User who last updated the course', example: '123e4567-e89b-12d3-a456-426614174000' })
-  @Column({ type: 'uuid', nullable: true })
+  @ApiProperty({ description: 'User who last updated the course', example: '3078' })
+  @Column({ type: 'varchar', nullable: true })
   updatedBy: string;
 
   @ApiProperty({ description: 'Last update timestamp', example: '2023-01-01T00:00:00Z' })

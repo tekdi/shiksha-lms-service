@@ -1,5 +1,5 @@
 import { ApiPropertyOptional, ApiProperty } from '@nestjs/swagger';
-import { IsOptional, IsBoolean, IsString, IsEnum, IsUUID, IsDateString, IsNumber, Min, IsArray } from 'class-validator';
+import { IsOptional, IsBoolean, IsString, IsEnum, IsDateString, IsNumber, Min, IsArray } from 'class-validator';
 import { Transform, Type } from 'class-transformer';
 import { CourseStatus } from '../entities/course.entity';
 import { Course } from '../entities/course.entity';
@@ -99,7 +99,7 @@ export class SearchCourseDto {
 
   @ApiPropertyOptional({ description: 'Filter by creator user ID' })
   @IsOptional()
-  @IsUUID()
+  @IsString()
   createdBy?: string;
 
   @ApiPropertyOptional({ description: 'Number of items to skip (offset)', example: 0, minimum: 0 })
