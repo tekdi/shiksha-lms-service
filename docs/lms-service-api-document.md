@@ -522,7 +522,7 @@ organisationid: <organisation-id>
 
 **HTTP Method**: GET
 
-**Description**: Search and filter courses with various criteria including keyword search and multiple filters. Returns courses with module counts and enrolled user counts.
+**Description**: Search and filter courses with various criteria including keyword search and multiple filters. Returns courses with module counts.
 
 **Headers**:
 ```
@@ -588,8 +588,7 @@ organisationid: <organisation-id>
         "createdAt": "2024-01-01T00:00:00Z",
         "updatedBy": "789e0123-e89b-12d3-a456-426614174000",
         "updatedAt": "2024-01-01T00:00:00Z",
-        "moduleCount": 5,
-        "enrolledUsersCount": 25
+        "moduleCount": 5
       }
     ],
     "totalElements": 25,
@@ -629,7 +628,7 @@ organisationid: <organisation-id>
 - Featured courses should appear first when featured=true
 - Search must be case-insensitive
 - Results must be ordered by relevance when query is provided
-- Module counts and enrolled user counts are calculated efficiently using batch queries
+- Module counts are calculated efficiently using a batch query
 - Performance is optimized for small to medium course catalogs (2-5 courses per cohort)
 
 **Authorization Conditions**:

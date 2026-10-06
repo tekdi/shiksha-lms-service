@@ -38,7 +38,6 @@ describe('CoursesService.search - hasEnroll', () => {
   let service: CoursesService;
   let courseRepository: any;
   let moduleQb: any;
-  let enrollmentCountQb: any;
   let enrollmentQb: any;
   let moduleTrackQb: any;
   let courseTrackQb: any;
@@ -70,18 +69,11 @@ describe('CoursesService.search - hasEnroll', () => {
       { courseId: 'course-1', count: '4' },
       { courseId: 'course-2', count: '2' },
     ]);
-    enrollmentCountQb = makeQueryBuilder([
-      { courseId: 'course-1', count: '7' },
-    ]);
     enrollmentQb = makeQueryBuilder([], [enrollment]);
     moduleTrackQb = makeQueryBuilder([{ courseId: 'course-1', count: '3' }]);
     courseTrackQb = makeQueryBuilder([], [courseTrack]);
-    // The enrollment repository serves the existing count query first, then the enrollment-details query
     userEnrollmentRepository = {
-      createQueryBuilder: jest
-        .fn()
-        .mockReturnValueOnce(enrollmentCountQb)
-        .mockReturnValueOnce(enrollmentQb),
+      createQueryBuilder: jest.fn(() => enrollmentQb),
     };
     cacheService = { get: jest.fn().mockResolvedValue(null), set: jest.fn() };
 
@@ -119,15 +111,12 @@ describe('CoursesService.search - hasEnroll', () => {
     expect(cacheService.set).toHaveBeenCalled();
     expect(moduleTrackQb.getRawMany).not.toHaveBeenCalled();
     expect(courseTrackQb.getMany).not.toHaveBeenCalled();
-    expect(userEnrollmentRepository.createQueryBuilder).toHaveBeenCalledTimes(
-      1,
-    ); // existing count only
+    // No enrollment query at all (enrolledUsersCount was removed)
+    expect(userEnrollmentRepository.createQueryBuilder).not.toHaveBeenCalled();
     expect(result.courses[0]).not.toHaveProperty('completedModuleCount');
     expect(result.courses[0]).not.toHaveProperty('enrollment');
-    expect(result.courses[0]).toMatchObject({
-      moduleCount: 4,
-      enrolledUsersCount: 7,
-    });
+    expect(result.courses[0]).toMatchObject({ moduleCount: 4 });
+    expect(result.courses[0]).not.toHaveProperty('enrolledUsersCount');
   });
 
   it('hasEnroll=false: excludes enrolled courses in the database query only', async () => {

@@ -302,7 +302,7 @@ export class CoursesService {
       skip: offset,
     });
 
-    // Batch fetch module and enrollment counts
+    // Batch fetch module counts
     let coursesWithCounts = await this.enrichCoursesWithCounts(
       courses,
       tenantId,
@@ -429,34 +429,13 @@ export class CoursesService {
       .groupBy('module.courseId')
       .getRawMany();
 
-    // OPTIMIZED: Batch load all enrollment counts in a single query instead of N queries
-    const enrollmentCounts = await this.userEnrollmentRepository
-      .createQueryBuilder('enrollment')
-      .select('enrollment.courseId', 'courseId')
-      .addSelect('COUNT(*)', 'count')
-      .where('enrollment.courseId IN (:...courseIds)', { courseIds })
-      .andWhere('enrollment.tenantId = :tenantId', { tenantId })
-      .andWhere('enrollment.status = :publishedStatus', {
-        publishedStatus: EnrollmentStatus.PUBLISHED,
-      })
-      .groupBy('enrollment.courseId')
-      .getRawMany();
-
     const moduleCountMap = new Map(
       moduleCounts.map((mc) => [mc.courseId, Number.parseInt(mc.count, 10)]),
-    );
-
-    const enrollmentCountMap = new Map(
-      enrollmentCounts.map((ec) => [
-        ec.courseId,
-        Number.parseInt(ec.count, 10),
-      ]),
     );
 
     return courses.map((course) => ({
       ...course,
       moduleCount: moduleCountMap.get(course.courseId) || 0,
-      enrolledUsersCount: enrollmentCountMap.get(course.courseId) || 0,
     }));
   }
 

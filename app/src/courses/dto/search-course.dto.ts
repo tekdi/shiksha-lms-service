@@ -185,11 +185,6 @@ export class SearchCourseItemDto extends Course {
   @ApiProperty({ description: 'Number of non-archived modules in the course' })
   moduleCount: number;
 
-  @ApiProperty({
-    description: 'Number of published enrollments for the course',
-  })
-  enrolledUsersCount: number;
-
   @ApiPropertyOptional({
     description: 'Modules the user has completed (only when hasEnroll=true)',
   })
