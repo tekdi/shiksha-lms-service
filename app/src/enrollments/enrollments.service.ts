@@ -43,7 +43,27 @@ import { CacheConfigService } from '../cache/cache-config.service';
 import {
   UsersEnrolledCoursesDto,
   UsersEnrolledCoursesResponseDto,
+  UserEnrolledCourseDto,
 } from './dto/search-enrolled-courses.dto';
+
+// Course metadata columns returned by users-courses (shared by the enrolled and not-enrolled queries)
+const USER_COURSE_META_COLUMNS = [
+  'course.courseId',
+  'course.tenantId',
+  'course.organisationId',
+  'course.title',
+  'course.alias',
+  'course.shortDescription',
+  'course.description',
+  'course.image',
+  'course.featured',
+  'course.free',
+  'course.status',
+  'course.params',
+  'course.ordering',
+  'course.createdAt',
+  'course.updatedAt',
+];
 
 @Injectable()
 export class EnrollmentsService {
@@ -602,6 +622,17 @@ export class EnrollmentsService {
       const offset = Math.max(0, filters.offset || 0);
       const limit = Math.min(100, Math.max(1, filters.limit || 10));
 
+      // hasEnroll=false: courses the user is NOT enrolled in (a different base set than below)
+      if (filters?.hasEnroll === false && filters.userId) {
+        return await this.usersNotEnrolledCourses(
+          filters,
+          tenantId,
+          organisationId,
+          offset,
+          limit,
+        );
+      }
+
       // STEP 1: Always fetch enrollment mapping from DB (user-specific, never cached)
       // This query gets the courseIds that the user is enrolled in
       // Enrollment mapping is always fetched from DB to ensure fresh, user-specific data
@@ -683,23 +714,7 @@ export class EnrollmentsService {
       if (courseIdsToFetch.length > 0) {
         const courseQueryBuilder = this.courseRepository
           .createQueryBuilder('course')
-          .select([
-            'course.courseId',
-            'course.tenantId',
-            'course.organisationId',
-            'course.title',
-            'course.alias',
-            'course.shortDescription',
-            'course.description',
-            'course.image',
-            'course.featured',
-            'course.free',
-            'course.status',
-            'course.params',
-            'course.ordering',
-            'course.createdAt',
-            'course.updatedAt',
-          ])
+          .select(USER_COURSE_META_COLUMNS)
           .where('course.courseId IN (:...courseIds)', {
             courseIds: courseIdsToFetch,
           })
@@ -771,10 +786,21 @@ export class EnrollmentsService {
       const total = publishedOnly.length;
       const paginatedCourses = publishedOnly.slice(offset, offset + limit);
 
-      // STEP 5: Build response
+      // STEP 5: hasEnroll=true adds the user's module progress, tracking and enrollment
+      const coursesForResponse: UserEnrolledCourseDto[] =
+        filters?.hasEnroll === true && filters.userId
+          ? await this.attachUserCourseProgress(
+              paginatedCourses,
+              filters.userId,
+              tenantId,
+              organisationId,
+            )
+          : paginatedCourses;
+
+      // STEP 6: Build response
       // Note: We do NOT cache the full response because it contains user-specific enrollment data
       const result: UsersEnrolledCoursesResponseDto = {
-        courses: paginatedCourses,
+        courses: coursesForResponse,
         totalElements: total,
         offset,
         limit,
@@ -785,6 +811,150 @@ export class EnrollmentsService {
       this.logger.error(`Error searching enrolled courses: ${error.message}`);
       throw new InternalServerErrorException(RESPONSE_MESSAGES.FETCH_ERROR);
     }
+  }
+
+  /**
+   * hasEnroll=false: published courses (same tenant/org/cohort/pathway filters and ordering as
+   * users-courses) that the user has NO published enrollment for. The exclusion, ordering and
+   * pagination all happen in one database query.
+   */
+  private async usersNotEnrolledCourses(
+    filters: UsersEnrolledCoursesDto,
+    tenantId: string,
+    organisationId: string,
+    offset: number,
+    limit: number,
+  ): Promise<UsersEnrolledCoursesResponseDto> {
+    const queryBuilder = this.courseRepository
+      .createQueryBuilder('course')
+      .select(USER_COURSE_META_COLUMNS)
+      .where('course.tenantId = :tenantId', { tenantId })
+      .andWhere('course.organisationId = :organisationId', { organisationId })
+      .andWhere('course.status = :coursePublishedStatus', {
+        coursePublishedStatus: CourseStatus.PUBLISHED,
+      })
+      .andWhere(
+        'NOT EXISTS (SELECT 1 FROM "user_enrollments" "enrollment" ' +
+          'WHERE "enrollment"."courseId" = "course"."courseId" ' +
+          'AND "enrollment"."userId" = :userId ' +
+          'AND "enrollment"."tenantId" = :tenantId ' +
+          'AND "enrollment"."organisationId" = :organisationId ' +
+          'AND "enrollment"."status" = :enrollmentStatus)',
+        {
+          userId: filters.userId,
+          enrollmentStatus: EnrollmentStatus.PUBLISHED,
+        },
+      );
+
+    if (filters?.cohortId) {
+      queryBuilder.andWhere("course.params->>'cohortId' = :cohortId", {
+        cohortId: filters.cohortId,
+      });
+    }
+    if (filters?.pathwayId) {
+      queryBuilder.andWhere("course.params->>'pathwayId' = :pathwayId", {
+        pathwayId: filters.pathwayId,
+      });
+    }
+
+    const [courses, totalElements] = await queryBuilder
+      .orderBy('course.ordering', 'ASC')
+      .addOrderBy('course.courseId', 'ASC')
+      .skip(offset)
+      .take(limit)
+      .getManyAndCount();
+
+    return { courses, totalElements, offset, limit };
+  }
+
+  /**
+   * hasEnroll=true: adds totalModuleCount, completedModuleCount, the latest course tracking and
+   * the latest published enrollment to a page of courses with ONE query (correlated subqueries,
+   * one row per course - no per-course queries, no duplicates).
+   */
+  private async attachUserCourseProgress(
+    courses: Course[],
+    userId: string,
+    tenantId: string,
+    organisationId: string,
+  ): Promise<UserEnrolledCourseDto[]> {
+    if (courses.length === 0) return courses;
+
+    const rows = await this.courseRepository
+      .createQueryBuilder('course')
+      .select('course.courseId', 'courseId')
+      // Same module scope as courses/search moduleCount: non-archived modules of the course
+      .addSelect(
+        '(SELECT COUNT(*) FROM "modules" "module" ' +
+          'WHERE "module"."courseId" = "course"."courseId" ' +
+          'AND "module"."tenantId" = :tenantId ' +
+          'AND "module"."status" != :archivedModuleStatus)',
+        'totalModuleCount',
+      )
+      // module_track has no courseId; the course comes from the tracked module
+      .addSelect(
+        '(SELECT COUNT(DISTINCT "moduleTrack"."moduleId") FROM "module_track" "moduleTrack" ' +
+          'INNER JOIN "modules" "trackedModule" ON "trackedModule"."moduleId" = "moduleTrack"."moduleId" ' +
+          'WHERE "trackedModule"."courseId" = "course"."courseId" ' +
+          'AND "trackedModule"."status" != :archivedModuleStatus ' +
+          'AND "moduleTrack"."userId" = :userId ' +
+          'AND "moduleTrack"."tenantId" = :tenantId ' +
+          'AND "moduleTrack"."organisationId" = :organisationId ' +
+          'AND "moduleTrack"."status" = :completedModuleStatus)',
+        'completedModuleCount',
+      )
+      // course_track is unique per (userId, courseId); LIMIT 1 still guarantees a single row
+      .addSelect(
+        '(SELECT row_to_json("courseTrack") FROM "course_track" "courseTrack" ' +
+          'WHERE "courseTrack"."courseId" = "course"."courseId" ' +
+          'AND "courseTrack"."userId" = :userId ' +
+          'AND "courseTrack"."tenantId" = :tenantId ' +
+          'AND "courseTrack"."organisationId" = :organisationId ' +
+          'ORDER BY "courseTrack"."lastAccessedDate" DESC NULLS LAST LIMIT 1)',
+        'courseTracking',
+      )
+      // A user can have several enrollment rows per course; take the latest published one
+      .addSelect(
+        '(SELECT row_to_json("enrollment") FROM "user_enrollments" "enrollment" ' +
+          'WHERE "enrollment"."courseId" = "course"."courseId" ' +
+          'AND "enrollment"."userId" = :userId ' +
+          'AND "enrollment"."tenantId" = :tenantId ' +
+          'AND "enrollment"."organisationId" = :organisationId ' +
+          'AND "enrollment"."status" = :publishedEnrollmentStatus ' +
+          'ORDER BY "enrollment"."enrolledAt" DESC LIMIT 1)',
+        'enrollment',
+      )
+      .where('course.courseId IN (:...courseIds)', {
+        courseIds: courses.map((c) => c.courseId),
+      })
+      .setParameters({
+        userId,
+        tenantId,
+        organisationId,
+        archivedModuleStatus: ModuleStatus.ARCHIVED,
+        completedModuleStatus: ModuleTrackStatus.COMPLETED,
+        publishedEnrollmentStatus: EnrollmentStatus.PUBLISHED,
+      })
+      .getRawMany<{
+        courseId: string;
+        totalModuleCount: string;
+        completedModuleCount: string;
+        courseTracking: CourseTrack | null;
+        enrollment: UserEnrollment | null;
+      }>();
+
+    // Attach each course's row (course metadata itself comes from the per-course cache above)
+    const progressByCourseId = new Map(rows.map((row) => [row.courseId, row]));
+    return courses.map((course) => {
+      const progress = progressByCourseId.get(course.courseId);
+      return {
+        ...course,
+        totalModuleCount: Number(progress?.totalModuleCount ?? 0),
+        completedModuleCount: Number(progress?.completedModuleCount ?? 0),
+        courseTracking: progress?.courseTracking ?? null,
+        enrollment: progress?.enrollment ?? null,
+      };
+    });
   }
 
   /**
