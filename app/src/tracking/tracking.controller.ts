@@ -57,7 +57,7 @@ export class TrackingController {
     description: 'User tracked lessons retrieved successfully',
     type: TrackedLessonsResponseDto,
   })
-  async getUserTrackedLessons(
+  async getAttemptedLessonsByUser(
     @Headers('authorization') authorization: string,
     @Query() filters: SearchTrackedLessonsDto,
     @TenantOrg() tenantOrg: { tenantId: string; organisationId: string },
@@ -73,7 +73,7 @@ export class TrackingController {
       }
     }
 
-    return this.trackingService.getUserTrackedLessons(
+    return this.trackingService.getAttemptedLessonsByUser(
       loggedInUserId,
       filters.userId || '',
       filters,

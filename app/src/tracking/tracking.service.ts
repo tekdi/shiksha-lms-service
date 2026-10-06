@@ -87,7 +87,7 @@ export class TrackingService {
   /**
    * Get standalone lessons with optional tracking data for the user
    */
-  async getUserTrackedLessons(
+  async getAttemptedLessonsByUser(
     loggedInUserId: string,
     queryUserId: string,
     filters: SearchTrackedLessonsDto,
