@@ -1,12 +1,9 @@
 import { ApiPropertyOptional, ApiProperty } from '@nestjs/swagger';
-import { IsOptional, IsBoolean, IsString, IsEnum, IsUUID, IsDateString, IsNumber, Min, IsArray, IsNotEmpty, ValidateIf } from 'class-validator';
+import { IsOptional, IsBoolean, IsString, IsEnum, IsUUID, IsDateString, IsNumber, Min, IsArray } from 'class-validator';
 import { Transform, Type } from 'class-transformer';
 import { CourseStatus } from '../entities/course.entity';
 import { Course } from '../entities/course.entity';
 import { HelperUtil } from '../../common/utils/helper.util';
-import { CourseTrack } from '../../tracking/entities/course-track.entity';
-import { UserEnrollment } from '../../enrollments/entities/user-enrollment.entity';
-import { VALIDATION_MESSAGES } from '../../common/constants/response-messages.constant';
 
 export enum SortOrder {
   ASC = 'ASC',
@@ -100,28 +97,6 @@ export class SearchCourseDto {
   @IsString({ each: true, message: 'Each category ID must be a string' })
   categoryIds?: string[];
 
-  @ApiPropertyOptional({
-    description:
-      'Enrollment filter for userId. true: only courses the user is enrolled in, with completedModuleCount, courseTracking and enrollment. false: only courses the user is NOT enrolled in. Omit for the existing behaviour.',
-  })
-  @IsOptional()
-  // Read the raw query value: implicit conversion would turn the string "false" into true
-  @Transform(({ obj, key }: { obj: Record<string, unknown>; key: string }) => {
-    if (obj[key] === 'true') return true;
-    if (obj[key] === 'false') return false;
-    return obj[key];
-  })
-  @IsBoolean({ message: VALIDATION_MESSAGES.COMMON.BOOLEAN('hasEnroll') })
-  hasEnroll?: boolean;
-
-  @ApiPropertyOptional({
-    description: 'User ID (required when hasEnroll is provided)',
-  })
-  @ValidateIf((o: SearchCourseDto) => o.hasEnroll !== undefined)
-  @IsNotEmpty({ message: VALIDATION_MESSAGES.COMMON.REQUIRED('User ID') })
-  @IsString({ message: VALIDATION_MESSAGES.COMMON.STRING('User ID') })
-  userId?: string;
-
   @ApiPropertyOptional({ description: 'Filter by creator user ID' })
   @IsOptional()
   @IsUUID()
@@ -181,38 +156,9 @@ export class SearchCourseDto {
   orderBy?: SortOrder = SortOrder.DESC;
 }
 
-export class SearchCourseItemDto extends Course {
-  @ApiProperty({ description: 'Number of non-archived modules in the course' })
-  moduleCount: number;
-
-  @ApiPropertyOptional({
-    description: 'Modules the user has completed (only when hasEnroll=true)',
-  })
-  completedModuleCount?: number;
-
-  @ApiPropertyOptional({
-    type: CourseTrack,
-    nullable: true,
-    description:
-      "The user's latest course tracking (only when hasEnroll=true; null if not started)",
-  })
-  courseTracking?: CourseTrack | null;
-
-  @ApiPropertyOptional({
-    type: UserEnrollment,
-    nullable: true,
-    description:
-      "The user's latest published enrollment (only when hasEnroll=true)",
-  })
-  enrollment?: UserEnrollment | null;
-}
-
 export class SearchCourseResponseDto {
-  @ApiProperty({
-    description: 'List of courses matching the search criteria',
-    type: [SearchCourseItemDto],
-  })
-  courses: SearchCourseItemDto[];
+  @ApiProperty({ description: 'List of courses matching the search criteria', type: [Course] })
+  courses: Course[];
 
   @ApiProperty({ description: 'Total number of courses matching the criteria', example: 1 })
   @IsNumber()
