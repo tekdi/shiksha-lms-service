@@ -85,15 +85,5 @@ userId?: string;
 })
 isStandalone?: boolean;
 
-@ApiPropertyOptional({ description: 'Filter by presence of courseId' })
-@IsOptional()
-@Transform(({ obj }) => {
-  const val = obj?.hasCourse;
-  if (val === undefined || val === null || val === '') return undefined;
-  if (val === 'true' || val === true || val === 1 || val === '1') return true;
-  if (val === 'false' || val === false || val === 0 || val === '0') return false;
-  return undefined;
-})
-hasCourse?: boolean;
-
 }
+

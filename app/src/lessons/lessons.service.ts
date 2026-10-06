@@ -512,9 +512,6 @@ export class LessonsService {
       // Add standalone / course presence filter
       const isStandaloneTrue = searchDto.isStandalone === true || String(searchDto.isStandalone) === 'true';
       const isStandaloneFalse = searchDto.isStandalone === false || String(searchDto.isStandalone) === 'false';
-      const isHasCourseFalse = searchDto.hasCourse === false || String(searchDto.hasCourse) === 'false';
-      const isHasCourseTrue = searchDto.hasCourse === true || String(searchDto.hasCourse) === 'true';
-
       if (isStandaloneTrue) {
         queryBuilder = queryBuilder.andWhere('lesson.courseId IS NULL');
       }
