@@ -58,7 +58,7 @@ export class LessonsService {
     private readonly orderingService: OrderingService,
     @Inject(forwardRef(() => RecalculateProgressQueueService))
     private readonly recalculateProgressQueueService: RecalculateProgressQueueService,
-  ) {}
+  ) { }
 
   /**
    * Validate the course/module context of a lesson.
@@ -260,9 +260,9 @@ export class LessonsService {
         // Course-specific fields: only set for course lessons (independent lessons store NULL)
         ...(createLessonDto.courseId && createLessonDto.moduleId
           ? {
-              courseId: createLessonDto.courseId,
-              moduleId: createLessonDto.moduleId,
-            }
+            courseId: createLessonDto.courseId,
+            moduleId: createLessonDto.moduleId,
+          }
           : {}),
         categoryIds: createLessonDto.categoryIds,
         sampleLesson: createLessonDto.sampleLesson,
@@ -352,10 +352,10 @@ export class LessonsService {
         // Invalidate course enrollment cache when lesson is created
         courseId
           ? this.cacheService.invalidateCourseEnrollments(
-              courseId,
-              tenantId,
-              organisationId,
-            )
+            courseId,
+            tenantId,
+            organisationId,
+          )
           : Promise.resolve(),
       ]);
       if (savedLesson.considerForPassing && courseId) {
@@ -414,6 +414,8 @@ export class LessonsService {
         (searchDto.categoryIds?.length
           ? `:categoryIds:${[...searchDto.categoryIds].sort((a, b) => a.localeCompare(b)).join(',')}`
           : '') +
+        (searchDto.hasTrack !== undefined ? `:hasTrack:${searchDto.hasTrack}:userId:${searchDto.userId}` : '') +
+        (searchDto.isStandalone !== undefined ? `:isStandalone:${searchDto.isStandalone}` : '') +
         `:offset:${offset}:limit:${limit}`;
 
       // Try to get from cache first
@@ -507,6 +509,36 @@ export class LessonsService {
         });
       }
 
+      // Add standalone / course presence filter
+      const isStandaloneTrue = searchDto.isStandalone === true || String(searchDto.isStandalone) === 'true';
+      if (isStandaloneTrue) {
+        queryBuilder = queryBuilder.andWhere('lesson.courseId IS NULL');
+      }
+
+      // Add hasTrack filter
+      const isHasTrackTrue = searchDto.hasTrack === true || String(searchDto.hasTrack) === 'true';
+      const isHasTrackFalse = searchDto.hasTrack === false || String(searchDto.hasTrack) === 'false';
+
+      if (searchDto.userId && (isHasTrackTrue || isHasTrackFalse)) {
+        if (isHasTrackTrue) {
+          queryBuilder = queryBuilder.innerJoinAndMapOne(
+            'lesson.lessonTrack',
+            LessonTrack,
+            'lesson_track',
+            'lesson_track.lessonId = lesson.lessonId AND lesson_track.userId = :userId',
+            { userId: searchDto.userId }
+          );
+          queryBuilder = queryBuilder.orderBy('lesson_track."updatedAt"', 'DESC').limit(1);
+        } else if (isHasTrackFalse) {
+          queryBuilder = queryBuilder.leftJoin(
+            LessonTrack,
+            'lesson_track',
+            'lesson_track.lessonId = lesson.lessonId AND lesson_track.userId = :userId',
+            { userId: searchDto.userId }
+          );
+          queryBuilder = queryBuilder.andWhere('lesson_track.lessonTrackId IS NULL');
+        }
+      }
       const [lessons, totalElements] = await queryBuilder
         .skip(offset)
         .take(limit)
@@ -804,8 +836,8 @@ export class LessonsService {
       // Get the current media
       const currentMedia = lesson.mediaId
         ? await this.mediaRepository.findOne({
-            where: { mediaId: lesson.mediaId },
-          })
+          where: { mediaId: lesson.mediaId },
+        })
         : null;
 
       // For other formats
@@ -1099,13 +1131,13 @@ export class LessonsService {
       // Use savedLesson's courseId and moduleId as they reflect the actual saved state
       const courseId = savedLesson.courseId;
       const moduleId = savedLesson.moduleId;
-      
+
       const lessonKey = this.cacheConfig.getLessonKey(
         savedLesson.lessonId,
         tenantId,
         organisationId,
       );
-      
+
       // Prepare cache invalidation promises
       const cacheInvalidationPromises = [
         this.cacheService.set(
@@ -1262,10 +1294,10 @@ export class LessonsService {
         // Invalidate course enrollment cache when lesson is deleted
         courseId
           ? this.cacheService.invalidateCourseEnrollments(
-              courseId,
-              tenantId,
-              organisationId,
-            )
+            courseId,
+            tenantId,
+            organisationId,
+          )
           : Promise.resolve(),
       ]);
 
