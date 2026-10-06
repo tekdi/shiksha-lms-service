@@ -18,10 +18,20 @@ export class SearchTrackedLessonsDto {
   @IsString()
   search?: string;
 
-  @ApiPropertyOptional({ description: 'Filter by tracking status ("true" for only tracked, "false" for only untracked)', example: 'true' })
+  @ApiPropertyOptional({ description: 'Filter only attempted lessons' })
   @IsOptional()
   @IsString()
-  hasTracking?: string;
+  onlyAttempted?: string;
+
+  @ApiPropertyOptional({ description: 'Filter not attempted lessons' })
+  @IsOptional()
+  @IsString()
+  notAttempted?: string;
+
+  @ApiPropertyOptional({ description: 'User ID (overrides logged in user if provided)' })
+  @IsOptional()
+  @IsString()
+  userId?: string;
 
   @ApiPropertyOptional({ description: 'Limit', example: 10, minimum: 1 })
   @IsOptional()

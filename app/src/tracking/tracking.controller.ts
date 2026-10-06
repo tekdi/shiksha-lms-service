@@ -58,12 +58,24 @@ export class TrackingController {
     type: TrackedLessonsResponseDto,
   })
   async getUserTrackedLessons(
-    @Query() query: CommonQueryDto,
+    @Headers('authorization') authorization: string,
     @Query() filters: SearchTrackedLessonsDto,
     @TenantOrg() tenantOrg: { tenantId: string; organisationId: string },
   ) {
+    let loggedInUserId = '';
+    if (authorization) {
+      try {
+        const token = authorization.replace('Bearer ', '');
+        const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString());
+        loggedInUserId = payload.data?.id?.toString() || payload.id?.toString();
+      } catch (e) {
+        // Token parsing failed
+      }
+    }
+
     return this.trackingService.getUserTrackedLessons(
-      query.userId,
+      loggedInUserId,
+      filters.userId || '',
       filters,
       tenantOrg.tenantId,
       tenantOrg.organisationId

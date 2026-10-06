@@ -88,13 +88,15 @@ export class TrackingService {
    * Get standalone lessons with optional tracking data for the user
    */
   async getUserTrackedLessons(
-    userId: string,
+    loggedInUserId: string,
+    queryUserId: string,
     filters: SearchTrackedLessonsDto,
     tenantId: string,
     organisationId: string
   ): Promise<TrackedLessonsResponseDto> {
     try {
-      const { lessonsFromLibrary, categoryId, search, hasTracking, limit = 10, offset = 0 } = filters;
+      const userId = queryUserId || loggedInUserId;
+      const { lessonsFromLibrary, categoryId, search, onlyAttempted, notAttempted, limit = 10, offset = 0 } = filters;
 
       const queryBuilder = this.lessonRepository.createQueryBuilder('lesson');
 
@@ -102,7 +104,12 @@ export class TrackingService {
       queryBuilder.andWhere('lesson.organisationId = :organisationId', { organisationId });
       queryBuilder.andWhere('lesson.status != :archived', { archived: LessonStatus.ARCHIVED });
 
-      if (lessonsFromLibrary === '1') {
+      if (
+        lessonsFromLibrary === '1' ||
+        lessonsFromLibrary === 'true' ||
+        (lessonsFromLibrary as any) === true ||
+        (lessonsFromLibrary as any) === 1
+      ) {
         queryBuilder.andWhere('lesson.courseId IS NULL');
         queryBuilder.andWhere('lesson.moduleId IS NULL');
       }
@@ -115,21 +122,30 @@ export class TrackingService {
         queryBuilder.andWhere('lesson.title ILIKE :search', { search: `%${search}%` });
       }
 
-      // Left join lesson tracking data for this specific user
       if (userId) {
-        queryBuilder.leftJoinAndMapOne(
-          'lesson.lessonTrack',
-          LessonTrack,
-          'lesson_track',
-          'lesson_track.lessonId = lesson.lessonId AND lesson_track.userId = :userId AND lesson_track.courseId IS NULL',
-          { userId }
-        );
-      }
-
-      if (hasTracking === 'true') {
-        queryBuilder.andWhere('lesson_track.lessonTrackId IS NOT NULL');
-      } else if (hasTracking === 'false') {
-        queryBuilder.andWhere('lesson_track.lessonTrackId IS NULL');
+        const joinCondition = 'lesson_track.lessonId = lesson.lessonId AND lesson_track.userId = :userId';
+        
+        if (onlyAttempted === 'true' || onlyAttempted === '1' || (onlyAttempted as any) === true) {
+          queryBuilder.innerJoinAndMapOne(
+            'lesson.lessonTrack',
+            LessonTrack,
+            'lesson_track',
+            joinCondition,
+            { userId }
+          );
+        } else {
+          queryBuilder.leftJoinAndMapOne(
+            'lesson.lessonTrack',
+            LessonTrack,
+            'lesson_track',
+            joinCondition,
+            { userId }
+          );
+          
+          if (notAttempted === 'true' || notAttempted === '1' || (notAttempted as any) === true) {
+            queryBuilder.andWhere('lesson_track.lessonTrackId IS NULL');
+          }
+        }
       }
 
       queryBuilder.skip(offset).take(limit);
