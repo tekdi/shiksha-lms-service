@@ -197,7 +197,7 @@ export class TrackingService {
 
     // Course can be completed directly through this API too — run the same
     // completion notifications (fire and forget) so the pathway doesn't stay ACTIVE.
-    if (updatedCourseTrack.status === TrackingStatus.COMPLETED && !updatedCourseTrack.notification_sent) {
+    if (updatedCourseTrack.status === TrackingStatus.COMPLETED && !updatedCourseTrack.pathwaycompletion) {
       this.handleCourseCompletionNotifications(
         updatedCourseTrack,
         userId,
@@ -817,7 +817,7 @@ export class TrackingService {
     // Completion notifications run only after the course track and module track
     // rows above are persisted, so pathway-completion checks see this course's
     // own COMPLETED status.
-    if (courseTrack.status === TrackingStatus.COMPLETED && !courseTrack.notification_sent) {
+    if (courseTrack.status === TrackingStatus.COMPLETED && !courseTrack.pathwaycompletion) {
       await this.handleCourseCompletionNotifications(
         courseTrack,
         lessonTrack.userId,
@@ -830,13 +830,15 @@ export class TrackingService {
   }
 
   /**
-   * Runs when a course track is COMPLETED and notification_sent is still false.
+   * Project specific (Aspire Leaders) — VOLUNTEER pathway completion.
    *
-   * notification_sent is set to true ONLY for VOLUNTEER pathway courses, and only
+   * Runs when a course track is COMPLETED and pathwaycompletion is still false.
+   *
+   * pathwaycompletion is set to true ONLY for VOLUNTEER pathway courses, and only
    * AFTER user-service confirms (2xx) the pathway completion — never before — so a
    * failed call leaves it false and the next trigger on this course retries.
    * Normal courses (no pathway) and STANDARD pathway courses always keep
-   * notification_sent = false. Courses in a pathway that isn't fully completed yet
+   * pathwaycompletion = false. Courses in a pathway that isn't fully completed yet
    * keep it false and skip the user-service call.
    * Concurrent calls are safe: user-service completes the pathway with an atomic
    * UPDATE ... WHERE status = ACTIVE and answers "already processed" otherwise.
@@ -855,7 +857,7 @@ export class TrackingService {
     });
     const pathwayId = course?.params?.pathwayId;
 
-    // Not part of a pathway — nothing to notify; notification_sent stays false.
+    // Not part of a pathway — nothing to notify; pathwaycompletion stays false.
     if (!pathwayId) {
       return;
     }
@@ -893,12 +895,12 @@ export class TrackingService {
     }
 
     if (!pathwayNotifyResult) {
-      // All attempts failed — leave notification_sent = false so the next trigger retries.
+      // All attempts failed — leave pathwaycompletion = false so the next trigger retries.
       this.logger.error(`Pathway completion callback gave up for user=${userId} course=${courseId} pathway=${pathwayId}; will retry on next trigger`);
       return;
     }
 
-    // Only VOLUNTEER pathways are marked — STANDARD keeps notification_sent = false.
+    // Only VOLUNTEER pathways are marked — STANDARD keeps pathwaycompletion = false.
     if (pathwayNotifyResult.pathwayType !== 'VOLUNTEER') {
       return;
     }
@@ -918,9 +920,9 @@ export class TrackingService {
     // doesn't call user-service again.
     await this.courseTrackRepository.update(
       { userId, courseId: In(pathwayCourseIds) } as FindOptionsWhere<CourseTrack>,
-      { notification_sent: true },
+      { pathwaycompletion: true },
     );
-    courseTrack.notification_sent = true;
+    courseTrack.pathwaycompletion = true;
 
     // Pathway completion email is sent by user-service (onPathwayCompletion) —
     // disabled here to avoid sending a duplicate email.
@@ -2018,13 +2020,13 @@ export class TrackingService {
 
   /**
    * Generic course completion notification.
-   * Called when course.notification_send = true and courseTrack.notification_sent = false.
+   * Called when course.notification_send = true and courseTrack.pathwaycompletion = false.
    * Returns a NotificationOutcome — never throws.
    *
    * SENT            — email was accepted by the notification service.
    * NO_EMAIL        — user profile fetched successfully but contains no email; permanent skip.
    * RETRYABLE_FAILURE — transient error (user-service down, notification service down, etc.);
-   *                    caller should reset notification_sent=false so the next trigger retries.
+   *                    caller should reset pathwaycompletion=false so the next trigger retries.
    */
   private async courseCompletionNotification(
     userId: string,

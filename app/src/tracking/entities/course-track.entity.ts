@@ -73,8 +73,11 @@ export class CourseTrack {
   @Column({ type: 'boolean', default: false })
   certificateIssued: boolean;
 
+  // Project specific (Aspire Leaders): set to true on every course_track row of a user
+  // once their VOLUNTEER pathway is fully completed and user-service has confirmed it,
+  // so later activity on those courses doesn't call user-service again.
   @Column({ type: 'boolean', default: false })
-  notification_sent: boolean;
+  pathwaycompletion: boolean;
 
   @ManyToOne(() => Course)
   @JoinColumn({ name: 'courseId' })
