@@ -100,6 +100,7 @@ export class CreateModuleDto {
     example: { term: 'completion' }
   })
   @IsOptional()
+  @Transform(({ value }) => HelperUtil.parseJsonObject(value))
   @IsObject({ message: VALIDATION_MESSAGES.COMMON.OBJECT('Badge term') })
   badgeTerm?: Record<string, any>;
 
@@ -107,24 +108,7 @@ export class CreateModuleDto {
     description: 'Additional parameters for the module (stored as JSONB)'
   })
   @IsOptional()
-  @Transform(({ value }) => {
-    let parsed = value;
-    if (typeof parsed === 'string') {
-      try {
-        parsed = JSON.parse(parsed);
-      } catch (_error) {
-        return value;
-      }
-    }
-    if (typeof parsed === 'string') {
-      try {
-        parsed = JSON.parse(parsed);
-      } catch (_error) {
-        return parsed;
-      }
-    }
-    return parsed;
-  })
+  @Transform(({ value }) => HelperUtil.parseJsonObject(value))
   @IsObject({ message: VALIDATION_MESSAGES.COMMON.OBJECT('Additional parameters') })
   params?: Record<string, any>;
 

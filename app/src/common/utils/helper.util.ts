@@ -252,7 +252,39 @@ export class HelperUtil {
     }
   }
 
-  
-
-
+  /**
+   * Safely parses JSON object strings from form-data (including escaped or wrapped quotes).
+   */
+  static parseJsonObject(value: any): any {
+    if (value === null || value === undefined) return value;
+    if (typeof value === 'object') return value;
+    if (typeof value === 'string') {
+      let str = value.trim();
+      if (
+        (str.startsWith('"') && str.endsWith('"')) ||
+        (str.startsWith("'") && str.endsWith("'"))
+      ) {
+        str = str.slice(1, -1).trim();
+      }
+      str = str.replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+      try {
+        const parsed = JSON.parse(str);
+        if (typeof parsed === 'string') {
+          try {
+            return JSON.parse(parsed);
+          } catch (_e) {
+            return parsed;
+          }
+        }
+        return parsed;
+      } catch (_e) {
+        try {
+          return JSON.parse(value);
+        } catch (_e2) {
+          return value;
+        }
+      }
+    }
+    return value;
+  }
 }
