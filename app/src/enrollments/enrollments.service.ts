@@ -768,12 +768,7 @@ export class EnrollmentsService {
       });
     }
 
-    const categoryIds = filters?.categoryIds?.length
-      ? filters.categoryIds
-      : filters?.categoryId
-        ? [filters.categoryId]
-        : undefined;
-
+    const categoryIds = this.getCategoryIdsFilter(filters);
     if (categoryIds?.length) {
       qb.andWhere('course.categoryIds && :categoryIds', {
         categoryIds,
@@ -804,15 +799,20 @@ export class EnrollmentsService {
     organisationId: string,
     groupKey?: string,
   ): Promise<Course[]> {
+    const cachedResults = await Promise.all(
+      enrolledCourseIds.map(async (courseId) => ({
+        courseId,
+        cachedMeta: await this.cacheService.getCourseMetaCached(
+          courseId,
+          groupKey,
+        ),
+      })),
+    );
+
     const courses: Course[] = [];
     const courseIdsToFetch: string[] = [];
 
-    for (const courseId of enrolledCourseIds) {
-      const cachedMeta = await this.cacheService.getCourseMetaCached(
-        courseId,
-        groupKey,
-      );
-
+    for (const { courseId, cachedMeta } of cachedResults) {
       if (cachedMeta) {
         courses.push(cachedMeta as Course);
       } else {
@@ -852,9 +852,11 @@ export class EnrollmentsService {
       })
       .getMany();
 
-    for (const course of fetchedCourses) {
-      await this.cacheSingleCourseMeta(course, groupKey);
-    }
+    await Promise.all(
+      fetchedCourses.map((course) =>
+        this.cacheSingleCourseMeta(course, groupKey),
+      ),
+    );
 
     return fetchedCourses;
   }
@@ -940,12 +942,7 @@ export class EnrollmentsService {
         pathwayId: filters.pathwayId,
       });
     }
-    const categoryIds = filters?.categoryIds?.length
-      ? filters.categoryIds
-      : filters?.categoryId
-        ? [filters.categoryId]
-        : undefined;
-
+    const categoryIds = this.getCategoryIdsFilter(filters);
     if (categoryIds?.length) {
       queryBuilder.andWhere('course.categoryIds && :categoryIds', {
         categoryIds,
@@ -965,6 +962,18 @@ export class EnrollmentsService {
     );
 
     return { courses: coursesWithModuleCount, totalElements, offset, limit };
+  }
+
+  private getCategoryIdsFilter(
+    filters?: UsersEnrolledCoursesDto,
+  ): string[] | undefined {
+    if (filters?.categoryIds?.length) {
+      return filters.categoryIds;
+    }
+    if (filters?.categoryId) {
+      return [filters.categoryId];
+    }
+    return undefined;
   }
 
   /**
