@@ -290,13 +290,18 @@ export class TrackingService {
       currentPosition: 0,
       timeSpent: 0
     });
+    // Course lesson (has course + module): store courseId on the track and sync course/module tracking
+    const shouldSyncCourseTracking = this.applyLessonHierarchy(
+      lessonTrack,
+      lesson,
+    );
     
     // Save lesson track first
     const savedLessonTrack = await this.lessonTrackRepository.save(lessonTrack);
 
     // Update course and module tracking asynchronously (fire and forget) to avoid blocking response
     // This matches the pattern used in updateProgress for consistency
-    if (savedLessonTrack.courseId) {
+    if (shouldSyncCourseTracking) {
       this.updateCourseAndModuleTracking(savedLessonTrack, tenantId, organisationId, authorization)
         .catch(err => this.logger.error('Failed to update course/module tracking asynchronously', err));
     }
@@ -453,6 +458,7 @@ export class TrackingService {
         latestTrack.totalContent = 0;
         latestTrack.currentPosition = 0;
         latestTrack.timeSpent = 0;
+        this.applyLessonHierarchy(latestTrack, lesson);
         
         const savedTracking = await this.lessonTrackRepository.save(latestTrack);
         return savedTracking;
@@ -474,7 +480,9 @@ export class TrackingService {
         lessonId,
         tenantId,
         organisationId,
-        attempt: latestTrack.attempt,
+        // A new attempt gets the next number (the same number would violate the unique
+        // (userId, lessonId, courseId, attempt) index for course lessons)
+        attempt: latestTrack.attempt + 1,
         status: TrackingStatus.STARTED,
         startDatetime: new Date(),
         completionPercentage: 0,
@@ -483,6 +491,7 @@ export class TrackingService {
         currentPosition: 0,
         timeSpent: 0
       });
+      this.applyLessonHierarchy(lessonTrack, lesson);
       
       const savedTracking = await this.lessonTrackRepository.save(lessonTrack);
       
@@ -683,12 +692,20 @@ export class TrackingService {
     
     attempt.updatedAt = new Date();
     attempt.updatedBy = userId;
+    // Course lesson (has course + module): ensure courseId on the track (repairs older tracks) and sync
+    const shouldSyncCourseTracking = this.applyLessonHierarchy(
+      attempt,
+      attempt.lesson,
+    );
 
     const savedAttempt = await this.lessonTrackRepository.save(attempt);
 
     // Update course and module tracking asynchronously (fire and forget) to avoid blocking response
     // Skip expensive operations for incomplete status - no need to recalculate course completion
-    if (savedAttempt.courseId && savedAttempt.status !== TrackingStatus.INCOMPLETE) {
+    if (
+      shouldSyncCourseTracking &&
+      savedAttempt.status !== TrackingStatus.INCOMPLETE
+    ) {
       this.updateCourseAndModuleTracking(savedAttempt, tenantId, organisationId, authorization)
         .catch(err => this.logger.error('Failed to update course/module tracking asynchronously', err));
     }
@@ -699,17 +716,77 @@ export class TrackingService {
   }
 
   /**
-   * Helper method to update course and module tracking
+   * Applies the lesson's place in the course hierarchy to its track. When the lesson has a
+   * courseId it is stored on the track (also repairing tracks saved without it), so course-scoped
+   * reads find it. Independent lessons (no courseId, no moduleId) are left untouched.
+   * @returns true when the lesson has a courseId and/or moduleId, i.e. hierarchy tracking
+   *          (course and/or module) must be synced; false for independent lessons
+   */
+  public applyLessonHierarchy(
+    lessonTrack: LessonTrack,
+    lesson?: Pick<Lesson, 'courseId' | 'moduleId'> | null,
+  ): boolean {
+    if (lesson?.courseId) {
+      lessonTrack.courseId = lesson.courseId;
+    }
+    return Boolean(lesson?.courseId || lesson?.moduleId);
+  }
+
+  /**
+   * Syncs the hierarchy tracking for a lesson track. Course and module tracking are independent:
+   * - lesson has courseId -> course_track for that course is synced
+   * - lesson has moduleId -> module_track for that module is synced
+   * - neither (independent lesson) -> nothing is touched
    */
   public async updateCourseAndModuleTracking(lessonTrack: LessonTrack, tenantId: string, organisationId: string, authorization?: string): Promise<void> {
-    if (!lessonTrack.courseId) {
-      return;
+    // Use lesson from relation if available (loaded in updateProgress), otherwise query
+    const lesson: Pick<Lesson, 'courseId' | 'moduleId'> | null =
+      lessonTrack.lesson ??
+      (await this.lessonRepository.findOne({
+        where: {
+          lessonId: lessonTrack.lessonId,
+        } as FindOptionsWhere<Lesson>,
+      }));
+    const courseId = lesson?.courseId ?? lessonTrack.courseId ?? null;
+    const moduleId = lesson?.moduleId ?? null;
+
+    if (courseId) {
+      await this.syncCourseTracking(
+        lessonTrack,
+        courseId,
+        tenantId,
+        organisationId,
+        authorization,
+      );
     }
 
+    if (moduleId) {
+      await this.updateModuleTracking(
+        moduleId,
+        lessonTrack.userId,
+        lessonTrack.tenantId,
+        lessonTrack.organisationId,
+        lessonTrack.status === TrackingStatus.SUBMITTED,
+      );
+    }
+  }
+
+  /**
+   * Course part of the hierarchy sync: updates the user's course_track for the course (created at
+   * enrollment) and sends completion notifications. Without a course_track (user not enrolled)
+   * the course is skipped so module tracking can still be synced.
+   */
+  private async syncCourseTracking(
+    lessonTrack: LessonTrack,
+    courseId: string,
+    tenantId: string,
+    organisationId: string,
+    authorization?: string,
+  ): Promise<void> {
     // Get course track
     let courseTrack = await this.courseTrackRepository.findOne({
       where: { 
-        courseId: lessonTrack.courseId, 
+        courseId, 
         userId: lessonTrack.userId,
         tenantId,
         organisationId
@@ -717,7 +794,10 @@ export class TrackingService {
     });
 
     if (!courseTrack) {
-      throw new NotFoundException(RESPONSE_MESSAGES.ERROR.COURSE_TRACKING_NOT_FOUND);   
+      this.logger.warn(
+        `${RESPONSE_MESSAGES.ERROR.COURSE_TRACKING_NOT_FOUND}: skipping course tracking sync for user=${lessonTrack.userId} course=${courseId}`,
+      );
+      return;
     }
 
     // Update course track
@@ -728,7 +808,7 @@ export class TrackingService {
       // Get all parent lessons for this course that have considerForPassing = true
       const courseLessons = await this.lessonRepository.find({
         where: { 
-          courseId: lessonTrack.courseId,
+          courseId: courseId,
           tenantId,
           organisationId,
           status: LessonStatus.PUBLISHED,
@@ -741,7 +821,7 @@ export class TrackingService {
       const completedLessonsCount = await this.calculateCompletedLessonsBasedOnAttemptsGrade(
         courseLessons,
         lessonTrack.userId,
-        lessonTrack.courseId,
+        courseId,
         tenantId,
         organisationId
       );
@@ -762,24 +842,8 @@ export class TrackingService {
     }
     await this.courseTrackRepository.save(courseTrack);
 
-    // Find and update module tracking if applicable
-    // Use lesson from relation if available (loaded in updateProgress), otherwise query
-    let lesson = (lessonTrack as any).lesson;
-    if (!lesson) {
-      lesson = await this.lessonRepository.findOne({
-        where: {
-          lessonId: lessonTrack.lessonId,
-        } as FindOptionsWhere<Lesson>,
-      });
-    }
-
-    if (lesson && lesson.moduleId) {
-      await this.updateModuleTracking(lesson.moduleId, lessonTrack.userId, lessonTrack.tenantId, lessonTrack.organisationId, lessonTrack.status === TrackingStatus.SUBMITTED);
-    }
-
-    // Completion notifications run only after the course track and module track
-    // rows above are persisted, so pathway-completion checks see this course's
-    // own COMPLETED status.
+    // Completion notifications run only after the course track row above is
+    // persisted, so pathway-completion checks see this course's own COMPLETED status.
     if (courseTrack.status === TrackingStatus.COMPLETED && !courseTrack.notification_sent) {
       // Atomically claim the notification slot before making any external calls.
       // UPDATE ... WHERE notification_sent = false ensures only one concurrent
@@ -795,7 +859,7 @@ export class TrackingService {
       if (claimed.affected === 1) {
         courseTrack.notification_sent = true;
         const course = await this.courseRepository.findOne({
-          where: { courseId: lessonTrack.courseId } as FindOptionsWhere<Course>,
+          where: { courseId: courseId } as FindOptionsWhere<Course>,
           select: ['courseId', 'title', 'notification_send', 'params'] as any,
         });
 
@@ -839,14 +903,14 @@ export class TrackingService {
             try {
               pathwayNotifyResult = await this.notifyPathwayCourseCompleted(
                 lessonTrack.userId,
-                lessonTrack.courseId,
+                courseId,
                 tenantId,
                 organisationId,
                 authorization,
                 course.params.pathwayId,
               );
             } catch (err) {
-              this.logger.error(`Pathway completion callback attempt ${attempt}/3 failed for user=${lessonTrack.userId} course=${lessonTrack.courseId}: ${err?.message}`);
+              this.logger.error(`Pathway completion callback attempt ${attempt}/3 failed for user=${lessonTrack.userId} course=${courseId}: ${err?.message}`);
             }
           }
         }
@@ -866,14 +930,14 @@ export class TrackingService {
         ) {
           const outcome = await this.courseCompletionNotification(
             lessonTrack.userId,
-            lessonTrack.courseId,
+            courseId,
             course.title ?? '',
             tenantId,
             organisationId,
             authorization,
           );
           if (outcome.status === 'RETRYABLE_FAILURE') {
-            this.logger.error(`Course completion email retryable failure for user=${lessonTrack.userId} course=${lessonTrack.courseId}: ${outcome.reason}`);
+            this.logger.error(`Course completion email retryable failure for user=${lessonTrack.userId} course=${courseId}: ${outcome.reason}`);
             await this.courseTrackRepository.update(
               { courseTrackId: courseTrack.courseTrackId },
               { notification_sent: false },
@@ -1174,6 +1238,11 @@ export class TrackingService {
 
       // Apply updates
       Object.assign(lastAttempt, updateData);
+      // Course lesson (has course + module): ensure courseId on the track (repairs older tracks) and sync
+      const shouldSyncCourseTracking = this.applyLessonHierarchy(
+        lastAttempt,
+        lesson,
+      );
 
       // Save the updated attempt
       const updatedAttempt = await this.lessonTrackRepository.save(lastAttempt);
@@ -1183,7 +1252,10 @@ export class TrackingService {
 
       // Update course and module tracking asynchronously (fire and forget) to avoid blocking response
       // Skip expensive operations for incomplete status - no need to recalculate course completion
-      if (updatedAttempt.courseId && updatedAttempt.status !== TrackingStatus.INCOMPLETE) {
+      if (
+        shouldSyncCourseTracking &&
+        updatedAttempt.status !== TrackingStatus.INCOMPLETE
+      ) {
         this.updateCourseAndModuleTracking(updatedAttempt, tenantId, organisationId, authorization)
           .catch(err => this.logger.error('Failed to update course/module tracking asynchronously', err));
       }

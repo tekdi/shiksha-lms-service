@@ -1009,11 +1009,14 @@ export class AspireLeaderService {
       };
       // Update the lesson track
       Object.assign(lessonTrack, updateData);
+      // Course lesson (has course + module): ensure courseId on the track (repairs older tracks) and sync
+      const shouldSyncCourseTracking =
+        this.trackingService.applyLessonHierarchy(lessonTrack, lesson);
       const updatedLessonTrack =
         await this.lessonTrackRepository.save(lessonTrack);
 
       // Update course and module tracking if lesson is completed
-      if (updatedLessonTrack.courseId) {
+      if (shouldSyncCourseTracking) {
         await this.trackingService.updateCourseAndModuleTracking(
           updatedLessonTrack,
           tenantId,
