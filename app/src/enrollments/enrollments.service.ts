@@ -164,31 +164,26 @@ export class EnrollmentsService {
       `Enrolling ${learnerIds.length} learner(s) in course(s): ${JSON.stringify(enrollmentData.courseId)}`,
     );
 
-    const results: {
-      learnerId: string;
-      successfullyEnrolled: UserEnrollment[];
-      alreadyEnrolledCourseIds: string[];
-      failedCourseIds: string[];
-    }[] = [];
+    const results = await Promise.all(
+      learnerIds.map(async (learnerId) => {
+        // Build a fresh DTO per learner: enrollSingleCourse may mutate `status`
+        // (admin approval), which must not leak across learners.
+        const learnerEnrollmentDto: CreateEnrollmentDto = {
+          ...enrollmentData,
+          courseId: [...(enrollmentData.courseId || [])],
+          learnerId,
+        };
 
-    for (const learnerId of learnerIds) {
-      // Build a fresh DTO per learner: enrollSingleCourse may mutate `status`
-      // (admin approval), which must not leak across learners.
-      const learnerEnrollmentDto: CreateEnrollmentDto = {
-        ...enrollmentData,
-        courseId: [...(enrollmentData.courseId || [])],
-        learnerId,
-      };
+        const result = await this.enroll(
+          learnerEnrollmentDto,
+          userId,
+          tenantId,
+          organisationId,
+        );
 
-      const result = await this.enroll(
-        learnerEnrollmentDto,
-        userId,
-        tenantId,
-        organisationId,
-      );
-
-      results.push({ learnerId, ...result });
-    }
+        return { learnerId, ...result };
+      }),
+    );
 
     return {
       totalLearners: learnerIds.length,
