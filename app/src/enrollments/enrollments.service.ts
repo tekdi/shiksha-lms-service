@@ -22,7 +22,7 @@ import { Course } from '../courses/entities/course.entity';
 import { CourseStatus } from '../courses/entities/course.entity';
 import { CourseTrack } from '../tracking/entities/course-track.entity';
 import { TrackingStatus } from '../tracking/entities/course-track.entity';
-import { CreateEnrollmentDto } from './dto/create-enrollment.dto';
+import { CreateEnrollmentDto, CreateMultiUserEnrollmentDto } from './dto/create-enrollment.dto';
 import { UpdateEnrollmentDto } from './dto/update-enrollment.dto';
 import { PaginationDto } from '../common/dto/pagination.dto';
 import { RESPONSE_MESSAGES } from '../common/constants/response-messages.constant';
@@ -137,6 +137,62 @@ export class EnrollmentsService {
       successfullyEnrolled,
       alreadyEnrolledCourseIds,
       failedCourseIds,
+    };
+  }
+
+  /**
+   * Enroll multiple learners for one or more courses in a single operation.
+   * Each learner is processed independently through the existing enroll() flow,
+   * so a failure for one learner does not affect the others.
+   */
+  async enrollMultipleUsers(
+    createMultiUserEnrollmentDto: CreateMultiUserEnrollmentDto,
+    userId: string,
+    tenantId: string,
+    organisationId: string,
+  ): Promise<{
+    totalLearners: number;
+    results: {
+      learnerId: string;
+      successfullyEnrolled: UserEnrollment[];
+      alreadyEnrolledCourseIds: string[];
+      failedCourseIds: string[];
+    }[];
+  }> {
+    const { learnerIds, ...enrollmentData } = createMultiUserEnrollmentDto;
+    this.logger.log(
+      `Enrolling ${learnerIds.length} learner(s) in course(s): ${JSON.stringify(enrollmentData.courseId)}`,
+    );
+
+    const results: {
+      learnerId: string;
+      successfullyEnrolled: UserEnrollment[];
+      alreadyEnrolledCourseIds: string[];
+      failedCourseIds: string[];
+    }[] = [];
+
+    for (const learnerId of learnerIds) {
+      // Build a fresh DTO per learner: enrollSingleCourse may mutate `status`
+      // (admin approval), which must not leak across learners.
+      const learnerEnrollmentDto: CreateEnrollmentDto = {
+        ...enrollmentData,
+        courseId: [...(enrollmentData.courseId || [])],
+        learnerId,
+      };
+
+      const result = await this.enroll(
+        learnerEnrollmentDto,
+        userId,
+        tenantId,
+        organisationId,
+      );
+
+      results.push({ learnerId, ...result });
+    }
+
+    return {
+      totalLearners: learnerIds.length,
+      results,
     };
   }
 
