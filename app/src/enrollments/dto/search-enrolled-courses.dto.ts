@@ -7,12 +7,15 @@ import {
   IsBoolean,
   ValidateIf,
   ValidateBy,
+  IsEnum,
+  IsArray,
 } from 'class-validator';
 import { Transform, Type } from 'class-transformer';
 import { Course } from '../../courses/entities/course.entity';
-import { CourseTrack } from '../../tracking/entities/course-track.entity';
+import { CourseTrack, TrackingStatus } from '../../tracking/entities/course-track.entity';
 import { UserEnrollment } from '../entities/user-enrollment.entity';
 import { VALIDATION_MESSAGES } from '../../common/constants/response-messages.constant';
+import { HelperUtil } from '../../common/utils/helper.util';
 
 export class UsersEnrolledCoursesDto {
   @ApiPropertyOptional({ description: 'Filter by cohort ID' })
@@ -55,10 +58,31 @@ export class UsersEnrolledCoursesDto {
   @IsBoolean({ message: VALIDATION_MESSAGES.COMMON.BOOLEAN('hasEnroll') })
   hasEnroll?: boolean;
 
+  @ApiPropertyOptional({
+    description: 'Filter by course tracking status (only applies when hasEnroll=true)',
+    enum: TrackingStatus,
+  })
+  @IsOptional()
+  @IsEnum(TrackingStatus, {
+    message: VALIDATION_MESSAGES.COMMON.ENUM('Tracking status'),
+  })
+  status?: TrackingStatus;
+
   @ApiPropertyOptional({ description: 'Filter by pathway ID' })
   @IsOptional()
   @IsString()
   pathwayId?: string;
+
+  @ApiPropertyOptional({
+    description: 'Filter by one or more category IDs (comma-separated or repeated). Returns courses in any of the given categories.',
+    type: [String],
+    example: '123,456',
+  })
+  @IsOptional()
+  @Transform(({ obj, key }) => HelperUtil.toStringArray(obj[key]))
+  @IsArray()
+  @IsString({ each: true, message: 'Each category ID must be a string' })
+  categoryIds?: string[];
 
 
   @ApiPropertyOptional({ description: 'Limit', example: 10, minimum: 1 })

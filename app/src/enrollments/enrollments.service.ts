@@ -61,6 +61,7 @@ const USER_COURSE_META_COLUMNS = [
   'course.status',
   'course.params',
   'course.ordering',
+  'course.categoryIds',
   'course.createdAt',
   'course.updatedAt',
 ];
@@ -709,6 +710,21 @@ export class EnrollmentsService {
         });
       }
 
+      // Apply tracking status filter if hasEnroll === true and status is provided
+      if (filters?.hasEnroll === true && filters?.status && filters?.userId) {
+        if (filters.status === TrackingStatus.NOT_STARTED) {
+          enrollmentQueryBuilder.andWhere(
+            '(NOT EXISTS (SELECT 1 FROM "course_track" "ct" WHERE "ct"."courseId" = "course"."courseId" AND "ct"."userId" = :userId AND "ct"."tenantId" = :tenantId AND "ct"."organisationId" = :organisationId) OR EXISTS (SELECT 1 FROM "course_track" "ct" WHERE "ct"."courseId" = "course"."courseId" AND "ct"."userId" = :userId AND "ct"."tenantId" = :tenantId AND "ct"."organisationId" = :organisationId AND "ct"."status" = :trackingStatus))',
+            { trackingStatus: filters.status },
+          );
+        } else {
+          enrollmentQueryBuilder.andWhere(
+            'EXISTS (SELECT 1 FROM "course_track" "ct" WHERE "ct"."courseId" = "course"."courseId" AND "ct"."userId" = :userId AND "ct"."tenantId" = :tenantId AND "ct"."organisationId" = :organisationId AND "ct"."status" = :trackingStatus)',
+            { trackingStatus: filters.status },
+          );
+        }
+      }
+
       // Apply cohort filter if provided (filter by course params)
       if (filters?.cohortId) {
         enrollmentQueryBuilder.andWhere(
@@ -723,6 +739,13 @@ export class EnrollmentsService {
           "course.params->>'pathwayId' = :pathwayId",
           { pathwayId: filters.pathwayId },
         );
+      }
+
+      // Apply categoryIds filter if provided
+      if (filters?.categoryIds?.length) {
+        enrollmentQueryBuilder.andWhere('course.categoryIds && :categoryIds', {
+          categoryIds: filters.categoryIds,
+        });
       }
 
       // Get enrolled course IDs
@@ -798,6 +821,7 @@ export class EnrollmentsService {
             status: course.status,
             params: course.params,
             ordering: course.ordering,
+            categoryIds: course.categoryIds,
             prerequisites: course.prerequisites,
             certificateTerm: course.certificateTerm,
             createdAt: course.createdAt,
@@ -905,6 +929,11 @@ export class EnrollmentsService {
     if (filters?.pathwayId) {
       queryBuilder.andWhere("course.params->>'pathwayId' = :pathwayId", {
         pathwayId: filters.pathwayId,
+      });
+    }
+    if (filters?.categoryIds?.length) {
+      queryBuilder.andWhere('course.categoryIds && :categoryIds', {
+        categoryIds: filters.categoryIds,
       });
     }
 
