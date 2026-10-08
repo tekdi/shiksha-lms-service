@@ -84,6 +84,13 @@ export class UsersEnrolledCoursesDto {
   @IsString({ each: true, message: 'Each category ID must be a string' })
   categoryIds?: string[];
 
+  @ApiPropertyOptional({
+    description: 'Alias for categoryIds (singular category ID filter)',
+  })
+  @IsOptional()
+  @IsString()
+  categoryId?: string;
+
 
   @ApiPropertyOptional({ description: 'Limit', example: 10, minimum: 1 })
   @IsOptional()
@@ -102,7 +109,7 @@ export class UsersEnrolledCoursesDto {
 
 export class UserEnrolledCourseDto extends Course {
   @ApiPropertyOptional({
-    description: 'Number of non-archived modules (only when hasEnroll=true)',
+    description: 'Number of non-archived modules in the course',
   })
   totalModuleCount?: number;
 
