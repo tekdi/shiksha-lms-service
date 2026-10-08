@@ -76,7 +76,7 @@ jobs:
       - name: Build and Push Multi-Arch Image
         uses: docker/build-push-action@v6
         with:
-          context: .
+          context: ./app
           push: true
 
           platforms: |
