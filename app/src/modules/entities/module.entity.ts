@@ -96,6 +96,10 @@ export class Module {
   })
   status: ModuleStatus;
 
+  @ApiProperty({ description: 'Additional parameters (stored as JSONB)', required: false })
+  @Column({ type: 'jsonb', nullable: true })
+  params: Record<string, any>;
+
   @ApiProperty({ description: 'Creation timestamp', example: '2023-01-01T00:00:00Z' })
   @CreateDateColumn({ type: 'timestamptz' })
   createdAt: Date;

@@ -107,6 +107,33 @@ export class CreateModuleDto {
     description: 'Additional parameters for the module (stored as JSONB)'
   })
   @IsOptional()
+  @Transform(({ value }) => {
+    let parsed = value;
+    if (typeof parsed === 'string') {
+      try {
+        parsed = JSON.parse(parsed);
+      } catch (_error) {
+        return value;
+      }
+    }
+    if (typeof parsed === 'string') {
+      try {
+        parsed = JSON.parse(parsed);
+      } catch (_error) {
+        return parsed;
+      }
+    }
+    return parsed;
+  })
   @IsObject({ message: VALIDATION_MESSAGES.COMMON.OBJECT('Additional parameters') })
   params?: Record<string, any>;
+
+  @ApiPropertyOptional({
+    description: 'Days allocation for the module',
+    example: 5,
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({}, { message: VALIDATION_MESSAGES.COMMON.NUMBER('Days allocation') })
+  daysAllocation?: number;
 }

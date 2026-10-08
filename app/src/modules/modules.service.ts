@@ -150,7 +150,11 @@ export class ModulesService {
       prerequisites: createModuleDto.prerequisites,
       badgeId: createModuleDto.badgeId,
       badgeTerm: createModuleDto.badgeTerm,
-      params: createModuleDto.params || {}, // Map meta to params
+      params: this.buildModuleParams(
+        undefined,
+        createModuleDto.params,
+        createModuleDto.daysAllocation,
+      ),
       // Required fields
       tenantId,
       organisationId,
@@ -241,11 +245,22 @@ export class ModulesService {
   ): Promise<Module> {
     const module = await this.findOne(moduleId, tenantId, organisationId);
 
-      const enrichedDto = {
+      const enrichedDto: any = {
         ...updateModuleDto,
         updatedBy: userId,
         updatedAt: new Date(),
       };
+
+      if (
+        updateModuleDto.params !== undefined ||
+        updateModuleDto.daysAllocation !== undefined
+      ) {
+        enrichedDto.params = this.buildModuleParams(
+          module.params,
+          updateModuleDto.params,
+          updateModuleDto.daysAllocation,
+        );
+      }
 
       const updatedModule = this.moduleRepository.merge(module, enrichedDto);
       // Update the module
@@ -720,5 +735,22 @@ export class ModulesService {
       ...module,
       lessonCount: lessonCountMap.get(module.moduleId) || 0
     }));
+  }
+
+  private buildModuleParams(
+    existingParams?: Record<string, any>,
+    dtoParams?: Record<string, any>,
+    daysAllocation?: number,
+  ): Record<string, any> {
+    const params: Record<string, any> = {
+      ...(existingParams || {}),
+      ...(dtoParams || {}),
+    };
+
+    if (daysAllocation !== undefined && daysAllocation !== null) {
+      params.daysAllocation = Number(daysAllocation);
+    }
+
+    return params;
   }
 }
