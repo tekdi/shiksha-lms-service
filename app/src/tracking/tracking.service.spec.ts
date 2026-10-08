@@ -1,4 +1,3 @@
-import { FindOperator } from 'typeorm';
 // Load the lesson entity first to resolve the entity import cycle the same way the app does
 import '../lessons/entities/lesson.entity';
 import { TrackingService } from './tracking.service';
@@ -8,9 +7,6 @@ const TENANT = 'tenant-1';
 const ORG = 'org-1';
 const USER = 'user-1';
 const COURSE_ID = 'course-1';
-
-const isNullOperator = (value: unknown) =>
-  value instanceof FindOperator && value.type === 'isNull';
 
 describe('TrackingService - independent lessons', () => {
   let service: TrackingService;
@@ -62,7 +58,7 @@ describe('TrackingService - independent lessons', () => {
   });
 
   describe('startLessonAttempt', () => {
-    it('creates a lesson track with courseId null and skips course/module tracking', async () => {
+    it('creates a lesson track without a course and skips course/module tracking', async () => {
       lessonRepository.findOne.mockResolvedValue(lesson());
 
       const track = await service.startLessonAttempt(
@@ -72,13 +68,14 @@ describe('TrackingService - independent lessons', () => {
         ORG,
       );
 
+      // Tracks are looked up by lesson; independent lessons get no courseId
       const where = lessonTrackRepository.find.mock.calls[0][0].where;
-      expect(isNullOperator(where.courseId)).toBe(true);
+      expect(where).not.toHaveProperty('courseId');
       expect(track).toMatchObject({
-        courseId: null,
         attempt: 1,
         status: TrackingStatus.STARTED,
       });
+      expect(track.courseId ?? null).toBeNull();
       expect(updateCourseAndModuleTracking).not.toHaveBeenCalled();
     });
 
@@ -101,7 +98,7 @@ describe('TrackingService - independent lessons', () => {
       const prerequisiteCall = lessonTrackRepository.find.mock.calls.find(
         ([options]) => options.where.status === TrackingStatus.COMPLETED,
       );
-      expect(isNullOperator(prerequisiteCall[0].where.courseId)).toBe(true);
+      expect(prerequisiteCall[0].where).not.toHaveProperty('courseId');
     });
 
     it('keeps the existing behaviour for course lessons', async () => {
@@ -117,9 +114,7 @@ describe('TrackingService - independent lessons', () => {
         'auth',
       );
 
-      expect(lessonTrackRepository.find.mock.calls[0][0].where.courseId).toBe(
-        COURSE_ID,
-      );
+      // The track stores the lesson's course, so course-scoped reads (hierarchy) find it
       expect(track.courseId).toBe(COURSE_ID);
       expect(updateCourseAndModuleTracking).toHaveBeenCalledWith(
         expect.objectContaining({ courseId: COURSE_ID }),
@@ -161,16 +156,15 @@ describe('TrackingService - independent lessons', () => {
       );
 
       expect(
-        isNullOperator(
-          lessonTrackRepository.find.mock.calls[0][0].where.courseId,
-        ),
-      ).toBe(true);
-      expect(track).toMatchObject({ courseId: null, attempt: 2 });
+        lessonTrackRepository.find.mock.calls[0][0].where,
+      ).not.toHaveProperty('courseId');
+      expect(track).toMatchObject({ attempt: 2 });
+      expect(track.courseId ?? null).toBeNull();
     });
 
     it('starts over a course lesson with the next attempt number', async () => {
       lessonRepository.findOne.mockResolvedValue(
-        lesson({ courseId: COURSE_ID, noOfAttempts: 3 }),
+        lesson({ courseId: COURSE_ID, moduleId: 'module-1', noOfAttempts: 3 }),
       );
       lessonTrackRepository.find.mockResolvedValue([
         { attempt: 2, status: TrackingStatus.INCOMPLETE },
@@ -200,10 +194,8 @@ describe('TrackingService - independent lessons', () => {
       );
 
       expect(
-        isNullOperator(
-          lessonTrackRepository.findOne.mock.calls[0][0].where.courseId,
-        ),
-      ).toBe(true);
+        lessonTrackRepository.findOne.mock.calls[0][0].where,
+      ).not.toHaveProperty('courseId');
       expect(status).toMatchObject({ canReattempt: true, isEligible: true });
     });
   });
@@ -229,15 +221,255 @@ describe('TrackingService - independent lessons', () => {
     });
   });
 
-  describe('updateCourseAndModuleTracking', () => {
-    it('never touches course tracking when the lesson track has no course', async () => {
-      updateCourseAndModuleTracking.mockRestore();
-      await service.updateCourseAndModuleTracking(
-        { courseId: null } as any,
+  describe('hierarchy sync trigger (lesson course/module)', () => {
+    it.each([
+      [
+        'course + module',
+        { courseId: COURSE_ID, moduleId: 'module-1' },
+        true,
+        COURSE_ID,
+      ],
+      ['module only', { courseId: null, moduleId: 'module-1' }, true, null],
+      ['course only', { courseId: COURSE_ID, moduleId: null }, true, COURSE_ID],
+      [
+        'neither (independent)',
+        { courseId: null, moduleId: null },
+        false,
+        null,
+      ],
+    ])(
+      'startLessonAttempt with %s lesson',
+      async (_label, ids, shouldSync, expectedCourseId) => {
+        lessonRepository.findOne.mockResolvedValue(lesson(ids));
+
+        const track = await service.startLessonAttempt(
+          'lesson-1',
+          USER,
+          TENANT,
+          ORG,
+        );
+
+        expect(track.courseId ?? null).toBe(expectedCourseId);
+        if (shouldSync) {
+          expect(updateCourseAndModuleTracking).toHaveBeenCalledTimes(1);
+        } else {
+          expect(updateCourseAndModuleTracking).not.toHaveBeenCalled();
+        }
+      },
+    );
+
+    it('updateProgress repairs a course lesson track saved without courseId and syncs it on completion', async () => {
+      lessonTrackRepository.findOne.mockResolvedValue({
+        lessonTrackId: 'track-1',
+        courseId: null,
+        status: TrackingStatus.STARTED,
+        lesson: {
+          lessonId: 'lesson-1',
+          courseId: COURSE_ID,
+          moduleId: 'module-1',
+        },
+      });
+
+      const result = await service.updateProgress(
+        'track-1',
+        { lessonId: 'lesson-1', currentPosition: 10, totalContent: 10 } as any,
+        USER,
+        TENANT,
+        ORG,
+        'auth',
+      );
+
+      expect(result).toMatchObject({
+        courseId: COURSE_ID,
+        status: TrackingStatus.COMPLETED,
+      });
+      expect(updateCourseAndModuleTracking).toHaveBeenCalledWith(
+        expect.objectContaining({ courseId: COURSE_ID }),
+        TENANT,
+        ORG,
+        'auth',
+      );
+    });
+
+    it('updateProgress does not sync while the lesson is still in progress', async () => {
+      lessonTrackRepository.findOne.mockResolvedValue({
+        lessonTrackId: 'track-1',
+        status: TrackingStatus.STARTED,
+        lesson: {
+          lessonId: 'lesson-1',
+          courseId: COURSE_ID,
+          moduleId: 'module-1',
+        },
+      });
+
+      const result = await service.updateProgress(
+        'track-1',
+        { lessonId: 'lesson-1', currentPosition: 3, totalContent: 10 } as any,
+        USER,
         TENANT,
         ORG,
       );
-      expect(courseTrackRepository.findOne).not.toHaveBeenCalled();
+
+      expect(result.status).toBe(TrackingStatus.INCOMPLETE);
+      expect(updateCourseAndModuleTracking).not.toHaveBeenCalled();
+    });
+
+    it('updateProgress syncs a module-only lesson on completion', async () => {
+      lessonTrackRepository.findOne.mockResolvedValue({
+        lessonTrackId: 'track-1',
+        status: TrackingStatus.STARTED,
+        lesson: { lessonId: 'lesson-1', courseId: null, moduleId: 'module-1' },
+      });
+
+      await service.updateProgress(
+        'track-1',
+        { lessonId: 'lesson-1', status: TrackingStatus.COMPLETED } as any,
+        USER,
+        TENANT,
+        ORG,
+      );
+
+      expect(updateCourseAndModuleTracking).toHaveBeenCalledTimes(1);
+    });
+
+    it('manageLessonAttempt stores the course on a restarted attempt', async () => {
+      lessonRepository.findOne.mockResolvedValue(
+        lesson({ courseId: COURSE_ID, moduleId: 'module-1', noOfAttempts: 3 }),
+      );
+      lessonTrackRepository.find.mockResolvedValue([
+        { attempt: 1, status: TrackingStatus.INCOMPLETE, courseId: null },
+      ]);
+
+      const track = await service.manageLessonAttempt(
+        'lesson-1',
+        'start',
+        USER,
+        TENANT,
+        ORG,
+      );
+
+      expect(track.courseId).toBe(COURSE_ID);
+    });
+
+    it('applyLessonHierarchy leaves independent lesson tracks untouched', () => {
+      const track: any = { courseId: null };
+      expect(
+        service.applyLessonHierarchy(track, {
+          courseId: null,
+          moduleId: null,
+        } as any),
+      ).toBe(false);
+      expect(service.applyLessonHierarchy(track, null)).toBe(false);
+      expect(track.courseId).toBeNull();
+    });
+  });
+
+  describe('updateCourseAndModuleTracking (independent course and module sync)', () => {
+    let syncCourseTracking: jest.SpyInstance;
+    let updateModuleTracking: jest.SpyInstance;
+
+    beforeEach(() => {
+      updateCourseAndModuleTracking.mockRestore();
+      syncCourseTracking = jest
+        .spyOn(service as any, 'syncCourseTracking')
+        .mockResolvedValue(undefined);
+      updateModuleTracking = jest
+        .spyOn(service as any, 'updateModuleTracking')
+        .mockResolvedValue(undefined);
+    });
+
+    const trackFor = (ids: object) =>
+      ({
+        lessonId: 'lesson-1',
+        userId: USER,
+        tenantId: TENANT,
+        organisationId: ORG,
+        status: TrackingStatus.COMPLETED,
+        lesson: { lessonId: 'lesson-1', ...ids },
+      }) as any;
+
+    it.each([
+      [
+        'course + module',
+        { courseId: COURSE_ID, moduleId: 'module-1' },
+        true,
+        true,
+      ],
+      ['module only', { courseId: null, moduleId: 'module-1' }, false, true],
+      ['course only', { courseId: COURSE_ID, moduleId: null }, true, false],
+      [
+        'neither (independent)',
+        { courseId: null, moduleId: null },
+        false,
+        false,
+      ],
+    ])(
+      '%s lesson: syncs only the levels it belongs to',
+      async (_label, ids, course, module) => {
+        await service.updateCourseAndModuleTracking(
+          trackFor(ids),
+          TENANT,
+          ORG,
+          'auth',
+        );
+
+        if (course) {
+          expect(syncCourseTracking).toHaveBeenCalledWith(
+            expect.anything(),
+            COURSE_ID,
+            TENANT,
+            ORG,
+            'auth',
+          );
+        } else {
+          expect(syncCourseTracking).not.toHaveBeenCalled();
+        }
+        if (module) {
+          expect(updateModuleTracking).toHaveBeenCalledWith(
+            'module-1',
+            USER,
+            TENANT,
+            ORG,
+            false,
+          );
+        } else {
+          expect(updateModuleTracking).not.toHaveBeenCalled();
+        }
+      },
+    );
+
+    it('loads the lesson when the track has no lesson relation', async () => {
+      lessonRepository.findOne.mockResolvedValue({
+        courseId: null,
+        moduleId: 'module-1',
+      });
+      await service.updateCourseAndModuleTracking(
+        {
+          lessonId: 'lesson-1',
+          userId: USER,
+          tenantId: TENANT,
+          organisationId: ORG,
+          status: TrackingStatus.COMPLETED,
+        } as any,
+        TENANT,
+        ORG,
+      );
+      expect(updateModuleTracking).toHaveBeenCalledTimes(1);
+      expect(syncCourseTracking).not.toHaveBeenCalled();
+    });
+
+    it('still syncs the module when the user has no course_track (not enrolled)', async () => {
+      syncCourseTracking.mockRestore();
+      courseTrackRepository.findOne.mockResolvedValue(null);
+
+      await expect(
+        service.updateCourseAndModuleTracking(
+          trackFor({ courseId: COURSE_ID, moduleId: 'module-1' }),
+          TENANT,
+          ORG,
+        ),
+      ).resolves.toBeUndefined();
+      expect(updateModuleTracking).toHaveBeenCalledTimes(1);
     });
   });
 });

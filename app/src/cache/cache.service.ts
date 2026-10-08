@@ -375,6 +375,9 @@ export class CacheService {
       this.delByPattern(this.cacheConfig.getCourseModulesPattern(courseId, tenantId, organisationId)),
       this.delByPattern(`${this.cacheConfig.COURSE_PREFIX}search:${tenantId}:${organisationId}:*`),
       this.del(this.cacheConfig.getCourseEventLessonsKey(courseId)),
+      // Lesson list results (GET /lessons) are cached per tenant/org with all
+      // filters in the key, so clear them all when course content changes.
+      this.delByPattern(this.cacheConfig.getLessonPattern(tenantId, organisationId)),
     ]);
 
     // Invalidate course metadata cache (LMS-specific cache)
