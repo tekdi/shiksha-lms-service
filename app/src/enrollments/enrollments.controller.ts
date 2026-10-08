@@ -19,7 +19,7 @@ import {
   ApiQuery,
 } from '@nestjs/swagger';
 import { EnrollmentsService } from './enrollments.service';
-import { CreateEnrollmentDto } from './dto/create-enrollment.dto';
+import { CreateEnrollmentDto, CreateMultiUserEnrollmentDto } from './dto/create-enrollment.dto';
 import { UpdateEnrollmentDto } from './dto/update-enrollment.dto';
 import { DeleteEnrollmentDto } from './dto/delete-enrollment.dto';
 import { EnrollCohortDto } from './dto/enroll-cohort.dto';
@@ -64,6 +64,44 @@ export class EnrollmentsController {
       query.userId,
       tenantOrg.tenantId,
       tenantOrg.organisationId
+    );
+  }
+
+  @Post('multi-user')
+  @ApiId(API_IDS.ENROLL_MULTIPLE_USERS)
+  @ApiOperation({ summary: 'Enroll multiple users for one or more courses' })
+  @ApiResponse({
+    status: 201,
+    description: 'Users enrolled successfully',
+    schema: {
+      properties: {
+        totalLearners: { type: 'number' },
+        results: {
+          type: 'array',
+          items: {
+            properties: {
+              learnerId: { type: 'string' },
+              successfullyEnrolled: { type: 'array', items: { $ref: '#/components/schemas/UserEnrollment' } },
+              alreadyEnrolledCourseIds: { type: 'array', items: { type: 'string' } },
+              failedCourseIds: { type: 'array', items: { type: 'string' } },
+            },
+          },
+        },
+      },
+    },
+  })
+  @ApiResponse({ status: 400, description: 'Bad request' })
+  @ApiBody({ type: CreateMultiUserEnrollmentDto })
+  async enrollMultipleUsers(
+    @Body() createMultiUserEnrollmentDto: CreateMultiUserEnrollmentDto,
+    @Query() query: CommonQueryDto,
+    @TenantOrg() tenantOrg: { tenantId: string; organisationId: string },
+  ) {
+    return this.enrollmentsService.enrollMultipleUsers(
+      createMultiUserEnrollmentDto,
+      query.userId,
+      tenantOrg.tenantId,
+      tenantOrg.organisationId,
     );
   }
 

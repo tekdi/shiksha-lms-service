@@ -1,4 +1,4 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, OmitType } from '@nestjs/swagger';
 import {
   IsNotEmpty,
   IsString,
@@ -9,6 +9,7 @@ import {
   IsUUID,
   IsObject,
   IsArray,
+  ArrayNotEmpty,
 } from 'class-validator';
 import { Type, Transform } from 'class-transformer';
 import { VALIDATION_MESSAGES } from '../../common/constants/response-messages.constant';
@@ -101,4 +102,32 @@ export class CreateEnrollmentDto {
   @IsOptional()
   @IsString({ message: VALIDATION_MESSAGES.COMMON.STRING('Enrolled by') })
   enrolledBy?: string;
+}
+
+/**
+ * Same as CreateEnrollmentDto, but accepts multiple learners:
+ * the single `learnerId` is replaced with a `learnerIds` array.
+ */
+export class CreateMultiUserEnrollmentDto extends OmitType(CreateEnrollmentDto, [
+  'learnerId',
+] as const) {
+  @ApiProperty({
+    description: 'Array of Learner IDs',
+    example: [
+      '123e4567-e89b-12d3-a456-426614174000',
+      '223e4567-e89b-12d3-a456-426614174001',
+    ],
+    required: true,
+    type: [String],
+  })
+  // Trim values and drop duplicates so the same learner is not processed twice
+  @Transform(({ value }) =>
+    Array.isArray(value)
+      ? [...new Set(value.map((id) => (typeof id === 'string' ? id.trim() : id)))]
+      : value,
+  )
+  @IsArray({ message: VALIDATION_MESSAGES.COMMON.ARRAY('Learner IDs') })
+  @ArrayNotEmpty({ message: VALIDATION_MESSAGES.COMMON.MIN_ARRAY_LENGTH('Learner IDs', 1) })
+  @IsString({ each: true, message: VALIDATION_MESSAGES.COMMON.STRING('Learner ID') })
+  learnerIds: string[];
 }

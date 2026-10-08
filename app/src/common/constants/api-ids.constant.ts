@@ -44,6 +44,7 @@ export const API_IDS = {
 
   // Enrollment APIs
   ENROLL_USER: 'api.enrollment.create',
+  ENROLL_MULTIPLE_USERS: 'api.enrollment.multiuser.create',
   GET_USER_ENROLLMENTS: 'api.enrollment.list',
   GET_ENROLLMENT_BY_ID: 'api.enrollment.read',
   UPDATE_ENROLLMENT: 'api.enrollment.update',
