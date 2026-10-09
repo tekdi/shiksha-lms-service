@@ -370,18 +370,22 @@ export class CoursesService {
 
     const courseIds = courses.map((c) => c.courseId);
 
-    // OPTIMIZED: Batch load all module counts in a single query instead of N queries
+    // OPTIMIZED: Batch load all module counts and days allocation sum in a single query instead of N queries
     const moduleCounts = await this.moduleRepository
       .createQueryBuilder('module')
       .select('module.courseId', 'courseId')
       .addSelect('COUNT(*)', 'count')
+      .addSelect(
+        `COALESCE(SUM(CASE WHEN (module.params->>'daysAllocation') ~ '^[0-9]+(\\.[0-9]+)?$' THEN (module.params->>'daysAllocation')::numeric ELSE 0 END), 0)`,
+        'moduleDaysCount',
+      )
       .where('module.courseId IN (:...courseIds)', { courseIds })
       .andWhere('module.tenantId = :tenantId', { tenantId })
       .andWhere('module.status != :archivedStatus', {
         archivedStatus: ModuleStatus.ARCHIVED,
       })
       .groupBy('module.courseId')
-      .getRawMany();
+      .getRawMany<{ courseId: string; count: string; moduleDaysCount: string }>();
 
     // OPTIMIZED: Batch load all enrollment counts in a single query instead of N queries
     const enrollmentCounts = await this.userEnrollmentRepository
@@ -396,8 +400,14 @@ export class CoursesService {
       .groupBy('enrollment.courseId')
       .getRawMany();
 
-    const moduleCountMap = new Map(
-      moduleCounts.map((mc) => [mc.courseId, Number.parseInt(mc.count, 10)]),
+    const moduleStatsMap = new Map(
+      moduleCounts.map((mc) => [
+        mc.courseId,
+        {
+          moduleCount: Number.parseInt(mc.count, 10),
+          moduleDaysCount: Number(mc.moduleDaysCount),
+        },
+      ]),
     );
 
     const enrollmentCountMap = new Map(
@@ -407,11 +417,15 @@ export class CoursesService {
       ]),
     );
 
-    return courses.map((course) => ({
-      ...course,
-      moduleCount: moduleCountMap.get(course.courseId) || 0,
-      enrolledUsersCount: enrollmentCountMap.get(course.courseId) || 0,
-    }));
+    return courses.map((course) => {
+      const stats = moduleStatsMap.get(course.courseId);
+      return {
+        ...course,
+        moduleCount: stats?.moduleCount || 0,
+        moduleDaysCount: stats?.moduleDaysCount || 0,
+        enrolledUsersCount: enrollmentCountMap.get(course.courseId) || 0,
+      };
+    });
   }
 
   /**

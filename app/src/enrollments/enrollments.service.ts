@@ -988,22 +988,36 @@ export class EnrollmentsService {
       .createQueryBuilder('module')
       .select('module.courseId', 'courseId')
       .addSelect('COUNT(*)', 'count')
+      .addSelect(
+        `COALESCE(SUM(CASE WHEN (module.params->>'daysAllocation') ~ '^[0-9]+(\\.[0-9]+)?$' THEN (module.params->>'daysAllocation')::numeric ELSE 0 END), 0)`,
+        'moduleDaysCount',
+      )
       .where('module.courseId IN (:...courseIds)', { courseIds })
       .andWhere('module.tenantId = :tenantId', { tenantId })
       .andWhere('module.status != :archivedStatus', {
         archivedStatus: ModuleStatus.ARCHIVED,
       })
       .groupBy('module.courseId')
-      .getRawMany<{ courseId: string; count: string }>();
+      .getRawMany<{ courseId: string; count: string; moduleDaysCount: string }>();
 
     const countMap = new Map(
-      counts.map((row) => [row.courseId, Number(row.count)]),
+      counts.map((row) => [
+        row.courseId,
+        {
+          totalModuleCount: Number(row.count),
+          moduleDaysCount: Number(row.moduleDaysCount),
+        },
+      ]),
     );
 
-    return courses.map((course) => ({
-      ...course,
-      totalModuleCount: countMap.get(course.courseId) || 0,
-    }));
+    return courses.map((course) => {
+      const stats = countMap.get(course.courseId);
+      return {
+        ...course,
+        totalModuleCount: stats?.totalModuleCount || 0,
+        moduleDaysCount: stats?.moduleDaysCount || 0,
+      };
+    });
   }
 
   /**
@@ -1029,6 +1043,13 @@ export class EnrollmentsService {
           'AND "module"."tenantId" = :tenantId ' +
           'AND "module"."status" != :archivedModuleStatus)',
         'totalModuleCount',
+      )
+      .addSelect(
+        '(SELECT COALESCE(SUM(CASE WHEN ("module"."params"->>\'daysAllocation\') ~ \'^[0-9]+(\\.[0-9]+)?$\' THEN ("module"."params"->>\'daysAllocation\')::numeric ELSE 0 END), 0) FROM "modules" "module" ' +
+          'WHERE "module"."courseId" = "course"."courseId" ' +
+          'AND "module"."tenantId" = :tenantId ' +
+          'AND "module"."status" != :archivedModuleStatus)',
+        'moduleDaysCount',
       )
       // module_track has no courseId; the course comes from the tracked module
       .addSelect(
@@ -1077,6 +1098,7 @@ export class EnrollmentsService {
       .getRawMany<{
         courseId: string;
         totalModuleCount: string;
+        moduleDaysCount: string;
         completedModuleCount: string;
         courseTracking: CourseTrack | null;
         enrollment: UserEnrollment | null;
@@ -1089,6 +1111,7 @@ export class EnrollmentsService {
       return {
         ...course,
         totalModuleCount: Number(progress?.totalModuleCount ?? 0),
+        moduleDaysCount: Number(progress?.moduleDaysCount ?? 0),
         completedModuleCount: Number(progress?.completedModuleCount ?? 0),
         courseTracking: progress?.courseTracking ?? null,
         enrollment: progress?.enrollment ?? null,
