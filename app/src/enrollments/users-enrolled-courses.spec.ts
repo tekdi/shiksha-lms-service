@@ -28,6 +28,7 @@ const makeQueryBuilder = (result: {
     'skip',
     'take',
     'setParameters',
+    'groupBy',
   ]) {
     qb[method] = jest.fn(() => qb);
   }
@@ -46,6 +47,7 @@ describe('EnrollmentsService.usersEnrolledCourses - hasEnroll', () => {
   let courseRepository: any;
   let courseTrackRepository: any;
   let moduleTrackRepository: any;
+  let moduleRepository: any;
 
   const courses = [
     {
@@ -72,11 +74,21 @@ describe('EnrollmentsService.usersEnrolledCourses - hasEnroll', () => {
     };
     courseTrackRepository = { find: jest.fn(), createQueryBuilder: jest.fn() };
     moduleTrackRepository = { find: jest.fn(), createQueryBuilder: jest.fn() };
+    moduleRepository = {
+      createQueryBuilder: jest.fn(() =>
+        makeQueryBuilder({
+          raw: [
+            { courseId: 'course-1', count: '3' },
+            { courseId: 'course-2', count: '5' },
+          ],
+        }),
+      ),
+    };
     service = new EnrollmentsService(
       { createQueryBuilder: jest.fn(() => enrollmentQb) } as any,
       courseRepository,
       courseTrackRepository,
-      {} as any, // moduleRepository
+      moduleRepository,
       moduleTrackRepository,
       {} as any, // lessonTrackRepository
       {
@@ -93,7 +105,7 @@ describe('EnrollmentsService.usersEnrolledCourses - hasEnroll', () => {
   const sqlOf = (qb: any, method: string) =>
     qb[method].mock.calls.map((args: any[]) => String(args[0])).join('\n');
 
-  it('hasEnroll not provided: existing queries only, no progress fields', async () => {
+  it('hasEnroll not provided: attaches totalModuleCount but no user progress fields', async () => {
     const metaQb = makeQueryBuilder({ many: courses });
     setup([metaQb]);
 
@@ -106,9 +118,11 @@ describe('EnrollmentsService.usersEnrolledCourses - hasEnroll', () => {
     expect(courseRepository.createQueryBuilder).toHaveBeenCalledTimes(1); // course metadata only
     expect(sqlOf(metaQb, 'addSelect')).toBe('');
     expect(result.totalElements).toBe(2);
+    expect(result.courses[0].totalModuleCount).toBe(3);
+    expect(result.courses[1].totalModuleCount).toBe(5);
     result.courses.forEach((course) => {
-      expect(course).not.toHaveProperty('totalModuleCount');
       expect(course).not.toHaveProperty('enrollment');
+      expect(course).not.toHaveProperty('completedModuleCount');
     });
   });
 
@@ -176,6 +190,38 @@ describe('EnrollmentsService.usersEnrolledCourses - hasEnroll', () => {
     });
   });
 
+  it('filters by categoryIds when provided', async () => {
+    const metaQb = makeQueryBuilder({ many: courses });
+    setup([metaQb]);
+
+    await service.usersEnrolledCourses(
+      { userId: USER, categoryIds: ['cat-1', 'cat-2'], offset: 0, limit: 10 },
+      TENANT,
+      ORG,
+    );
+
+    expect(enrollmentQb.andWhere).toHaveBeenCalledWith(
+      'course.categoryIds && :categoryIds',
+      { categoryIds: ['cat-1', 'cat-2'] },
+    );
+  });
+
+  it('filters by categoryId (singular) when provided', async () => {
+    const metaQb = makeQueryBuilder({ many: courses });
+    setup([metaQb]);
+
+    await service.usersEnrolledCourses(
+      { userId: USER, categoryId: 'cat-single', offset: 0, limit: 10 },
+      TENANT,
+      ORG,
+    );
+
+    expect(enrollmentQb.andWhere).toHaveBeenCalledWith(
+      'course.categoryIds && :categoryIds',
+      { categoryIds: ['cat-single'] },
+    );
+  });
+
   it('hasEnroll=false: one course query with NOT EXISTS, paginated in the database', async () => {
     const notEnrolledQb = makeQueryBuilder({
       manyAndCount: [[courses[1]], 5],
@@ -209,7 +255,7 @@ describe('EnrollmentsService.usersEnrolledCourses - hasEnroll', () => {
     expect(notEnrolledQb.take).toHaveBeenCalledWith(1);
     expect(courseTrackRepository.find).not.toHaveBeenCalled();
     expect(result).toEqual({
-      courses: [courses[1]],
+      courses: [{ ...courses[1], totalModuleCount: 5 }],
       totalElements: 5,
       offset: 2,
       limit: 1,
@@ -253,6 +299,14 @@ describe('UsersEnrolledCoursesDto hasEnroll validation', () => {
   it('rejects a non-boolean hasEnroll', async () => {
     expect(await errorFields({ hasEnroll: 'yes', userId: USER })).toEqual([
       'hasEnroll',
+    ]);
+  });
+
+  it('parses categoryId and categoryIds fields correctly', () => {
+    expect(toDto({ categoryId: 'cat-123' }).categoryId).toBe('cat-123');
+    expect(toDto({ categoryIds: 'cat-456,cat-789' }).categoryIds).toEqual([
+      'cat-456',
+      'cat-789',
     ]);
   });
 });

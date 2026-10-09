@@ -61,6 +61,7 @@ const USER_COURSE_META_COLUMNS = [
   'course.status',
   'course.params',
   'course.ordering',
+  'course.categoryIds',
   'course.createdAt',
   'course.updatedAt',
 ];
@@ -669,11 +670,9 @@ export class EnrollmentsService {
     organisationId: string,
   ): Promise<UsersEnrolledCoursesResponseDto> {
     try {
-      // Validate and sanitize inputs
       const offset = Math.max(0, filters.offset || 0);
       const limit = Math.min(100, Math.max(1, filters.limit || 10));
 
-      // hasEnroll=false: courses the user is NOT enrolled in (a different base set than below)
       if (filters?.hasEnroll === false && filters.userId) {
         return await this.usersNotEnrolledCourses(
           filters,
@@ -684,160 +683,29 @@ export class EnrollmentsService {
         );
       }
 
-      // STEP 1: Always fetch enrollment mapping from DB (user-specific, never cached)
-      // This query gets the courseIds that the user is enrolled in
-      // Enrollment mapping is always fetched from DB to ensure fresh, user-specific data
-      const enrollmentQueryBuilder = this.userEnrollmentRepository
-        .createQueryBuilder('enrollment')
-        .innerJoin('enrollment.course', 'course')
-        .select(['enrollment.courseId', 'enrollment.userId', 'course.courseId'])
-        .where('enrollment.tenantId = :tenantId', { tenantId })
-        .andWhere('enrollment.organisationId = :organisationId', {
-          organisationId,
-        })
-        .andWhere('enrollment.status = :enrollmentStatus', {
-          enrollmentStatus: EnrollmentStatus.PUBLISHED,
-        })
-        .andWhere('course.status = :coursePublishedStatus', {
-          coursePublishedStatus: CourseStatus.PUBLISHED,
-        });
-
-      // Apply user filter if provided
-      if (filters?.userId) {
-        enrollmentQueryBuilder.andWhere('enrollment.userId = :userId', {
-          userId: filters.userId,
-        });
-      }
-
-      // Apply cohort filter if provided (filter by course params)
-      if (filters?.cohortId) {
-        enrollmentQueryBuilder.andWhere(
-          "course.params->>'cohortId' = :cohortId",
-          { cohortId: filters.cohortId },
-        );
-      }
-
-      // Apply pathway filter if provided (filter by course params)
-      if (filters?.pathwayId) {
-        enrollmentQueryBuilder.andWhere(
-          "course.params->>'pathwayId' = :pathwayId",
-          { pathwayId: filters.pathwayId },
-        );
-      }
-
-      // Get enrolled course IDs
-      const enrollments = await enrollmentQueryBuilder.getMany();
-      const enrolledCourseIds = [
-        ...new Set(enrollments.map((e) => e.courseId)),
-      ];
-
-      if (enrolledCourseIds.length === 0) {
-        return {
-          courses: [],
-          totalElements: 0,
-          offset,
-          limit,
-        };
-      }
-
-      // STEP 2: Fetch course metadata (cacheable when LMS_CACHE_ENABLED=true)
-      // For each course, check cache first, then fetch from DB if needed
-      const courses: Course[] = [];
-      const courseIdsToFetch: string[] = [];
-
-      // Check cache for each course metadata
-      for (const courseId of enrolledCourseIds) {
-        const cachedMeta = await this.cacheService.getCourseMetaCached(
-          courseId,
-          filters?.cohortId || filters?.pathwayId,
-        );
-
-        if (cachedMeta) {
-          // Cache HIT: Use cached metadata
-          courses.push(cachedMeta as Course);
-        } else {
-          // Cache MISS: Mark for DB fetch
-          courseIdsToFetch.push(courseId);
-        }
-      }
-
-      // STEP 3: Fetch course metadata from DB for cache misses
-      if (courseIdsToFetch.length > 0) {
-        const courseQueryBuilder = this.courseRepository
-          .createQueryBuilder('course')
-          .select(USER_COURSE_META_COLUMNS)
-          .where('course.courseId IN (:...courseIds)', {
-            courseIds: courseIdsToFetch,
-          })
-          .andWhere('course.tenantId = :tenantId', { tenantId })
-          .andWhere('course.organisationId = :organisationId', {
-            organisationId,
-          })
-          .andWhere('course.status = :coursePublishedStatus', {
-            coursePublishedStatus: CourseStatus.PUBLISHED,
-          });
-
-        // Note: Cohort filter already applied in enrollment query, so courses are pre-filtered
-
-        const fetchedCourses = await courseQueryBuilder.getMany();
-
-        // Cache the fetched course metadata for future requests
-        for (const course of fetchedCourses) {
-          // Extract only metadata fields for caching (not full entity)
-          const courseMeta = {
-            courseId: course.courseId,
-            tenantId: course.tenantId,
-            organisationId: course.organisationId,
-            title: course.title,
-            alias: course.alias,
-            shortDescription: course.shortDescription,
-            description: course.description,
-            image: course.image,
-            featured: course.featured,
-            free: course.free,
-            status: course.status,
-            params: course.params,
-            ordering: course.ordering,
-            prerequisites: course.prerequisites,
-            certificateTerm: course.certificateTerm,
-            createdAt: course.createdAt,
-            updatedAt: course.updatedAt,
-          };
-
-          // Store in cache for future requests (best-effort, non-blocking)
-          // Cache writes are wrapped in try-catch to prevent Redis errors from breaking requests
-          try {
-            await this.cacheService.setCourseMetaCached(
-              course.courseId,
-              courseMeta,
-              filters?.cohortId || filters?.pathwayId,
-            );
-          } catch (cacheError) {
-            // Log cache write failure but don't break the request
-            // Cache is an optimization - API should work even if Redis is down
-            this.logger.warn(
-              `Failed to cache course metadata for courseId ${course.courseId}: ${cacheError.message}`
-            );
-          }
-
-          courses.push(course);
-        }
-      }
-
-      // Exclude unpublished/archived if cache metadata is stale
-      const publishedOnly = courses.filter(
-        (c) => c.status === CourseStatus.PUBLISHED,
+      const enrolledCourseIds = await this.getEnrolledCourseIds(
+        filters,
+        tenantId,
+        organisationId,
       );
 
-      // STEP 4: Apply sorting and pagination
-      // Sort by ordering (ascending)
-      publishedOnly.sort((a, b) => (a.ordering || 0) - (b.ordering || 0));
+      if (enrolledCourseIds.length === 0) {
+        return { courses: [], totalElements: 0, offset, limit };
+      }
 
-      // Apply pagination
-      const total = publishedOnly.length;
-      const paginatedCourses = publishedOnly.slice(offset, offset + limit);
+      const groupKey = filters?.cohortId || filters?.pathwayId;
+      const courses = await this.resolveCoursesWithCache(
+        enrolledCourseIds,
+        tenantId,
+        organisationId,
+        groupKey,
+      );
 
-      // STEP 5: hasEnroll=true adds the user's module progress, tracking and enrollment
+      courses.sort((a, b) => (a.ordering || 0) - (b.ordering || 0));
+
+      const total = courses.length;
+      const paginatedCourses = courses.slice(offset, offset + limit);
+
       const coursesForResponse: UserEnrolledCourseDto[] =
         filters?.hasEnroll === true && filters.userId
           ? await this.attachUserCourseProgress(
@@ -846,21 +714,188 @@ export class EnrollmentsService {
               tenantId,
               organisationId,
             )
-          : paginatedCourses;
+          : await this.attachTotalModuleCount(paginatedCourses, tenantId);
 
-      // STEP 6: Build response
-      // Note: We do NOT cache the full response because it contains user-specific enrollment data
-      const result: UsersEnrolledCoursesResponseDto = {
+      return {
         courses: coursesForResponse,
         totalElements: total,
         offset,
         limit,
       };
-
-      return result;
     } catch (error) {
       this.logger.error(`Error searching enrolled courses: ${error.message}`);
       throw new InternalServerErrorException(RESPONSE_MESSAGES.FETCH_ERROR);
+    }
+  }
+
+  private async getEnrolledCourseIds(
+    filters: UsersEnrolledCoursesDto,
+    tenantId: string,
+    organisationId: string,
+  ): Promise<string[]> {
+    const qb = this.userEnrollmentRepository
+      .createQueryBuilder('enrollment')
+      .innerJoin('enrollment.course', 'course')
+      .select(['enrollment.courseId', 'enrollment.userId', 'course.courseId'])
+      .where('enrollment.tenantId = :tenantId', { tenantId })
+      .andWhere('enrollment.organisationId = :organisationId', {
+        organisationId,
+      })
+      .andWhere('enrollment.status = :enrollmentStatus', {
+        enrollmentStatus: EnrollmentStatus.PUBLISHED,
+      })
+      .andWhere('course.status = :coursePublishedStatus', {
+        coursePublishedStatus: CourseStatus.PUBLISHED,
+      });
+
+    if (filters?.userId) {
+      qb.andWhere('enrollment.userId = :userId', { userId: filters.userId });
+    }
+
+    if (filters?.hasEnroll === true && filters?.trackingStatus && filters?.userId) {
+      this.applyTrackingStatusFilter(qb, filters.trackingStatus);
+    }
+
+    if (filters?.cohortId) {
+      qb.andWhere("course.params->>'cohortId' = :cohortId", {
+        cohortId: filters.cohortId,
+      });
+    }
+
+    if (filters?.pathwayId) {
+      qb.andWhere("course.params->>'pathwayId' = :pathwayId", {
+        pathwayId: filters.pathwayId,
+      });
+    }
+
+    const categoryIds = this.getCategoryIdsFilter(filters);
+    if (categoryIds?.length) {
+      qb.andWhere('course.categoryIds && :categoryIds', {
+        categoryIds,
+      });
+    }
+
+    const enrollments = await qb.getMany();
+    return [...new Set(enrollments.map((e) => e.courseId))];
+  }
+
+  private applyTrackingStatusFilter(qb: any, status: TrackingStatus): void {
+    if (status === TrackingStatus.NOT_STARTED) {
+      qb.andWhere(
+        '(NOT EXISTS (SELECT 1 FROM "course_track" "ct" WHERE "ct"."courseId" = "course"."courseId" AND "ct"."userId" = :userId AND "ct"."tenantId" = :tenantId AND "ct"."organisationId" = :organisationId) OR EXISTS (SELECT 1 FROM "course_track" "ct" WHERE "ct"."courseId" = "course"."courseId" AND "ct"."userId" = :userId AND "ct"."tenantId" = :tenantId AND "ct"."organisationId" = :organisationId AND "ct"."status" = :trackingStatus))',
+        { trackingStatus: status },
+      );
+    } else {
+      qb.andWhere(
+        'EXISTS (SELECT 1 FROM "course_track" "ct" WHERE "ct"."courseId" = "course"."courseId" AND "ct"."userId" = :userId AND "ct"."tenantId" = :tenantId AND "ct"."organisationId" = :organisationId AND "ct"."status" = :trackingStatus)',
+        { trackingStatus: status },
+      );
+    }
+  }
+
+  private async resolveCoursesWithCache(
+    enrolledCourseIds: string[],
+    tenantId: string,
+    organisationId: string,
+    groupKey?: string,
+  ): Promise<Course[]> {
+    const cachedResults = await Promise.all(
+      enrolledCourseIds.map(async (courseId) => ({
+        courseId,
+        cachedMeta: await this.cacheService.getCourseMetaCached(
+          courseId,
+          groupKey,
+        ),
+      })),
+    );
+
+    const courses: Course[] = [];
+    const courseIdsToFetch: string[] = [];
+
+    for (const { courseId, cachedMeta } of cachedResults) {
+      if (cachedMeta) {
+        courses.push(cachedMeta as Course);
+      } else {
+        courseIdsToFetch.push(courseId);
+      }
+    }
+
+    if (courseIdsToFetch.length > 0) {
+      const fetchedCourses = await this.fetchAndCacheCoursesMetadata(
+        courseIdsToFetch,
+        tenantId,
+        organisationId,
+        groupKey,
+      );
+      courses.push(...fetchedCourses);
+    }
+
+    return courses.filter((c) => c.status === CourseStatus.PUBLISHED);
+  }
+
+  private async fetchAndCacheCoursesMetadata(
+    courseIdsToFetch: string[],
+    tenantId: string,
+    organisationId: string,
+    groupKey?: string,
+  ): Promise<Course[]> {
+    const fetchedCourses = await this.courseRepository
+      .createQueryBuilder('course')
+      .select(USER_COURSE_META_COLUMNS)
+      .where('course.courseId IN (:...courseIds)', {
+        courseIds: courseIdsToFetch,
+      })
+      .andWhere('course.tenantId = :tenantId', { tenantId })
+      .andWhere('course.organisationId = :organisationId', { organisationId })
+      .andWhere('course.status = :coursePublishedStatus', {
+        coursePublishedStatus: CourseStatus.PUBLISHED,
+      })
+      .getMany();
+
+    await Promise.all(
+      fetchedCourses.map((course) =>
+        this.cacheSingleCourseMeta(course, groupKey),
+      ),
+    );
+
+    return fetchedCourses;
+  }
+
+  private async cacheSingleCourseMeta(
+    course: Course,
+    groupKey?: string,
+  ): Promise<void> {
+    const courseMeta = {
+      courseId: course.courseId,
+      tenantId: course.tenantId,
+      organisationId: course.organisationId,
+      title: course.title,
+      alias: course.alias,
+      shortDescription: course.shortDescription,
+      description: course.description,
+      image: course.image,
+      featured: course.featured,
+      free: course.free,
+      status: course.status,
+      params: course.params,
+      ordering: course.ordering,
+      categoryIds: course.categoryIds,
+      prerequisites: course.prerequisites,
+      certificateTerm: course.certificateTerm,
+      createdAt: course.createdAt,
+      updatedAt: course.updatedAt,
+    };
+
+    try {
+      await this.cacheService.setCourseMetaCached(
+        course.courseId,
+        courseMeta,
+        groupKey,
+      );
+    } catch (cacheError) {
+      this.logger.warn(
+        `Failed to cache course metadata for courseId ${course.courseId}: ${cacheError.message}`,
+      );
     }
   }
 
@@ -907,6 +942,12 @@ export class EnrollmentsService {
         pathwayId: filters.pathwayId,
       });
     }
+    const categoryIds = this.getCategoryIdsFilter(filters);
+    if (categoryIds?.length) {
+      queryBuilder.andWhere('course.categoryIds && :categoryIds', {
+        categoryIds,
+      });
+    }
 
     const [courses, totalElements] = await queryBuilder
       .orderBy('course.ordering', 'ASC')
@@ -915,7 +956,68 @@ export class EnrollmentsService {
       .take(limit)
       .getManyAndCount();
 
-    return { courses, totalElements, offset, limit };
+    const coursesWithModuleCount = await this.attachTotalModuleCount(
+      courses,
+      tenantId,
+    );
+
+    return { courses: coursesWithModuleCount, totalElements, offset, limit };
+  }
+
+  private getCategoryIdsFilter(
+    filters?: UsersEnrolledCoursesDto,
+  ): string[] | undefined {
+    if (filters?.categoryIds?.length) {
+      return filters.categoryIds;
+    }
+    return undefined;
+  }
+
+  /**
+   * Attaches totalModuleCount (count of non-archived modules) to a list of courses.
+   */
+  private async attachTotalModuleCount(
+    courses: Course[],
+    tenantId: string,
+  ): Promise<UserEnrolledCourseDto[]> {
+    if (courses.length === 0) return [];
+
+    const courseIds = courses.map((c) => c.courseId);
+
+    const counts = await this.moduleRepository
+      .createQueryBuilder('module')
+      .select('module.courseId', 'courseId')
+      .addSelect('COUNT(*)', 'count')
+      .addSelect(
+        `COALESCE(SUM(CASE WHEN (module.params->>'daysAllocation') ~ '^[0-9]+(\\.[0-9]+)?$' THEN (module.params->>'daysAllocation')::numeric ELSE 0 END), 0)`,
+        'daysAllocationCount',
+      )
+      .where('module.courseId IN (:...courseIds)', { courseIds })
+      .andWhere('module.tenantId = :tenantId', { tenantId })
+      .andWhere('module.status != :archivedStatus', {
+        archivedStatus: ModuleStatus.ARCHIVED,
+      })
+      .groupBy('module.courseId')
+      .getRawMany<{ courseId: string; count: string; daysAllocationCount: string }>();
+
+    const countMap = new Map(
+      counts.map((row) => [
+        row.courseId,
+        {
+          totalModuleCount: Number(row.count),
+          daysAllocationCount: Number(row.daysAllocationCount),
+        },
+      ]),
+    );
+
+    return courses.map((course) => {
+      const stats = countMap.get(course.courseId);
+      return {
+        ...course,
+        totalModuleCount: stats?.totalModuleCount || 0,
+        daysAllocationCount: stats?.daysAllocationCount || 0,
+      };
+    });
   }
 
   /**
@@ -941,6 +1043,13 @@ export class EnrollmentsService {
           'AND "module"."tenantId" = :tenantId ' +
           'AND "module"."status" != :archivedModuleStatus)',
         'totalModuleCount',
+      )
+      .addSelect(
+        '(SELECT COALESCE(SUM(CASE WHEN ("module"."params"->>\'daysAllocation\') ~ \'^[0-9]+(\\.[0-9]+)?$\' THEN ("module"."params"->>\'daysAllocation\')::numeric ELSE 0 END), 0) FROM "modules" "module" ' +
+          'WHERE "module"."courseId" = "course"."courseId" ' +
+          'AND "module"."tenantId" = :tenantId ' +
+          'AND "module"."status" != :archivedModuleStatus)',
+        'daysAllocationCount',
       )
       // module_track has no courseId; the course comes from the tracked module
       .addSelect(
@@ -989,6 +1098,7 @@ export class EnrollmentsService {
       .getRawMany<{
         courseId: string;
         totalModuleCount: string;
+        daysAllocationCount: string;
         completedModuleCount: string;
         courseTracking: CourseTrack | null;
         enrollment: UserEnrollment | null;
@@ -1001,6 +1111,7 @@ export class EnrollmentsService {
       return {
         ...course,
         totalModuleCount: Number(progress?.totalModuleCount ?? 0),
+        daysAllocationCount: Number(progress?.daysAllocationCount ?? 0),
         completedModuleCount: Number(progress?.completedModuleCount ?? 0),
         courseTracking: progress?.courseTracking ?? null,
         enrollment: progress?.enrollment ?? null,

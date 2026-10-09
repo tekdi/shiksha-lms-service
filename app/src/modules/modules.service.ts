@@ -150,7 +150,7 @@ export class ModulesService {
       prerequisites: createModuleDto.prerequisites,
       badgeId: createModuleDto.badgeId,
       badgeTerm: createModuleDto.badgeTerm,
-      params: createModuleDto.params || {}, // Map meta to params
+      params: createModuleDto.params || {},
       // Required fields
       tenantId,
       organisationId,
@@ -241,11 +241,18 @@ export class ModulesService {
   ): Promise<Module> {
     const module = await this.findOne(moduleId, tenantId, organisationId);
 
-      const enrichedDto = {
+      const enrichedDto: any = {
         ...updateModuleDto,
         updatedBy: userId,
         updatedAt: new Date(),
       };
+
+      if (updateModuleDto.params !== undefined) {
+        enrichedDto.params = {
+          ...module.params,
+          ...updateModuleDto.params,
+        };
+      }
 
       const updatedModule = this.moduleRepository.merge(module, enrichedDto);
       // Update the module
