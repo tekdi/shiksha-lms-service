@@ -288,3 +288,21 @@ export class HelperUtil {
     return value;
   }
 }
+
+@ValidatorConstraint({ name: 'isJsonObject', async: false })
+export class IsJsonObjectConstraint implements ValidatorConstraintInterface {
+  validate(value: any, args: ValidationArguments): boolean {
+    if (value === null || value === undefined) return true;
+    if (typeof value === 'object' && !(value instanceof String)) return true;
+    const parsed = HelperUtil.parseJsonObject(value);
+    if (typeof parsed === 'object' && parsed !== null && !(parsed instanceof String)) {
+      (args.object as any)[args.property] = parsed;
+      return true;
+    }
+    return false;
+  }
+
+  defaultMessage(args: ValidationArguments): string {
+    return `${args.property} must be a valid JSON object`;
+  }
+}

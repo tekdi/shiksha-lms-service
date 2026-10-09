@@ -2,7 +2,7 @@ import { IsNotEmpty, IsString, IsOptional, IsEnum, IsNumber, IsUUID, IsObject, M
 import { Type, Transform } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { ModuleStatus } from '../entities/module.entity';
-import { HelperUtil, ValidateDatetimeConstraints } from '../../common/utils/helper.util';
+import { HelperUtil, ValidateDatetimeConstraints, IsJsonObjectConstraint } from '../../common/utils/helper.util';
 import { VALIDATION_MESSAGES } from '../../common/constants/response-messages.constant';
 
 /**
@@ -100,24 +100,17 @@ export class CreateModuleDto {
     example: { term: 'completion' }
   })
   @IsOptional()
-  @Transform(({ value }) => HelperUtil.parseJsonObject(value))
-  @IsObject({ message: VALIDATION_MESSAGES.COMMON.OBJECT('Badge term') })
+  @Validate(IsJsonObjectConstraint, {
+    message: VALIDATION_MESSAGES.COMMON.OBJECT('Badge term'),
+  })
   badgeTerm?: Record<string, any>;
 
   @ApiPropertyOptional({ 
     description: 'Additional parameters for the module (stored as JSONB)'
   })
   @IsOptional()
-  @Transform(({ value }) => HelperUtil.parseJsonObject(value))
-  @IsObject({ message: VALIDATION_MESSAGES.COMMON.OBJECT('Additional parameters') })
-  params?: Record<string, any>;
-
-  @ApiPropertyOptional({
-    description: 'Days allocation for the module',
-    example: 5,
+  @Validate(IsJsonObjectConstraint, {
+    message: VALIDATION_MESSAGES.COMMON.OBJECT('Additional parameters'),
   })
-  @IsOptional()
-  @Type(() => Number)
-  @IsNumber({}, { message: VALIDATION_MESSAGES.COMMON.NUMBER('Days allocation') })
-  daysAllocation?: number;
+  params?: Record<string, any>;
 }
