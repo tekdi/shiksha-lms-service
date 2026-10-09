@@ -377,7 +377,7 @@ export class CoursesService {
       .addSelect('COUNT(*)', 'count')
       .addSelect(
         `COALESCE(SUM(CASE WHEN (module.params->>'daysAllocation') ~ '^[0-9]+(\\.[0-9]+)?$' THEN (module.params->>'daysAllocation')::numeric ELSE 0 END), 0)`,
-        'moduleDaysCount',
+        'daysAllocationCount',
       )
       .where('module.courseId IN (:...courseIds)', { courseIds })
       .andWhere('module.tenantId = :tenantId', { tenantId })
@@ -385,7 +385,7 @@ export class CoursesService {
         archivedStatus: ModuleStatus.ARCHIVED,
       })
       .groupBy('module.courseId')
-      .getRawMany<{ courseId: string; count: string; moduleDaysCount: string }>();
+      .getRawMany<{ courseId: string; count: string; daysAllocationCount: string }>();
 
     // OPTIMIZED: Batch load all enrollment counts in a single query instead of N queries
     const enrollmentCounts = await this.userEnrollmentRepository
@@ -405,7 +405,7 @@ export class CoursesService {
         mc.courseId,
         {
           moduleCount: Number.parseInt(mc.count, 10),
-          moduleDaysCount: Number(mc.moduleDaysCount),
+          daysAllocationCount: Number(mc.daysAllocationCount),
         },
       ]),
     );
@@ -422,7 +422,7 @@ export class CoursesService {
       return {
         ...course,
         moduleCount: stats?.moduleCount || 0,
-        moduleDaysCount: stats?.moduleDaysCount || 0,
+        daysAllocationCount: stats?.daysAllocationCount || 0,
         enrolledUsersCount: enrollmentCountMap.get(course.courseId) || 0,
       };
     });

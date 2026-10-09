@@ -990,7 +990,7 @@ export class EnrollmentsService {
       .addSelect('COUNT(*)', 'count')
       .addSelect(
         `COALESCE(SUM(CASE WHEN (module.params->>'daysAllocation') ~ '^[0-9]+(\\.[0-9]+)?$' THEN (module.params->>'daysAllocation')::numeric ELSE 0 END), 0)`,
-        'moduleDaysCount',
+        'daysAllocationCount',
       )
       .where('module.courseId IN (:...courseIds)', { courseIds })
       .andWhere('module.tenantId = :tenantId', { tenantId })
@@ -998,14 +998,14 @@ export class EnrollmentsService {
         archivedStatus: ModuleStatus.ARCHIVED,
       })
       .groupBy('module.courseId')
-      .getRawMany<{ courseId: string; count: string; moduleDaysCount: string }>();
+      .getRawMany<{ courseId: string; count: string; daysAllocationCount: string }>();
 
     const countMap = new Map(
       counts.map((row) => [
         row.courseId,
         {
           totalModuleCount: Number(row.count),
-          moduleDaysCount: Number(row.moduleDaysCount),
+          daysAllocationCount: Number(row.daysAllocationCount),
         },
       ]),
     );
@@ -1015,7 +1015,7 @@ export class EnrollmentsService {
       return {
         ...course,
         totalModuleCount: stats?.totalModuleCount || 0,
-        moduleDaysCount: stats?.moduleDaysCount || 0,
+        daysAllocationCount: stats?.daysAllocationCount || 0,
       };
     });
   }
@@ -1049,7 +1049,7 @@ export class EnrollmentsService {
           'WHERE "module"."courseId" = "course"."courseId" ' +
           'AND "module"."tenantId" = :tenantId ' +
           'AND "module"."status" != :archivedModuleStatus)',
-        'moduleDaysCount',
+        'daysAllocationCount',
       )
       // module_track has no courseId; the course comes from the tracked module
       .addSelect(
@@ -1098,7 +1098,7 @@ export class EnrollmentsService {
       .getRawMany<{
         courseId: string;
         totalModuleCount: string;
-        moduleDaysCount: string;
+        daysAllocationCount: string;
         completedModuleCount: string;
         courseTracking: CourseTrack | null;
         enrollment: UserEnrollment | null;
@@ -1111,7 +1111,7 @@ export class EnrollmentsService {
       return {
         ...course,
         totalModuleCount: Number(progress?.totalModuleCount ?? 0),
-        moduleDaysCount: Number(progress?.moduleDaysCount ?? 0),
+        daysAllocationCount: Number(progress?.daysAllocationCount ?? 0),
         completedModuleCount: Number(progress?.completedModuleCount ?? 0),
         courseTracking: progress?.courseTracking ?? null,
         enrollment: progress?.enrollment ?? null,

@@ -108,7 +108,7 @@ export class UserEnrolledCourseDto extends Course {
   @ApiPropertyOptional({
     description: 'Sum of daysAllocation across all non-archived modules in the course',
   })
-  moduleDaysCount?: number;
+  daysAllocationCount?: number;
 
   @ApiPropertyOptional({
     description: 'Modules the user has completed (only when hasEnroll=true)',
