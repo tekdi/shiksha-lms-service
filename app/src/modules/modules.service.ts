@@ -249,8 +249,8 @@ export class ModulesService {
 
       if (updateModuleDto.params !== undefined) {
         enrichedDto.params = {
-          ...(module.params || {}),
-          ...(updateModuleDto.params || {}),
+          ...module.params,
+          ...updateModuleDto.params,
         };
       }
 

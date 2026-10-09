@@ -752,8 +752,8 @@ export class EnrollmentsService {
       qb.andWhere('enrollment.userId = :userId', { userId: filters.userId });
     }
 
-    if (filters?.hasEnroll === true && filters?.status && filters?.userId) {
-      this.applyTrackingStatusFilter(qb, filters.status);
+    if (filters?.hasEnroll === true && filters?.trackingStatus && filters?.userId) {
+      this.applyTrackingStatusFilter(qb, filters.trackingStatus);
     }
 
     if (filters?.cohortId) {
@@ -969,9 +969,6 @@ export class EnrollmentsService {
   ): string[] | undefined {
     if (filters?.categoryIds?.length) {
       return filters.categoryIds;
-    }
-    if (filters?.categoryId) {
-      return [filters.categoryId];
     }
     return undefined;
   }

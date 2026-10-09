@@ -2,7 +2,7 @@ import { IsNotEmpty, IsString, IsOptional, IsEnum, IsNumber, IsUUID, IsObject, M
 import { Type, Transform } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { ModuleStatus } from '../entities/module.entity';
-import { HelperUtil, ValidateDatetimeConstraints, IsJsonObjectConstraint } from '../../common/utils/helper.util';
+import { HelperUtil, ValidateDatetimeConstraints } from '../../common/utils/helper.util';
 import { VALIDATION_MESSAGES } from '../../common/constants/response-messages.constant';
 
 /**
@@ -100,17 +100,15 @@ export class CreateModuleDto {
     example: { term: 'completion' }
   })
   @IsOptional()
-  @Validate(IsJsonObjectConstraint, {
-    message: VALIDATION_MESSAGES.COMMON.OBJECT('Badge term'),
-  })
+  @Transform(({ value }) => HelperUtil.parseJsonObject(value))
+  @IsObject({ message: VALIDATION_MESSAGES.COMMON.OBJECT('Badge term') })
   badgeTerm?: Record<string, any>;
 
   @ApiPropertyOptional({ 
     description: 'Additional parameters for the module (stored as JSONB)'
   })
   @IsOptional()
-  @Validate(IsJsonObjectConstraint, {
-    message: VALIDATION_MESSAGES.COMMON.OBJECT('Additional parameters'),
-  })
+  @Transform(({ value }) => HelperUtil.parseJsonObject(value))
+  @IsObject({ message: VALIDATION_MESSAGES.COMMON.OBJECT('Additional parameters') })
   params?: Record<string, any>;
 }

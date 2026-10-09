@@ -10,41 +10,41 @@ export class ValidateDatetimeConstraints implements ValidatorConstraintInterface
     const object = args.object as any;
     const startDateStr = object.startDate;
     const endDateStr = object.endDate;
-    
+
     // If this field is not provided, validation passes (handled by other validators)
     if (!value) return true;
-    
+
     // Validate date format
     const currentDate = new Date(value);
     if (isNaN(currentDate.getTime())) {
       return false;
     }
-    
+
     // If only startDate is provided, it's valid
     if (args.property === 'startDate' && !endDateStr) {
       return true;
     }
-    
+
     // If only endDate is provided, it's valid
     if (args.property === 'endDate' && !startDateStr) {
       return true;
     }
-    
+
     // If both dates are provided, validate the relationship
     if (startDateStr && endDateStr) {
       const startDate = new Date(startDateStr);
       const endDate = new Date(endDateStr);
-      
+
       if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
         return false;
       }
-      
+
       // endDate must be greater than startDate
       if (endDate <= startDate) {
         return false;
       }
     }
-    
+
     return true;
   }
 
@@ -64,37 +64,37 @@ export class ValidateCertificateDateTime implements ValidatorConstraintInterface
   validate(value: string, args: ValidationArguments): boolean {
     const object = args.object as any;
     const endDatetimeStr = object.endDatetime;
-    
+
     // If certificate generation date is not provided, validation passes (optional field)
     if (!value) return true;
-    
+
     // Validate date format
     const certificateDate = new Date(value);
     if (isNaN(certificateDate.getTime())) {
       return false;
     }
-    
+
     const now = new Date();
-    
+
     // Certificate generation date must be in the future
     if (certificateDate <= now) {
       return false;
     }
-    
+
     // If endDatetime is provided, certificate generation date must be greater than endDatetime
     if (endDatetimeStr) {
       const endDatetime = new Date(endDatetimeStr);
-      
+
       if (isNaN(endDatetime.getTime())) {
         return false;
       }
-      
+
       // Certificate generation date must be greater than endDatetime
       if (certificateDate <= endDatetime) {
         return false;
       }
     }
-    
+
     return true;
   }
 
@@ -167,7 +167,7 @@ export class HelperUtil {
    */
   static stringToBoolean(value: string | boolean): boolean {
     if (typeof value === 'boolean') return value;
-    
+
     const trueValues = ['true', 'yes', '1', 'on'];
     return trueValues.includes(value.toLowerCase());
   }
@@ -192,7 +192,7 @@ export class HelperUtil {
    */
   static generateAlias(title: string): string {
     if (!title) return '';
-    
+
     return title
       .toLowerCase()
       .replace(/[^\w\s-]/g, '') // Remove special characters
@@ -216,10 +216,10 @@ export class HelperUtil {
     organisationId?: string
   ): Promise<string> {
     const baseAlias = this.generateAlias(title);
-    
+
     // First try with the original alias
     const existingWithBase = await repository.findOne({
-      where: { 
+      where: {
         alias: baseAlias,
         tenantId,
         ...(organisationId && { organisationId })
@@ -233,10 +233,10 @@ export class HelperUtil {
     // Try with random number
     let randomNum = Math.floor(Math.random() * 1000); // Generate random number between 0-9999
     let finalAlias = `${baseAlias}-${randomNum}`;
-    
+
     while (true) {
       const existing = await repository.findOne({
-        where: { 
+        where: {
           alias: finalAlias,
           tenantId,
           ...(organisationId && { organisationId })
@@ -253,56 +253,16 @@ export class HelperUtil {
   }
 
   /**
-   * Safely parses JSON object strings from form-data (including escaped or wrapped quotes).
+   * Safely parses JSON object strings from form-data.
    */
   static parseJsonObject(value: any): any {
-    if (value === null || value === undefined) return value;
-    if (typeof value === 'object') return value;
-    if (typeof value === 'string') {
-      let str = value.trim();
-      if (
-        (str.startsWith('"') && str.endsWith('"')) ||
-        (str.startsWith("'") && str.endsWith("'"))
-      ) {
-        str = str.slice(1, -1).trim();
-      }
-      str = str.replace(/\\"/g, '"').replace(/\\\\/g, '\\');
-      try {
-        const parsed = JSON.parse(str);
-        if (typeof parsed === 'string') {
-          try {
-            return JSON.parse(parsed);
-          } catch (_e) {
-            return parsed;
-          }
-        }
-        return parsed;
-      } catch (_e) {
-        try {
-          return JSON.parse(value);
-        } catch (_e2) {
-          return value;
-        }
-      }
+    if (typeof value !== 'string') {
+      return value;
     }
-    return value;
-  }
-}
-
-@ValidatorConstraint({ name: 'isJsonObject', async: false })
-export class IsJsonObjectConstraint implements ValidatorConstraintInterface {
-  validate(value: any, args: ValidationArguments): boolean {
-    if (value === null || value === undefined) return true;
-    if (typeof value === 'object' && !(value instanceof String)) return true;
-    const parsed = HelperUtil.parseJsonObject(value);
-    if (typeof parsed === 'object' && parsed !== null && !(parsed instanceof String)) {
-      (args.object as any)[args.property] = parsed;
-      return true;
+    let parsed = JSON.parse(value);
+    if (typeof parsed === 'string') {
+      parsed = JSON.parse(parsed);
     }
-    return false;
-  }
-
-  defaultMessage(args: ValidationArguments): string {
-    return `${args.property} must be a valid JSON object`;
+    return parsed;
   }
 }

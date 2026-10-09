@@ -66,7 +66,7 @@ export class UsersEnrolledCoursesDto {
   @IsEnum(TrackingStatus, {
     message: VALIDATION_MESSAGES.COMMON.ENUM('Tracking status'),
   })
-  status?: TrackingStatus;
+  trackingStatus?: TrackingStatus;
 
   @ApiPropertyOptional({ description: 'Filter by pathway ID' })
   @IsOptional()
@@ -84,21 +84,13 @@ export class UsersEnrolledCoursesDto {
   @IsString({ each: true, message: 'Each category ID must be a string' })
   categoryIds?: string[];
 
-  @ApiPropertyOptional({
-    description: 'Alias for categoryIds (singular category ID filter)',
-  })
-  @IsOptional()
-  @IsString()
-  categoryId?: string;
-
-
   @ApiPropertyOptional({ description: 'Limit', example: 10, minimum: 1 })
   @IsOptional()
   @IsNumber()
   @Min(1)
   @Type(() => Number)
   limit?: number = 10;
-  
+
   @ApiPropertyOptional({ description: 'Offset', example: 0, minimum: 0 })
   @IsOptional()
   @IsNumber()
