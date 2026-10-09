@@ -45,6 +45,10 @@ import {
   UsersEnrolledCoursesResponseDto,
   UserEnrolledCourseDto,
 } from './dto/search-enrolled-courses.dto';
+import {
+  DashboardByUserIdResponseDto,
+  CategoryCountDto,
+} from './dto/dashboard-by-user-id.dto';
 
 // Course metadata columns returned by users-courses (shared by the enrolled and not-enrolled queries)
 const USER_COURSE_META_COLUMNS = [
@@ -90,7 +94,7 @@ export class EnrollmentsService {
     @InjectDataSource()
     private readonly dataSource: DataSource,
     private readonly cacheConfig: CacheConfigService,
-  ) {}
+  ) { }
 
   /**
    * Enroll a user for multiple courses in bulk
@@ -109,9 +113,9 @@ export class EnrollmentsService {
     const successfullyEnrolled: UserEnrollment[] = [];
     const alreadyEnrolledCourseIds: string[] = [];
     const failedCourseIds: string[] = [];
-    
+
     const courseIds = createEnrollmentDto.courseId || [];
-    
+
     for (const courseId of courseIds) {
       try {
         const enrollment = await this.enrollSingleCourse(
@@ -133,7 +137,7 @@ export class EnrollmentsService {
         continue;
       }
     }
-    
+
     return {
       successfullyEnrolled,
       alreadyEnrolledCourseIds,
@@ -709,11 +713,11 @@ export class EnrollmentsService {
       const coursesForResponse: UserEnrolledCourseDto[] =
         filters?.hasEnroll === true && filters.userId
           ? await this.attachUserCourseProgress(
-              paginatedCourses,
-              filters.userId,
-              tenantId,
-              organisationId,
-            )
+            paginatedCourses,
+            filters.userId,
+            tenantId,
+            organisationId,
+          )
           : await this.attachTotalModuleCount(paginatedCourses, tenantId);
 
       return {
@@ -921,11 +925,11 @@ export class EnrollmentsService {
       })
       .andWhere(
         'NOT EXISTS (SELECT 1 FROM "user_enrollments" "enrollment" ' +
-          'WHERE "enrollment"."courseId" = "course"."courseId" ' +
-          'AND "enrollment"."userId" = :userId ' +
-          'AND "enrollment"."tenantId" = :tenantId ' +
-          'AND "enrollment"."organisationId" = :organisationId ' +
-          'AND "enrollment"."status" = :enrollmentStatus)',
+        'WHERE "enrollment"."courseId" = "course"."courseId" ' +
+        'AND "enrollment"."userId" = :userId ' +
+        'AND "enrollment"."tenantId" = :tenantId ' +
+        'AND "enrollment"."organisationId" = :organisationId ' +
+        'AND "enrollment"."status" = :enrollmentStatus)',
         {
           userId: filters.userId,
           enrollmentStatus: EnrollmentStatus.PUBLISHED,
@@ -1039,49 +1043,49 @@ export class EnrollmentsService {
       // Same module scope as courses/search moduleCount: non-archived modules of the course
       .addSelect(
         '(SELECT COUNT(*) FROM "modules" "module" ' +
-          'WHERE "module"."courseId" = "course"."courseId" ' +
-          'AND "module"."tenantId" = :tenantId ' +
-          'AND "module"."status" != :archivedModuleStatus)',
+        'WHERE "module"."courseId" = "course"."courseId" ' +
+        'AND "module"."tenantId" = :tenantId ' +
+        'AND "module"."status" != :archivedModuleStatus)',
         'totalModuleCount',
       )
       .addSelect(
         '(SELECT COALESCE(SUM(CASE WHEN ("module"."params"->>\'daysAllocation\') ~ \'^[0-9]+(\\.[0-9]+)?$\' THEN ("module"."params"->>\'daysAllocation\')::numeric ELSE 0 END), 0) FROM "modules" "module" ' +
-          'WHERE "module"."courseId" = "course"."courseId" ' +
-          'AND "module"."tenantId" = :tenantId ' +
-          'AND "module"."status" != :archivedModuleStatus)',
+        'WHERE "module"."courseId" = "course"."courseId" ' +
+        'AND "module"."tenantId" = :tenantId ' +
+        'AND "module"."status" != :archivedModuleStatus)',
         'daysAllocationCount',
       )
       // module_track has no courseId; the course comes from the tracked module
       .addSelect(
         '(SELECT COUNT(DISTINCT "moduleTrack"."moduleId") FROM "module_track" "moduleTrack" ' +
-          'INNER JOIN "modules" "trackedModule" ON "trackedModule"."moduleId" = "moduleTrack"."moduleId" ' +
-          'WHERE "trackedModule"."courseId" = "course"."courseId" ' +
-          'AND "trackedModule"."status" != :archivedModuleStatus ' +
-          'AND "moduleTrack"."userId" = :userId ' +
-          'AND "moduleTrack"."tenantId" = :tenantId ' +
-          'AND "moduleTrack"."organisationId" = :organisationId ' +
-          'AND "moduleTrack"."status" = :completedModuleStatus)',
+        'INNER JOIN "modules" "trackedModule" ON "trackedModule"."moduleId" = "moduleTrack"."moduleId" ' +
+        'WHERE "trackedModule"."courseId" = "course"."courseId" ' +
+        'AND "trackedModule"."status" != :archivedModuleStatus ' +
+        'AND "moduleTrack"."userId" = :userId ' +
+        'AND "moduleTrack"."tenantId" = :tenantId ' +
+        'AND "moduleTrack"."organisationId" = :organisationId ' +
+        'AND "moduleTrack"."status" = :completedModuleStatus)',
         'completedModuleCount',
       )
       // course_track is unique per (userId, courseId); LIMIT 1 still guarantees a single row
       .addSelect(
         '(SELECT row_to_json("courseTrack") FROM "course_track" "courseTrack" ' +
-          'WHERE "courseTrack"."courseId" = "course"."courseId" ' +
-          'AND "courseTrack"."userId" = :userId ' +
-          'AND "courseTrack"."tenantId" = :tenantId ' +
-          'AND "courseTrack"."organisationId" = :organisationId ' +
-          'ORDER BY "courseTrack"."lastAccessedDate" DESC NULLS LAST LIMIT 1)',
+        'WHERE "courseTrack"."courseId" = "course"."courseId" ' +
+        'AND "courseTrack"."userId" = :userId ' +
+        'AND "courseTrack"."tenantId" = :tenantId ' +
+        'AND "courseTrack"."organisationId" = :organisationId ' +
+        'ORDER BY "courseTrack"."lastAccessedDate" DESC NULLS LAST LIMIT 1)',
         'courseTracking',
       )
       // A user can have several enrollment rows per course; take the latest published one
       .addSelect(
         '(SELECT row_to_json("enrollment") FROM "user_enrollments" "enrollment" ' +
-          'WHERE "enrollment"."courseId" = "course"."courseId" ' +
-          'AND "enrollment"."userId" = :userId ' +
-          'AND "enrollment"."tenantId" = :tenantId ' +
-          'AND "enrollment"."organisationId" = :organisationId ' +
-          'AND "enrollment"."status" = :publishedEnrollmentStatus ' +
-          'ORDER BY "enrollment"."enrolledAt" DESC LIMIT 1)',
+        'WHERE "enrollment"."courseId" = "course"."courseId" ' +
+        'AND "enrollment"."userId" = :userId ' +
+        'AND "enrollment"."tenantId" = :tenantId ' +
+        'AND "enrollment"."organisationId" = :organisationId ' +
+        'AND "enrollment"."status" = :publishedEnrollmentStatus ' +
+        'ORDER BY "enrollment"."enrolledAt" DESC LIMIT 1)',
         'enrollment',
       )
       .where('course.courseId IN (:...courseIds)', {
@@ -1321,5 +1325,140 @@ export class EnrollmentsService {
       // Release the query runner
       await queryRunner.release();
     }
+  }
+
+  /**
+   * Get dashboard metrics for a user
+   * @param userId The target user ID
+   * @param tenantId Tenant ID for data isolation
+   * @param organisationId Organization ID for data isolation
+   */
+  async dashboardByUserId(
+    userId: string,
+    tenantId: string,
+    organisationId: string,
+  ): Promise<DashboardByUserIdResponseDto> {
+    this.logger.log(`Fetching dashboard metrics for user: ${userId}`);
+
+    // 1. totalCount: Total count of status completed of enrolled course (published enrollment & completed course track)
+    const totalCountRaw = await this.userEnrollmentRepository
+      .createQueryBuilder('enrollment')
+      .innerJoin(
+        CourseTrack,
+        'courseTrack',
+        'courseTrack.courseId = enrollment.courseId AND courseTrack.userId = enrollment.userId AND courseTrack.tenantId = enrollment.tenantId AND courseTrack.organisationId = enrollment.organisationId',
+      )
+      .where('enrollment.userId = :userId', { userId })
+      .andWhere('enrollment.tenantId = :tenantId', { tenantId })
+      .andWhere('enrollment.organisationId = :organisationId', { organisationId })
+      .andWhere('enrollment.status = :enrollmentStatus', {
+        enrollmentStatus: EnrollmentStatus.PUBLISHED,
+      })
+      .getCount();
+
+    // 2. trackcompletioncount: Total course tracks with status = completed
+    const trackcompletioncount = await this.courseTrackRepository.count({
+      where: {
+        userId,
+        tenantId,
+        organisationId,
+        status: TrackingStatus.COMPLETED,
+      },
+    });
+
+    // 3. trackStatusStartedCount: Total course tracks with status = started
+    const trackStatusStartedCount = await this.courseTrackRepository.count({
+      where: {
+        userId,
+        tenantId,
+        organisationId,
+        status: TrackingStatus.STARTED,
+      },
+    });
+
+    // 4. certificateCount: Total certificates issued (default to 0)
+    const certificateCount = await this.courseTrackRepository.count({
+      where: {
+        userId,
+        tenantId,
+        organisationId,
+        certificateIssued: true,
+      },
+    });
+
+    // 5. mandatoryDueCount: enrolledBy != userId and course track status != completed (or null)
+    const mandatoryDueCount = await this.userEnrollmentRepository
+      .createQueryBuilder('enrollment')
+      .leftJoin(
+        CourseTrack,
+        'courseTrack',
+        'courseTrack.courseId = enrollment.courseId AND courseTrack.userId = enrollment.userId AND courseTrack.tenantId = enrollment.tenantId AND courseTrack.organisationId = enrollment.organisationId',
+      )
+      .where('enrollment.userId = :userId', { userId })
+      .andWhere('enrollment.tenantId = :tenantId', { tenantId })
+      .andWhere('enrollment.organisationId = :organisationId', { organisationId })
+      .andWhere('enrollment.status = :enrollmentStatus', {
+        enrollmentStatus: EnrollmentStatus.PUBLISHED,
+      })
+      .andWhere('enrollment.enrolledBy != :userId', { userId })
+      .andWhere(
+        '(courseTrack.status IS NULL OR courseTrack.status != :completedStatus)',
+        { completedStatus: TrackingStatus.COMPLETED },
+      )
+      .getCount();
+
+    // 6. completedCoursesByCategory: Course count tracking status completed categoryId wise
+    const completedCoursesRaw = await this.courseTrackRepository
+      .createQueryBuilder('courseTrack')
+      .innerJoin(Course, 'course', 'course.courseId = courseTrack.courseId')
+      .select('UNNEST(course.categoryIds)', 'categoryId')
+      .addSelect('COUNT(DISTINCT courseTrack.courseId)', 'count')
+      .where('courseTrack.userId = :userId', { userId })
+      .andWhere('courseTrack.tenantId = :tenantId', { tenantId })
+      .andWhere('courseTrack.organisationId = :organisationId', { organisationId })
+      .andWhere('courseTrack.status = :status', { status: TrackingStatus.COMPLETED })
+      .andWhere('course.categoryIds IS NOT NULL')
+      .groupBy('UNNEST(course.categoryIds)')
+      .getRawMany<{ categoryId: string; count: string }>();
+
+    const completedCoursesByCategory: CategoryCountDto[] = completedCoursesRaw.map(
+      (row) => ({
+        categoryId: row.categoryId,
+        count: Number(row.count || 0),
+      }),
+    );
+
+    // 7. completedStandaloneLessonsByCategory: Standalone lesson track completed (courseId IS NULL AND moduleId IS NULL) categoryId wise
+    const completedStandaloneLessonsRaw = await this.lessonTrackRepository
+      .createQueryBuilder('lessonTrack')
+      .innerJoin(Lesson, 'lesson', 'lesson.lessonId = lessonTrack.lessonId')
+      .select('UNNEST(lesson.categoryIds)', 'categoryId')
+      .addSelect('COUNT(DISTINCT lessonTrack.lessonId)', 'count')
+      .where('lessonTrack.userId = :userId', { userId })
+      .andWhere('lessonTrack.tenantId = :tenantId', { tenantId })
+      .andWhere('lessonTrack.organisationId = :organisationId', { organisationId })
+      .andWhere('lessonTrack.status = :status', { status: TrackingStatus.COMPLETED })
+      .andWhere(
+        '(lessonTrack.courseId IS NULL AND (lesson.courseId IS NULL AND lesson.moduleId IS NULL))',
+      )
+      .andWhere('lesson.categoryIds IS NOT NULL')
+      .groupBy('UNNEST(lesson.categoryIds)')
+      .getRawMany<{ categoryId: string; count: string }>();
+
+    const completedStandaloneLessonsByCategory: CategoryCountDto[] =
+      completedStandaloneLessonsRaw.map((row) => ({
+        categoryId: row.categoryId,
+        count: Number(row.count || 0),
+      }));
+
+    return {
+      totalCount: totalCountRaw || 0,
+      trackCompletionCount: trackcompletioncount || 0,
+      trackStatusStartedCount: trackStatusStartedCount || 0,
+      certificateCount: certificateCount || 0,
+      mandatoryDueCount: mandatoryDueCount || 0,
+      completedCoursesByCategory,
+      completedStandaloneLessonsByCategory,
+    };
   }
 }
