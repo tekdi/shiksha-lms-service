@@ -1340,24 +1340,18 @@ export class EnrollmentsService {
   ): Promise<DashboardByUserIdResponseDto> {
     this.logger.log(`Fetching dashboard metrics for user: ${userId}`);
 
-    // 1. totalCount: Total count of status completed of enrolled course (published enrollment & completed course track)
-    const totalCountRaw = await this.userEnrollmentRepository
-      .createQueryBuilder('enrollment')
-      .innerJoin(
-        CourseTrack,
-        'courseTrack',
-        'courseTrack.courseId = enrollment.courseId AND courseTrack.userId = enrollment.userId AND courseTrack.tenantId = enrollment.tenantId AND courseTrack.organisationId = enrollment.organisationId',
-      )
-      .where('enrollment.userId = :userId', { userId })
-      .andWhere('enrollment.tenantId = :tenantId', { tenantId })
-      .andWhere('enrollment.organisationId = :organisationId', { organisationId })
-      .andWhere('enrollment.status = :enrollmentStatus', {
-        enrollmentStatus: EnrollmentStatus.PUBLISHED,
-      })
-      .getCount();
+    // 1. totalCount: Total count of enrolled courses for the user
+    const totalCount = await this.userEnrollmentRepository.count({
+      where: {
+        userId,
+        tenantId,
+        organisationId,
+        status: EnrollmentStatus.PUBLISHED,
+      },
+    });
 
-    // 2. trackcompletioncount: Total course tracks with status = completed
-    const trackcompletioncount = await this.courseTrackRepository.count({
+    // 2. courseCompletionCount: Total course tracks with status = completed
+    const courseCompletionCount = await this.courseTrackRepository.count({
       where: {
         userId,
         tenantId,
@@ -1366,8 +1360,8 @@ export class EnrollmentsService {
       },
     });
 
-    // 3. trackStatusStartedCount: Total course tracks with status = started
-    const trackStatusStartedCount = await this.courseTrackRepository.count({
+    // 3. courseStatusStartedCount: Total course tracks with status = started
+    const courseStatusStartedCount = await this.courseTrackRepository.count({
       where: {
         userId,
         tenantId,
@@ -1452,9 +1446,9 @@ export class EnrollmentsService {
       }));
 
     return {
-      totalCount: totalCountRaw || 0,
-      trackCompletionCount: trackcompletioncount || 0,
-      trackStatusStartedCount: trackStatusStartedCount || 0,
+      totalCount: totalCount || 0,
+      courseCompletionCount: courseCompletionCount || 0,
+      courseStatusStartedCount: courseStatusStartedCount || 0,
       certificateCount: certificateCount || 0,
       mandatoryDueCount: mandatoryDueCount || 0,
       completedCoursesByCategory,

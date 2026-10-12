@@ -21,14 +21,14 @@ export class CategoryCountDto {
 }
 
 export class DashboardByUserIdResponseDto {
-  @ApiProperty({ description: 'Total count of status completed of enrolled course', example: 5 })
+  @ApiProperty({ description: 'Total count of enrolled courses for the user', example: 5 })
   totalCount: number;
 
-  @ApiProperty({ description: 'Track completion count', example: 5 })
-  trackCompletionCount: number;
+  @ApiProperty({ description: 'Course completion count', example: 5 })
+  courseCompletionCount: number;
 
-  @ApiProperty({ description: 'Track status started count', example: 3 })
-  trackStatusStartedCount: number;
+  @ApiProperty({ description: 'Course status started count', example: 3 })
+  courseStatusStartedCount: number;
 
   @ApiProperty({ description: 'Certificate count (default 0 if not set)', example: 4 })
   certificateCount: number;
