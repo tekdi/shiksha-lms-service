@@ -16,6 +16,7 @@ import { TrackingModule } from './tracking/tracking.module';
 import { CloudStorageModule } from '@tekdi/nestjs-cloud-storage';
 import { ConfigurationModule } from './configuration/configuration.module';
 import { AspireLeaderModule } from './aspire-leader/aspire-leader.module';
+import { CertificateModule } from './certificate/certificate.module';
 
 @Module({
   imports: [
@@ -61,6 +62,7 @@ import { AspireLeaderModule } from './aspire-leader/aspire-leader.module';
     HealthModule,
     TrackingModule,
     AspireLeaderModule,
+    CertificateModule,
   ],
   controllers: [AppController],
   providers: [AppService],
