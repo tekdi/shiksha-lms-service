@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { Upload } from '@aws-sdk/lib-storage';
-import { Readable } from 'stream';
+import { Readable } from 'node:stream';
 import { ConfigService } from '@nestjs/config';
 
 /**
@@ -12,7 +12,7 @@ import { ConfigService } from '@nestjs/config';
 export class S3Service {
   /** S3 client instance for AWS operations */
   private s3: S3Client;
-  
+
   /** S3 bucket name for file storage */
   private bucket: string;
 
@@ -34,7 +34,7 @@ export class S3Service {
           '',
       },
     });
-    
+
     // Get bucket name from configuration
     this.bucket =
       this.configService.get<string>('AWS_BUCKET') ||
@@ -63,7 +63,7 @@ export class S3Service {
         ContentType: mimetype,
       })
     );
-    
+
     // Return the public URL for the uploaded file
     return `https://${this.bucket}.s3.amazonaws.com/${key}`;
   }
@@ -113,17 +113,17 @@ export class S3Service {
       Bucket: this.bucket,
       Key: key,
     });
-    
+
     // Send command and get response
     const response = await this.s3.send(command);
-    
+
     // Convert response stream to Buffer
     // response.Body is a stream, so we need to convert it to a Buffer
     const chunks: Buffer[] = [];
     for await (const chunk of response.Body as any) {
       chunks.push(Buffer.from(chunk));
     }
-    
+
     return Buffer.concat(chunks);
   }
 
@@ -140,7 +140,7 @@ export class S3Service {
       Bucket: this.bucket,
       Key: key,
     });
-    
+
     await this.s3.send(command);
   }
 
@@ -162,16 +162,16 @@ export class S3Service {
     // https://bucket.s3.region.amazonaws.com/key
     // https://s3.amazonaws.com/bucket/key
     // https://s3.region.amazonaws.com/bucket/key
-    
+
     try {
       const urlObj = new URL(url);
-      
+
       // Format: https://bucket.s3.amazonaws.com/key or https://bucket.s3.region.amazonaws.com/key
       if (urlObj.hostname.includes('.s3.') || urlObj.hostname.includes('.s3.amazonaws.com')) {
         // Remove leading slash from pathname
         return urlObj.pathname.replace(/^\//, '');
       }
-      
+
       // Format: https://s3.amazonaws.com/bucket/key or https://s3.region.amazonaws.com/bucket/key
       if (urlObj.hostname.startsWith('s3.') || urlObj.hostname === 's3.amazonaws.com') {
         const pathParts = urlObj.pathname.split('/').filter(Boolean);
@@ -180,7 +180,7 @@ export class S3Service {
           return pathParts.slice(1).join('/');
         }
       }
-      
+
       // Fallback: just return the pathname without leading slash
       return urlObj.pathname.replace(/^\//, '');
     } catch (error) {

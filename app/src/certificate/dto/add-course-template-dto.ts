@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsString, IsArray, ArrayMinSize, ValidateNested, IsOptional } from 'class-validator';
+import { IsNotEmpty, IsString, IsArray, ArrayMinSize } from 'class-validator';
 import { Type, Transform } from 'class-transformer';
 
 export class AddCourseTemplateDto {

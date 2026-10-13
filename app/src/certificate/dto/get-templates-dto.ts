@@ -3,7 +3,6 @@ import {
   IsString,
   IsNumber,
   Min,
-  Max,
   IsIn,
   IsBoolean,
 } from 'class-validator';

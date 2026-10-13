@@ -5,9 +5,7 @@ import {
   Get,
   Body,
   Res,
-  UseGuards,
   Req,
-  Query,
   Param,
   ParseUUIDPipe,
 } from '@nestjs/common';
@@ -37,7 +35,7 @@ export class CertificateController {
   constructor(
     private readonly certificateService: CertificateService,
     private readonly certificateCronService: CertificateCronService,
-  ) {}
+  ) { }
   // API to generate DID
   @ApiOkResponse({ description: 'DID generated successfully' })
   @ApiInternalServerErrorResponse({ description: 'Internal Server Error.' })

@@ -1,4 +1,4 @@
-import { IsDateString, IsOptional, IsString, IsUUID } from 'class-validator';
+import { IsDateString, IsOptional, IsString } from 'class-validator';
 
 export class IssueCredentialDto {
   @IsOptional()
@@ -20,7 +20,6 @@ export class IssueCredentialDto {
   @IsString()
   lastName?: string;
 
-  @IsUUID()
   @IsString()
   userId: string;
 
@@ -29,4 +28,9 @@ export class IssueCredentialDto {
 
   @IsString()
   courseName: string;
+
+  // Optional pre‑generated DID for testing when the identity service is unavailable
+  @IsOptional()
+  @IsString()
+  learnerDid?: string;
 }

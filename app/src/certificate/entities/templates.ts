@@ -1,17 +1,16 @@
 import {
-    Entity,
-    Column,
-    CreateDateColumn,
-    UpdateDateColumn,
-    PrimaryGeneratedColumn,
-    PrimaryColumn,
-  } from 'typeorm';
-  
-  @Entity({ name: 'templates' })
-  export class Templates {
-    @PrimaryColumn('uuid', { default: () => 'gen_random_uuid()' })
-    templatesId: string;
-  
+  Entity,
+  Column,
+  CreateDateColumn,
+  UpdateDateColumn,
+  PrimaryColumn,
+} from 'typeorm';
+
+@Entity({ name: 'templates' })
+export class Templates {
+  @PrimaryColumn('uuid', { default: () => 'gen_random_uuid()' })
+  templatesId: string;
+
   @Column({ type: 'varchar' })
   templateId: string;
 
@@ -20,24 +19,24 @@ import {
 
   @Column({ type: 'varchar', nullable: true })
   title: string | null;
-  
-    @CreateDateColumn({
-      type: 'timestamptz',
-      default: () => 'CURRENT_TIMESTAMP',
-      nullable: false,
-    })
-    createdOn: Date;
-  
-    @UpdateDateColumn({
-      type: 'timestamptz',
-      default: () => 'CURRENT_TIMESTAMP',
-      nullable: false,
-    })
-    updatedOn: Date;
-  
+
+  @CreateDateColumn({
+    type: 'timestamptz',
+    default: () => 'CURRENT_TIMESTAMP',
+    nullable: false,
+  })
+  createdOn: Date;
+
+  @UpdateDateColumn({
+    type: 'timestamptz',
+    default: () => 'CURRENT_TIMESTAMP',
+    nullable: false,
+  })
+  updatedOn: Date;
+
   @Column({ type: 'varchar' })
   createdBy: string;
-  
+
   @Column({ type: 'varchar' })
   updatedBy: string;
-  } 
+} 

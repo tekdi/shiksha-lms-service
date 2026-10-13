@@ -335,8 +335,13 @@ export class CertificateService implements OnModuleInit, OnModuleDestroy {
 
       return response.data[0].id;
     } catch (error) {
-      this.loggerService.error('Error generating DID:', error);
-      return error;
+      const errMsg = axios.isAxiosError(error)
+        ? `${error.message} (HTTP ${error.response?.status ?? '?'})`
+        : error instanceof Error
+          ? error.message
+          : String(error);
+      this.loggerService.error('Error generating DID:', errMsg);
+      throw new Error(`DID generation failed for userId ${userId}: ${errMsg}`);
     }
   }
   async createCredentialSchema(schema: any, res: Response) {
@@ -521,17 +526,23 @@ export class CertificateService implements OnModuleInit, OnModuleDestroy {
         );
       }
 
-      //get credentialId
-      let learnerDid = await this.generateDidByUserId(issueCredential.userId);
-      this.loggerService.log('learnerDid: ', learnerDid);
+      // Determine learner DID – use provided one if present, otherwise generate via identity service
+      let learnerDid: string;
+      if (issueCredential.learnerDid) {
+        learnerDid = issueCredential.learnerDid;
+        this.loggerService.log('Using provided learnerDid:', learnerDid);
+      } else {
+        learnerDid = await this.generateDidByUserId(issueCredential.userId);
+        this.loggerService.log('Generated learnerDid:', learnerDid);
+      }
 
       const baseUrl = this.configService.get('RC_CREDENTIALS_API_BASE_URL');
       if (!baseUrl) {
         throw new Error('RC_CREDENTIALS_API_BASE_URL is not configured');
       }
       const url = baseUrl.endsWith('/')
-        ? `${baseUrl}credentials/issue`
-        : `${baseUrl}/credentials/issue`;
+        ? `${baseUrl}v1/credentials/issue`
+        : `${baseUrl}/v1/credentials/issue`;
 
       const credetialObj = {
         credential: {
@@ -556,7 +567,8 @@ export class CertificateService implements OnModuleInit, OnModuleDestroy {
             courseId: issueCredential.courseId,
             courseName: issueCredential.courseName,
             issuedOn: issueCredential.issuedOn || formattedIssuanceDate,
-            certificateId: '**Id**',
+            // Generate a unique certificate identifier
+            certificateId: randomUUID(),
           },
         },
         credentialSchemaId: this.configService.get('SCHEMA_ID'),
@@ -566,6 +578,8 @@ export class CertificateService implements OnModuleInit, OnModuleDestroy {
       const issueResponse = await axios.post(url, credetialObj, {
         headers: {
           'Content-Type': 'application/json',
+          tenantId: request.headers?.['tenantid'] || request.headers?.['tenantId'],
+          Authorization: request.headers?.['authorization'] || request.headers?.['Authorization'],
         },
       });
 
@@ -712,7 +726,7 @@ export class CertificateService implements OnModuleInit, OnModuleDestroy {
                   courseId: issueCredential.courseId,
                   courseName: issueCredential.courseName,
                   issuedOn: issueCredential.issuedOn || formattedIssuanceDate,
-                  certificateId: '**Id**',
+                  certificateId: randomUUID(),
                 },
               },
               credentialSchemaId: this.configService.get('SCHEMA_ID'),
@@ -875,7 +889,7 @@ export class CertificateService implements OnModuleInit, OnModuleDestroy {
                   courseId: issueCredential.courseId,
                   courseName: issueCredential.courseName,
                   issuedOn: issueCredential.issuedOn || formattedIssuanceDate,
-                  certificateId: '**Id**',
+                  certificateId: randomUUID(),
                 },
               },
               credentialSchemaId: this.configService.get('SCHEMA_ID'),
