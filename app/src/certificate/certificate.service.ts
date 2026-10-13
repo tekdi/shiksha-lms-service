@@ -541,8 +541,8 @@ export class CertificateService implements OnModuleInit, OnModuleDestroy {
         throw new Error('RC_CREDENTIALS_API_BASE_URL is not configured');
       }
       const url = baseUrl.endsWith('/')
-        ? `${baseUrl}v1/credentials/issue`
-        : `${baseUrl}/v1/credentials/issue`;
+        ? `${baseUrl}credentials/issue`
+        : `${baseUrl}/credentials/issue`;
 
       const credetialObj = {
         credential: {
