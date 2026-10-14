@@ -8,8 +8,11 @@ import { CoursesService } from '../courses/courses.service';
 import { AspireLeaderService } from '../aspire-leader/aspire-leader.service';
 import { CourseStatus } from '../courses/entities/course.entity';
 import { TrackingStatus } from '../tracking/entities/course-track.entity';
-import { LessonFormat, LessonSubFormat } from '../lessons/entities/lesson.entity';
-import axios from 'axios';
+import {
+  LessonFormat,
+  LessonSubFormat,
+} from '../lessons/entities/lesson.entity';
+import { randomUUID } from 'node:crypto';
 
 @Injectable()
 export class CertificateCronService implements OnModuleInit, OnModuleDestroy {
@@ -22,33 +25,33 @@ export class CertificateCronService implements OnModuleInit, OnModuleDestroy {
   private isRunning = false;
 
   constructor(
-    private configService: ConfigService,
-    private loggerService: LoggerService,
-    private certificateService: CertificateService,
-    private coursesService: CoursesService,
-    private aspireLeaderService: AspireLeaderService,
+    private readonly configService: ConfigService,
+    private readonly loggerService: LoggerService,
+    private readonly certificateService: CertificateService,
+    private readonly coursesService: CoursesService,
+    private readonly aspireLeaderService: AspireLeaderService,
   ) {
     // Initialize batch size from environment variable with fallback
-    this.BATCH_SIZE = parseInt(
+    this.BATCH_SIZE = Number.parseInt(
       this.configService.get('CERTIFICATE_BATCH_SIZE') || '100',
       10,
     );
 
     // Initialize concurrent users per batch (limit parallel processing to avoid overwhelming system)
     // For 4-5K users, process 20 users concurrently within each batch
-    this.CONCURRENT_USERS_PER_BATCH = parseInt(
+    this.CONCURRENT_USERS_PER_BATCH = Number.parseInt(
       this.configService.get('CERTIFICATE_CONCURRENT_USERS_PER_BATCH') || '20',
       10,
     );
 
     // Initialize cron interval from environment variable with fallback (24 hours in milliseconds)
-    this.CRON_INTERVAL_MS = parseInt(
+    this.CRON_INTERVAL_MS = Number.parseInt(
       this.configService.get('CERTIFICATE_CRON_INTERVAL_MS') || '86400000',
       10,
     );
 
     // Max users per trigger to avoid 504 Gateway Timeout (~60–120s). 0 = no limit (process all).
-    this.MAX_USERS_PER_RUN = parseInt(
+    this.MAX_USERS_PER_RUN = Number.parseInt(
       this.configService.get('CERTIFICATE_MAX_USERS_PER_RUN') || '300',
       10,
     );
@@ -73,7 +76,7 @@ export class CertificateCronService implements OnModuleInit, OnModuleDestroy {
     if (cronEnabled === 'true') {
       this.loggerService.warn(
         'CERTIFICATE_CRON_ENABLED is set to true in environment, but automatic cron is disabled. ' +
-        'Use POST /certificate/cron/trigger API endpoint to run manually.',
+          'Use POST /certificate/cron/trigger API endpoint to run manually.',
       );
     }
 
@@ -100,7 +103,7 @@ export class CertificateCronService implements OnModuleInit, OnModuleDestroy {
 
       // Schedule recurring execution every 24 hours
       this.cronInterval = setInterval(() => {
-        this.handleCertificateIssuance();
+        void this.handleCertificateIssuance();
       }, this.CRON_INTERVAL_MS);
 
       this.loggerService.log(
@@ -176,19 +179,15 @@ export class CertificateCronService implements OnModuleInit, OnModuleDestroy {
       );
 
       // Validate certificate issuance conditions (non-blocking)
-      // Validation errors are logged but don't block the process
-      const validationResult = await this.validateCertificateIssuanceConditions(
-        userId,
-      );
+      const validationResult =
+        await this.validateCertificateIssuanceConditions(userId);
       if (!validationResult.isValid) {
         this.loggerService.warn(
           `Certificate issuance validation warning: ${validationResult.reason}. Continuing...`,
         );
-        // Don't block - continue with certificate issuance
-        // Individual validations will handle their own errors
       }
 
-      // Get eligible users (fetch only up to MAX_USERS_PER_RUN when set to avoid extra API calls and timeout)
+      // Get eligible users
       const maxToFetch =
         this.MAX_USERS_PER_RUN > 0 ? this.MAX_USERS_PER_RUN : undefined;
       const eligibleUsers = await this.getEligibleUsersForCertificateIssuance(
@@ -211,191 +210,34 @@ export class CertificateCronService implements OnModuleInit, OnModuleDestroy {
         `Found ${eligibleUsers.length} eligible users for certificate issuance`,
       );
 
-      // Fetch event criteria for all unique cohorts once per run
-      const uniqueCohortIds = [
-        ...new Set(
-          eligibleUsers
-            .map((u) => u.cohortId)
-            .filter((id): id is string => !!id),
-        ),
-      ];
-      this.loggerService.log(
-        `Fetching event criteria for ${uniqueCohortIds.length} unique cohorts`,
-      );
-      const cohortEventCriteriaMap: Record<string, number> = {};
-      // await this.userServiceClient.getBatchEventCriteria(uniqueCohortIds);
-
-      // DEBUG: Log the actual map returned to diagnose eventCriteria=0 not being respected
-      this.loggerService.log(
-        `[DEBUG] cohortEventCriteriaMap: ${JSON.stringify(cohortEventCriteriaMap)}`,
-      );
-      this.loggerService.log(
-        `[DEBUG] uniqueCohortIds: ${JSON.stringify(uniqueCohortIds)}`,
-      );
-
-      // Process users in batches
+      const cohortEventCriteriaMap =
+        this.getCohortEventCriteriaMap(eligibleUsers);
       const batches = this.splitIntoBatches(eligibleUsers, this.BATCH_SIZE);
-      this.loggerService.log(
-        `Processing ${batches.length} batches of up to ${this.BATCH_SIZE} users each (${eligibleUsers.length} users this run)`,
+      this.logProcessingTimeEstimate(eligibleUsers.length, batches.length);
+
+      const batchResults = await this.processAllBatches(
+        batches,
+        executionId,
+        userId || 'all',
+        cohortEventCriteriaMap,
+        eligibleUsers.length,
       );
 
-      // Estimate processing time for large datasets
-      if (eligibleUsers.length > 100) {
-        const timeEstimate = this.calculateProcessingTime(
-          eligibleUsers.length,
-          this.BATCH_SIZE,
-        );
-        if (timeEstimate.estimatedHours > 1) {
-          this.loggerService.log(
-            `Estimated processing time: ~${timeEstimate.estimatedHours} hours for ${eligibleUsers.length} users`,
-          );
-          this.loggerService.log(
-            `Processing ${eligibleUsers.length} users in ${timeEstimate.batchCount} batches with ${this.CONCURRENT_USERS_PER_BATCH} concurrent users per batch`,
-          );
-        } else {
-          this.loggerService.log(
-            `Estimated processing time: ~${timeEstimate.estimatedMinutes} minutes for ${eligibleUsers.length} users`,
-          );
-          this.loggerService.log(
-            `Processing ${eligibleUsers.length} users in ${timeEstimate.batchCount} batches with ${this.CONCURRENT_USERS_PER_BATCH} concurrent users per batch`,
-          );
-        }
-      }
-
-      // Initialize counters for tracking processing results
-      let totalProcessed = 0;
-      let totalIssued = 0;
-      let totalSkipped = 0;
-      let totalErrors = 0;
-
-      // Process each batch sequentially to avoid overwhelming external services
-      for (let i = 0; i < batches.length; i++) {
-        const batch = batches[i];
-        const batchNumber = i + 1;
-        const totalBatches = batches.length;
-
-        this.loggerService.log(
-          `Processing batch ${batchNumber}/${totalBatches} (${batch.length} users)`,
-        );
-
-        try {
-          const batchResults = await this.processBatchWithValidation(
-            batch,
-            executionId,
-            userId || 'all',
-            cohortEventCriteriaMap,
-          );
-
-          // Update totals
-          totalProcessed += batchResults.processed;
-          totalIssued += batchResults.issued;
-          totalSkipped += batchResults.skipped;
-          totalErrors += batchResults.errors;
-
-          this.loggerService.log(
-            `Batch ${batchNumber} completed - Issued: ${batchResults.issued}, Skipped: ${batchResults.skipped}, Errors: ${batchResults.errors}`,
-          );
-
-          // Add delay between batches to prevent overwhelming external services
-          // For large datasets (4-5K users), use shorter delays to speed up processing
-          if (i < batches.length - 1) {
-            const delayMs = eligibleUsers.length > 1000 ? 1000 : 2000; // 1 second for large batches, 2 seconds for smaller
-            await this.delay(delayMs);
-          }
-
-          // Memory cleanup hint for large batches
-          if (eligibleUsers.length > 1000 && i % 10 === 0) {
-            if (global.gc) {
-              try {
-                global.gc();
-                this.loggerService.log(
-                  `Memory cleanup triggered after batch ${batchNumber}`,
-                );
-              } catch (e) {
-                // GC not available, continue
-              }
-            }
-          }
-        } catch (error) {
-          this.loggerService.error(
-            `Error processing batch ${batchNumber}:`,
-            error.message,
-          );
-          // Log each user in the failed batch as an error
-          for (const user of batch) {
-            CertificateLogger.logUserFailure(
-              user.userId,
-              user.courseId,
-              user.courseTitle || 'Unknown',
-              user.cohortId,
-              `Batch processing error: ${error.message}`,
-              {
-                message: error.message,
-                stack: error.stack,
-                batchNumber,
-                batchSize: batch.length,
-              },
-              executionId,
-              'handleCertificateIssuance',
-            );
-          }
-
-          totalErrors += batch.length; // Count all users in failed batch as errors
-        }
-      }
-
-      // Log final results
       const duration = Date.now() - startTime;
-      this.loggerService.log(
-        `Certificate issuance completed in ${duration}ms [Execution ID: ${executionId}]`,
-      );
-      this.loggerService.log(
-        `Summary: ${totalProcessed} processed, ${totalIssued} issued, ${totalSkipped} skipped, ${totalErrors} errors`,
-      );
+      this.logFinalResults(executionId, duration, batchResults);
 
-      // Log summary with details about failures
-      if (totalSkipped > 0 || totalErrors > 0) {
-        this.loggerService.log(
-          `\n=== FAILURE SUMMARY [Execution ID: ${executionId}] ===`,
-        );
-        this.loggerService.log(
-          `Total Skipped: ${totalSkipped} users - Check logs/cron-certificate-failures.log for details`,
-        );
-        this.loggerService.log(
-          `Total Errors: ${totalErrors} users - Check logs/cron-certificate-failures.log for details`,
-        );
-        this.loggerService.log(
-          `\nTo view skipped users: grep "USER_CERTIFICATE_SKIP" logs/cron-certificate-failures.log | jq -r '.userId'`,
-        );
-        this.loggerService.log(
-          `To view failed users: grep "USER_CERTIFICATE_FAILURE" logs/cron-certificate-failures.log | jq -r '.userId'`,
-        );
-        this.loggerService.log(
-          `To view by failure reason: grep "USER_CERTIFICATE_FAILURE" logs/cron-certificate-failures.log | jq -r '.failureReason' | sort | uniq -c`,
-        );
-        this.loggerService.log(
-          `===================================================\n`,
-        );
-      }
-
-      // Log execution summary for monitoring
       const executionSummary = {
         executionId,
-        totalProcessed,
-        totalIssued,
-        totalSkipped,
-        totalErrors,
+        ...batchResults,
         duration,
         startTime: new Date(startTime).toISOString(),
         endTime: new Date().toISOString(),
       };
 
       await this.logExecutionSummary(executionId, executionSummary);
-
-      // Also log to failure log for easy analysis
       CertificateLogger.logExecutionSummary(executionSummary);
 
-      return { totalProcessed, totalIssued, totalSkipped, totalErrors };
+      return batchResults;
     } catch (error) {
       this.loggerService.error(
         `Error in certificate issuance process [Execution ID: ${executionId}]:`,
@@ -410,6 +252,197 @@ export class CertificateCronService implements OnModuleInit, OnModuleDestroy {
       };
     } finally {
       this.isRunning = false;
+    }
+  }
+
+  private getCohortEventCriteriaMap(
+    eligibleUsers: LmsEligibleUser[],
+  ): Record<string, number> {
+    const uniqueCohortIds = [
+      ...new Set(
+        eligibleUsers.map((u) => u.cohortId).filter((id): id is string => !!id),
+      ),
+    ];
+    this.loggerService.log(
+      `Fetching event criteria for ${uniqueCohortIds.length} unique cohorts`,
+    );
+    const cohortEventCriteriaMap: Record<string, number> = {};
+    this.loggerService.log(
+      `[DEBUG] cohortEventCriteriaMap: ${JSON.stringify(cohortEventCriteriaMap)}`,
+    );
+    this.loggerService.log(
+      `[DEBUG] uniqueCohortIds: ${JSON.stringify(uniqueCohortIds)}`,
+    );
+    return cohortEventCriteriaMap;
+  }
+
+  private logProcessingTimeEstimate(
+    usersCount: number,
+    batchCount: number,
+  ): void {
+    this.loggerService.log(
+      `Processing ${batchCount} batches of up to ${this.BATCH_SIZE} users each (${usersCount} users this run)`,
+    );
+    if (usersCount <= 100) {
+      return;
+    }
+    const timeEstimate = this.calculateProcessingTime(
+      usersCount,
+      this.BATCH_SIZE,
+    );
+    const timeText =
+      timeEstimate.estimatedHours > 1
+        ? `~${timeEstimate.estimatedHours} hours`
+        : `~${timeEstimate.estimatedMinutes} minutes`;
+    this.loggerService.log(
+      `Estimated processing time: ${timeText} for ${usersCount} users`,
+    );
+    this.loggerService.log(
+      `Processing ${usersCount} users in ${timeEstimate.batchCount} batches with ${this.CONCURRENT_USERS_PER_BATCH} concurrent users per batch`,
+    );
+  }
+
+  private async processAllBatches(
+    batches: LmsEligibleUser[][],
+    executionId: string,
+    targetUserId: string,
+    cohortEventCriteriaMap: Record<string, number>,
+    totalUsersCount: number,
+  ): Promise<{
+    totalProcessed: number;
+    totalIssued: number;
+    totalSkipped: number;
+    totalErrors: number;
+  }> {
+    let totalProcessed = 0;
+    let totalIssued = 0;
+    let totalSkipped = 0;
+    let totalErrors = 0;
+
+    let batchIndex = 0;
+    for await (const batch of batches) {
+      batchIndex++;
+      this.loggerService.log(
+        `Processing batch ${batchIndex}/${batches.length} (${batch.length} users)`,
+      );
+
+      try {
+        const batchResults = await this.processBatchWithValidation(
+          batch,
+          executionId,
+          targetUserId,
+          cohortEventCriteriaMap,
+        );
+
+        totalProcessed += batchResults.processed;
+        totalIssued += batchResults.issued;
+        totalSkipped += batchResults.skipped;
+        totalErrors += batchResults.errors;
+
+        this.loggerService.log(
+          `Batch ${batchIndex} completed - Issued: ${batchResults.issued}, Skipped: ${batchResults.skipped}, Errors: ${batchResults.errors}`,
+        );
+
+        if (batchIndex < batches.length) {
+          const delayMs = totalUsersCount > 1000 ? 1000 : 2000;
+          await this.delay(delayMs);
+        }
+
+        this.triggerBatchMemoryCleanup(totalUsersCount, batchIndex);
+      } catch (error) {
+        this.handleBatchError(batch, batchIndex, executionId, error);
+        totalErrors += batch.length;
+      }
+    }
+
+    return { totalProcessed, totalIssued, totalSkipped, totalErrors };
+  }
+
+  private triggerBatchMemoryCleanup(
+    totalUsersCount: number,
+    batchIndex: number,
+  ): void {
+    if (totalUsersCount > 1000 && batchIndex % 10 === 0 && global.gc) {
+      try {
+        global.gc();
+        this.loggerService.log(
+          `Memory cleanup triggered after batch ${batchIndex}`,
+        );
+      } catch {
+        // GC not available, continue
+      }
+    }
+  }
+
+  private handleBatchError(
+    batch: LmsEligibleUser[],
+    batchIndex: number,
+    executionId: string,
+    error: any,
+  ): void {
+    this.loggerService.error(
+      `Error processing batch ${batchIndex}:`,
+      error.message,
+    );
+    for (const user of batch) {
+      CertificateLogger.logUserFailure(
+        user.userId,
+        user.courseId,
+        user.courseTitle || 'Unknown',
+        user.cohortId,
+        `Batch processing error: ${error.message}`,
+        {
+          message: error.message,
+          stack: error.stack,
+          batchNumber: batchIndex,
+          batchSize: batch.length,
+        },
+        executionId,
+        'handleCertificateIssuance',
+      );
+    }
+  }
+
+  private logFinalResults(
+    executionId: string,
+    duration: number,
+    results: {
+      totalProcessed: number;
+      totalIssued: number;
+      totalSkipped: number;
+      totalErrors: number;
+    },
+  ): void {
+    const { totalProcessed, totalIssued, totalSkipped, totalErrors } = results;
+    this.loggerService.log(
+      `Certificate issuance completed in ${duration}ms [Execution ID: ${executionId}]`,
+    );
+    this.loggerService.log(
+      `Summary: ${totalProcessed} processed, ${totalIssued} issued, ${totalSkipped} skipped, ${totalErrors} errors`,
+    );
+
+    if (totalSkipped > 0 || totalErrors > 0) {
+      this.loggerService.log(
+        `\n=== FAILURE SUMMARY [Execution ID: ${executionId}] ===`,
+      );
+      this.loggerService.log(
+        `Total Skipped: ${totalSkipped} users - Check logs/cron-certificate-failures.log for details`,
+      );
+      this.loggerService.log(
+        `Total Errors: ${totalErrors} users - Check logs/cron-certificate-failures.log for details`,
+      );
+      this.loggerService.log(
+        `\nTo view skipped users: grep "USER_CERTIFICATE_SKIP" logs/cron-certificate-failures.log | jq -r '.userId'`,
+      );
+      this.loggerService.log(
+        `To view failed users: grep "USER_CERTIFICATE_FAILURE" logs/cron-certificate-failures.log | jq -r '.userId'`,
+      );
+      this.loggerService.log(
+        `To view by failure reason: grep "USER_CERTIFICATE_FAILURE" logs/cron-certificate-failures.log | jq -r '.failureReason' | sort | uniq -c`,
+      );
+      this.loggerService.log(
+        `===================================================\n`,
+      );
     }
   }
 
@@ -556,21 +589,25 @@ export class CertificateCronService implements OnModuleInit, OnModuleDestroy {
             '',
           );
 
-          let users: LmsEligibleUser[] = (report?.data || []).map((item: any) => ({
-            userId: item.userId,
-            courseId: item.courseId || courseId,
-            courseTitle: item.courseTitle || course.title,
-            cohortId: cohortId,
-            firstName: item.firstName || '',
-            lastName: item.lastName || '',
-            certificateIssuedDate: item.certificateIssuedDate,
-            certificateIssueDateTime: course.certificateIssueDateTime
-              ? (typeof course.certificateIssueDateTime === 'string'
+          let users: LmsEligibleUser[] = (report?.data || []).map(
+            (item: any) => ({
+              userId: item.userId,
+              courseId: item.courseId || courseId,
+              courseTitle: item.courseTitle || course.title,
+              cohortId: cohortId,
+              firstName: item.firstName || '',
+              lastName: item.lastName || '',
+              certificateIssuedDate: item.certificateIssuedDate,
+              certificateIssueDateTime: course.certificateIssueDateTime
+                ? typeof course.certificateIssueDateTime === 'string'
                   ? course.certificateIssueDateTime
-                  : new Date(course.certificateIssueDateTime as Date).toISOString())
-              : undefined,
-            certificateIssued: item.certificateIssued || false,
-          }));
+                  : new Date(
+                      course.certificateIssueDateTime as Date,
+                    ).toISOString()
+                : undefined,
+              certificateIssued: item.certificateIssued || false,
+            }),
+          );
 
           if (userId && userId !== 'all') {
             users = users.filter((u) => u.userId === userId);
@@ -706,7 +743,10 @@ export class CertificateCronService implements OnModuleInit, OnModuleDestroy {
             let skipType: 'condition' | 'exists' | 'other' = 'condition';
             if (skipReason.includes('Certificate already exists')) {
               skipType = 'exists';
-            } else if (skipReason.includes('Event criteria') || skipReason.includes('date validation')) {
+            } else if (
+              skipReason.includes('Event criteria') ||
+              skipReason.includes('date validation')
+            ) {
               skipType = 'condition';
             }
 
@@ -736,7 +776,8 @@ export class CertificateCronService implements OnModuleInit, OnModuleDestroy {
             user.courseId,
           );
           if (existingCertificate) {
-            const skipReason = 'Certificate already exists (certificateIssued: true)';
+            const skipReason =
+              'Certificate already exists (certificateIssued: true)';
 
             this.loggerService.log(
               `[SKIP] User ${user.userId} - ${skipReason}`,
@@ -906,7 +947,9 @@ export class CertificateCronService implements OnModuleInit, OnModuleDestroy {
           user.certificateIssuedDate,
         );
         if (!certificateDateValidation.isValid) {
-          const failureReason = certificateDateValidation.reason || 'Certificate date validation failed';
+          const failureReason =
+            certificateDateValidation.reason ||
+            'Certificate date validation failed';
 
           this.loggerService.log(
             `[DATE_CONDITION] ✗ FAILED - User ${user.userId}: ${failureReason}`,
@@ -943,8 +986,7 @@ export class CertificateCronService implements OnModuleInit, OnModuleDestroy {
       );
       if (user.cohortId) {
         const eventCriteria =
-          (cohortEventCriteriaMap &&
-            cohortEventCriteriaMap[user.cohortId]) ??
+          (cohortEventCriteriaMap && cohortEventCriteriaMap[user.cohortId]) ??
           1;
 
         if (eventCriteria === 0) {
@@ -966,8 +1008,10 @@ export class CertificateCronService implements OnModuleInit, OnModuleDestroy {
               'User has not completed or attended at least one event';
 
             this.loggerService.log(
-              `[EVENT_CONDITION] ✗ FAILED - User ${user.userId
-              } has NOT completed or attended at least one event in cohort ${user.cohortId
+              `[EVENT_CONDITION] ✗ FAILED - User ${
+                user.userId
+              } has NOT completed or attended at least one event in cohort ${
+                user.cohortId
               }. Reason: ${failureReason}`,
             );
 
@@ -1041,7 +1085,8 @@ export class CertificateCronService implements OnModuleInit, OnModuleDestroy {
     let retryCount = 0;
 
     this.loggerService.log(
-      `[EVENT_CONDITION] Starting event attendance check for user ${userId} in cohort ${cohortId} (attempt ${retryCount + 1
+      `[EVENT_CONDITION] Starting event attendance check for user ${userId} in cohort ${cohortId} (attempt ${
+        retryCount + 1
       }/${maxRetries + 1})`,
     );
 
@@ -1068,11 +1113,13 @@ export class CertificateCronService implements OnModuleInit, OnModuleDestroy {
               ],
             },
             process.env.TENANT_ID || 'ef99949b-7f3a-4a5f-806a-e67e683e38f3',
-            process.env.ORGANISATION_ID || 'd36d9079-0f42-4ba3-be03-26c9e79509ee',
+            process.env.ORGANISATION_ID ||
+              'd36d9079-0f42-4ba3-be03-26c9e79509ee',
           );
 
         this.loggerService.log(
-          `[EVENT_CONDITION] API Response received - overallStatus: ${attendanceCheck.overallStatus
+          `[EVENT_CONDITION] API Response received - overallStatus: ${
+            attendanceCheck.overallStatus
           }, criteriaResults: ${JSON.stringify(
             attendanceCheck.criteriaResults,
           )}`,
@@ -1127,8 +1174,10 @@ export class CertificateCronService implements OnModuleInit, OnModuleDestroy {
       } catch (error) {
         retryCount++;
         this.loggerService.error(
-          `[EVENT_CONDITION] ✗ ERROR (attempt ${retryCount}/${maxRetries + 1
-          }): Error checking event attendance for user ${userId}, cohort ${cohortId}: ${error.message
+          `[EVENT_CONDITION] ✗ ERROR (attempt ${retryCount}/${
+            maxRetries + 1
+          }): Error checking event attendance for user ${userId}, cohort ${cohortId}: ${
+            error.message
           }`,
         );
 
@@ -1141,7 +1190,8 @@ export class CertificateCronService implements OnModuleInit, OnModuleDestroy {
             error.response?.status >= 500)
         ) {
           this.loggerService.warn(
-            `[EVENT_CONDITION] ⚠ Retryable error for user ${userId} (attempt ${retryCount}/${maxRetries + 1
+            `[EVENT_CONDITION] ⚠ Retryable error for user ${userId} (attempt ${retryCount}/${
+              maxRetries + 1
             }), retrying...`,
           );
           await this.delay(1000 * retryCount); // Exponential backoff
@@ -1294,7 +1344,8 @@ export class CertificateCronService implements OnModuleInit, OnModuleDestroy {
 
         if (certificates.length > 0) {
           this.loggerService.log(
-            `[CERTIFICATE_EXISTS_CHECK] ✓ Found ${certificates.length
+            `[CERTIFICATE_EXISTS_CHECK] ✓ Found ${
+              certificates.length
             } existing certificate(s) for user ${userId}, course ${courseId}. Certificate IDs: ${certificates
               .map((c: any) => c.certificateId || c.id)
               .join(', ')}. Result: certificateIssued = true`,
@@ -1346,7 +1397,7 @@ export class CertificateCronService implements OnModuleInit, OnModuleDestroy {
       let issuedOnBase = new Date();
       if (user.certificateIssueDateTime) {
         const parsed = new Date(user.certificateIssueDateTime);
-        if (!isNaN(parsed.getTime())) {
+        if (!Number.isNaN(parsed.getTime())) {
           issuedOnBase = parsed;
         } else {
           this.loggerService.warn(
@@ -1481,7 +1532,7 @@ export class CertificateCronService implements OnModuleInit, OnModuleDestroy {
    * Generate unique execution ID for tracking
    */
   private generateExecutionId(): string {
-    return `cert-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    return `cert-${Date.now()}-${randomUUID()}`;
   }
 
   /**
@@ -1491,8 +1542,13 @@ export class CertificateCronService implements OnModuleInit, OnModuleDestroy {
     try {
       const start = new Date(startDate);
       const end = new Date(endDate);
-      return start <= end && !isNaN(start.getTime()) && !isNaN(end.getTime());
-    } catch (error) {
+      return (
+        start <= end &&
+        !Number.isNaN(start.getTime()) &&
+        !Number.isNaN(end.getTime())
+      );
+    } catch {
+      // Ignored: Invalid date format passed, return false
       return false;
     }
   }
@@ -1518,14 +1574,14 @@ export class CertificateCronService implements OnModuleInit, OnModuleDestroy {
         successRate:
           summary.totalProcessed > 0
             ? ((summary.totalIssued / summary.totalProcessed) * 100).toFixed(
-              2,
-            ) + '%'
+                2,
+              ) + '%'
             : '0%',
         errorRate:
           summary.totalProcessed > 0
             ? ((summary.totalErrors / summary.totalProcessed) * 100).toFixed(
-              2,
-            ) + '%'
+                2,
+              ) + '%'
             : '0%',
       };
 
@@ -1603,9 +1659,8 @@ export class CertificateCronService implements OnModuleInit, OnModuleDestroy {
 
     try {
       // Get eligible users first to provide count in response using dynamic search
-      const eligibleUsers = await this.getEligibleUsersForCertificateIssuance(
-        userId,
-      );
+      const eligibleUsers =
+        await this.getEligibleUsersForCertificateIssuance(userId);
       const totalUsers = eligibleUsers.length;
 
       if (totalUsers === 0) {

@@ -1,6 +1,6 @@
 import * as winston from 'winston';
-import * as path from 'path';
-import * as fs from 'fs';
+import * as path from 'node:path';
+import * as fs from 'node:fs';
 
 /**
  * Certificate Logger Service
@@ -10,8 +10,14 @@ export class CertificateLogger {
   private static instance: winston.Logger;
   private static failureLogger: winston.Logger;
   private static readonly LOGS_DIR = path.join(process.cwd(), 'logs');
-  private static readonly LOG_FILE_PATH = path.join(CertificateLogger.LOGS_DIR, 'cron-certificate-generation.log');
-  private static readonly FAILURE_LOG_FILE_PATH = path.join(CertificateLogger.LOGS_DIR, 'cron-certificate-failures.log');
+  private static readonly LOG_FILE_PATH = path.join(
+    CertificateLogger.LOGS_DIR,
+    'cron-certificate-generation.log',
+  );
+  private static readonly FAILURE_LOG_FILE_PATH = path.join(
+    CertificateLogger.LOGS_DIR,
+    'cron-certificate-failures.log',
+  );
 
   /**
    * Ensure the logs directory exists, create it if it doesn't
@@ -34,10 +40,10 @@ export class CertificateLogger {
         level: 'info',
         format: winston.format.combine(
           winston.format.timestamp({
-            format: 'YYYY-MM-DD HH:mm:ss'
+            format: 'YYYY-MM-DD HH:mm:ss',
           }),
           winston.format.errors({ stack: true }),
-          winston.format.json()
+          winston.format.json(),
         ),
         defaultMeta: { service: 'certificate-cron' },
         transports: [
@@ -46,16 +52,16 @@ export class CertificateLogger {
             filename: CertificateLogger.LOG_FILE_PATH,
             maxsize: 5242880, // 5MB
             maxFiles: 5,
-            tailable: true
+            tailable: true,
           }),
           // Also log to console for development
           new winston.transports.Console({
             format: winston.format.combine(
               winston.format.colorize(),
-              winston.format.simple()
-            )
-          })
-        ]
+              winston.format.simple(),
+            ),
+          }),
+        ],
       });
     }
     return CertificateLogger.instance;
@@ -72,7 +78,7 @@ export class CertificateLogger {
     message: string,
     context?: string,
     user?: string,
-    level = "info"
+    level = 'info',
   ) {
     CertificateLogger.getCertificateLogger().log({
       level: level,
@@ -94,7 +100,7 @@ export class CertificateLogger {
     message: string,
     error?: string,
     context?: string,
-    user?: string
+    user?: string,
   ) {
     CertificateLogger.getCertificateLogger().error({
       message: message,
@@ -116,7 +122,7 @@ export class CertificateLogger {
     message: string,
     context?: string,
     user?: string,
-    data?: any
+    data?: any,
   ) {
     CertificateLogger.getCertificateLogger().info({
       level: 'info',
@@ -137,7 +143,7 @@ export class CertificateLogger {
   static logCertificateWarning(
     message: string,
     context?: string,
-    user?: string
+    user?: string,
   ) {
     CertificateLogger.getCertificateLogger().warn({
       level: 'warn',
@@ -159,7 +165,7 @@ export class CertificateLogger {
     message: string,
     context?: string,
     user?: string,
-    data?: any
+    data?: any,
   ) {
     CertificateLogger.getCertificateLogger().debug({
       level: 'debug',
@@ -178,16 +184,16 @@ export class CertificateLogger {
   private static getFailureLogger(): winston.Logger {
     // Ensure logs directory exists before creating logger
     CertificateLogger.ensureLogsDirectory();
-    
+
     if (!CertificateLogger.failureLogger) {
       CertificateLogger.failureLogger = winston.createLogger({
         level: 'error',
         format: winston.format.combine(
           winston.format.timestamp({
-            format: 'YYYY-MM-DD HH:mm:ss'
+            format: 'YYYY-MM-DD HH:mm:ss',
           }),
           winston.format.errors({ stack: true }),
-          winston.format.json()
+          winston.format.json(),
         ),
         defaultMeta: { service: 'certificate-cron-failures' },
         transports: [
@@ -196,16 +202,16 @@ export class CertificateLogger {
             filename: CertificateLogger.FAILURE_LOG_FILE_PATH,
             maxsize: 10485760, // 10MB for failure logs
             maxFiles: 10, // Keep more failure logs for analysis
-            tailable: true
+            tailable: true,
           }),
           // Also log to console
           new winston.transports.Console({
             format: winston.format.combine(
               winston.format.colorize(),
-              winston.format.simple()
-            )
-          })
-        ]
+              winston.format.simple(),
+            ),
+          }),
+        ],
       });
     }
     return CertificateLogger.failureLogger;
@@ -231,12 +237,13 @@ export class CertificateLogger {
     failureReason: string,
     errorDetails?: any,
     executionId?: string,
-    context?: string
+    context?: string,
   ) {
     // Determine failure type
-    const failureType = errorDetails?.failureType || 
-                       (errorDetails?.isConditionFailure ? 'condition' : 'system_error');
-    
+    const failureType =
+      errorDetails?.failureType ||
+      (errorDetails?.isConditionFailure ? 'condition' : 'system_error');
+
     const failureData = {
       userId,
       courseId,
@@ -257,7 +264,7 @@ export class CertificateLogger {
 
     CertificateLogger.getFailureLogger().error({
       type: 'USER_CERTIFICATE_FAILURE',
-      ...failureData
+      ...failureData,
     });
 
     // Also log to main log file for reference
@@ -292,7 +299,7 @@ export class CertificateLogger {
     executionId?: string,
     context?: string,
     cohortId?: string,
-    skipType?: 'condition' | 'exists' | 'other'
+    skipType?: 'condition' | 'exists' | 'other',
   ) {
     const skipData = {
       userId,
@@ -309,7 +316,7 @@ export class CertificateLogger {
 
     CertificateLogger.getFailureLogger().warn({
       type: 'USER_CERTIFICATE_SKIP',
-      ...skipData
+      ...skipData,
     });
 
     // Also log to main log file for reference
@@ -343,15 +350,21 @@ export class CertificateLogger {
     CertificateLogger.getFailureLogger().info({
       type: 'EXECUTION_SUMMARY',
       ...summary,
-      successRate: summary.totalProcessed > 0 
-        ? ((summary.totalIssued / summary.totalProcessed) * 100).toFixed(2) + '%' 
-        : '0%',
-      errorRate: summary.totalProcessed > 0 
-        ? ((summary.totalErrors / summary.totalProcessed) * 100).toFixed(2) + '%' 
-        : '0%',
-      skipRate: summary.totalProcessed > 0 
-        ? ((summary.totalSkipped / summary.totalProcessed) * 100).toFixed(2) + '%' 
-        : '0%',
+      successRate:
+        summary.totalProcessed > 0
+          ? ((summary.totalIssued / summary.totalProcessed) * 100).toFixed(2) +
+            '%'
+          : '0%',
+      errorRate:
+        summary.totalProcessed > 0
+          ? ((summary.totalErrors / summary.totalProcessed) * 100).toFixed(2) +
+            '%'
+          : '0%',
+      skipRate:
+        summary.totalProcessed > 0
+          ? ((summary.totalSkipped / summary.totalProcessed) * 100).toFixed(2) +
+            '%'
+          : '0%',
       timestamp: new Date().toISOString(),
     });
   }

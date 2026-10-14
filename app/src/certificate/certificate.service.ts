@@ -15,8 +15,8 @@ import { CourseTemplate } from './entities/course_templates';
 import { In, Repository } from 'typeorm';
 import { Response } from 'express';
 import puppeteer, { Browser } from 'puppeteer';
-import { randomUUID } from 'crypto';
-import { existsSync } from 'fs';
+import { randomUUID } from 'node:crypto';
+import { existsSync } from 'node:fs';
 import { GetUserCertificatesDto } from './dto/get-user-certificates-dto';
 import { RegenerateCertificatesDto } from './dto/regenerate-certificates-dto';
 import { S3Service } from './s3.service';
@@ -38,7 +38,7 @@ export class CertificateService implements OnModuleInit, OnModuleDestroy {
   private readonly POOLED_BROWSER_IDLE_TIMEOUT_MS = Math.max(
     60_000,
     (parseInt(process.env.PUPPETEER_IDLE_TIMEOUT_MINUTES || '10', 10) || 10) *
-    60_000,
+      60_000,
   );
 
   constructor(
@@ -52,7 +52,7 @@ export class CertificateService implements OnModuleInit, OnModuleDestroy {
     private readonly loggerService: LoggerService,
     private readonly s3Service: S3Service,
     private readonly trackingService: TrackingService,
-  ) { }
+  ) {}
 
   /**
    * Periodically checks whether the pooled browser has sat idle past
@@ -61,9 +61,12 @@ export class CertificateService implements OnModuleInit, OnModuleDestroy {
    * full app shutdown.
    */
   onModuleInit(): void {
-    this.pooledBrowserIdleCheckInterval = setInterval(() => {
-      void this.closeBrowserIfIdle();
-    }, Math.min(this.POOLED_BROWSER_IDLE_TIMEOUT_MS, 5 * 60_000));
+    this.pooledBrowserIdleCheckInterval = setInterval(
+      () => {
+        void this.closeBrowserIfIdle();
+      },
+      Math.min(this.POOLED_BROWSER_IDLE_TIMEOUT_MS, 5 * 60_000),
+    );
   }
 
   private async closeBrowserIfIdle(): Promise<void> {
@@ -139,8 +142,12 @@ export class CertificateService implements OnModuleInit, OnModuleDestroy {
         return bundled;
       }
     } catch (err) {
-      const msg =
-        err instanceof Error ? err.message : String(err ?? 'unknown error');
+      let msg = 'unknown error';
+      if (err instanceof Error) {
+        msg = err.message;
+      } else if (typeof err === 'string') {
+        msg = err;
+      }
       this.loggerService.log(
         `Puppeteer: bundled Chrome path not available (${msg}). Run npx puppeteer browsers install chrome, set PUPPETEER_EXECUTABLE_PATH / CHROME_BIN, or install system Chromium.`,
       );
@@ -204,7 +211,7 @@ export class CertificateService implements OnModuleInit, OnModuleDestroy {
       // Then try JWT token extraction
       const authHeader = request.headers?.authorization;
 
-      if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      if (!authHeader?.startsWith('Bearer ')) {
         return null;
       }
 
@@ -335,11 +342,16 @@ export class CertificateService implements OnModuleInit, OnModuleDestroy {
 
       return response.data[0].id;
     } catch (error) {
-      const errMsg = axios.isAxiosError(error)
-        ? `${error.message} (HTTP ${error.response?.status ?? '?'})`
-        : error instanceof Error
-          ? error.message
-          : String(error);
+      let errMsg: string;
+      if (axios.isAxiosError(error)) {
+        errMsg = `${error.message} (HTTP ${error.response?.status ?? '?'})`;
+      } else if (error instanceof Error) {
+        errMsg = error.message;
+      } else if (typeof error === 'string') {
+        errMsg = error;
+      } else {
+        errMsg = 'unknown error';
+      }
       this.loggerService.error('Error generating DID:', errMsg);
       throw new Error(`DID generation failed for userId ${userId}: ${errMsg}`);
     }
@@ -422,11 +434,7 @@ export class CertificateService implements OnModuleInit, OnModuleDestroy {
       });
 
       // Save template record to database
-      if (
-        response.data &&
-        response.data.template &&
-        response.data.template.templateId
-      ) {
+      if (response.data?.template?.templateId) {
         await this.saveTemplate({
           templateId: response.data.template.templateId,
           templateType: templateType.toLowerCase(),
@@ -478,7 +486,7 @@ export class CertificateService implements OnModuleInit, OnModuleDestroy {
       const raw = issueCredential.certificateIssueDateTime;
       if (raw) {
         const d = new Date(raw);
-        if (!isNaN(d.getTime())) {
+        if (!Number.isNaN(d.getTime())) {
           return d;
         }
       }
@@ -578,8 +586,11 @@ export class CertificateService implements OnModuleInit, OnModuleDestroy {
       const issueResponse = await axios.post(url, credetialObj, {
         headers: {
           'Content-Type': 'application/json',
-          tenantId: request.headers?.['tenantid'] || request.headers?.['tenantId'],
-          Authorization: request.headers?.['authorization'] || request.headers?.['Authorization'],
+          tenantId:
+            request.headers?.['tenantid'] || request.headers?.['tenantId'],
+          Authorization:
+            request.headers?.['authorization'] ||
+            request.headers?.['Authorization'],
         },
       });
 
@@ -621,7 +632,8 @@ export class CertificateService implements OnModuleInit, OnModuleDestroy {
           ];
 
           this.loggerService.log(
-            `[CERTIFICATE_TYPE_LOGIC] Found certificate types for courseId ${issueCredential.courseId
+            `[CERTIFICATE_TYPE_LOGIC] Found certificate types for courseId ${
+              issueCredential.courseId
             }: ${certificateTypes.join(', ')}`,
           );
 
@@ -691,8 +703,10 @@ export class CertificateService implements OnModuleInit, OnModuleDestroy {
           );
 
           this.loggerService.log(
-            `[CERTIFICATE_CHECK] Checking for existing certificate - userId: ${issueCredential.userId
-            }, courseId: ${issueCredential.courseId}, certificateType: ${template.certificateType
+            `[CERTIFICATE_CHECK] Checking for existing certificate - userId: ${
+              issueCredential.userId
+            }, courseId: ${issueCredential.courseId}, certificateType: ${
+              template.certificateType
             }, exists: ${!!existingCertificate}`,
           );
 
@@ -1209,9 +1223,9 @@ export class CertificateService implements OnModuleInit, OnModuleDestroy {
 
         const issuedOnForCredential = existingCertificate.issuedOn
           ? new Date(existingCertificate.issuedOn).toLocaleDateString('en-US', {
-            month: 'long',
-            year: 'numeric',
-          })
+              month: 'long',
+              year: 'numeric',
+            })
           : formattedIssuanceDate;
 
         const templateCredentialObj = {
@@ -1487,12 +1501,18 @@ export class CertificateService implements OnModuleInit, OnModuleDestroy {
         'Credential rendered successfully',
       );
     } catch (error) {
-      const errMsg = axios.isAxiosError(error)
-        ? `${error.message}${error.response != null ? ` (HTTP ${error.response.status})` : ''
-        }`
-        : error instanceof Error
-          ? error.message
-          : String(error);
+      let errMsg: string;
+      if (axios.isAxiosError(error)) {
+        errMsg = `${error.message}${
+          error.response != null ? ` (HTTP ${error.response.status})` : ''
+        }`;
+      } else if (error instanceof Error) {
+        errMsg = error.message;
+      } else if (typeof error === 'string') {
+        errMsg = error;
+      } else {
+        errMsg = 'unknown error';
+      }
       this.loggerService.error('Error fetching credentials:', errMsg);
       if (!res.headersSent) {
         APIResponse.error(
@@ -1536,9 +1556,8 @@ export class CertificateService implements OnModuleInit, OnModuleDestroy {
       try {
         await page.setContent(response.data, { waitUntil: 'load' });
 
-        const templateType = await this.getCertificateTypeByTemplateId(
-          templateId,
-        );
+        const templateType =
+          await this.getCertificateTypeByTemplateId(templateId);
         const isPaidAcknowledgement =
           templateType?.toLowerCase() === 'paid_acknowledgement';
 
@@ -1562,12 +1581,18 @@ export class CertificateService implements OnModuleInit, OnModuleDestroy {
         await page.close().catch(() => undefined);
       }
     } catch (error) {
-      const errMsg = axios.isAxiosError(error)
-        ? `${error.message}${error.response != null ? ` (HTTP ${error.response.status})` : ''
-        }`
-        : error instanceof Error
-          ? error.message
-          : String(error);
+      let errMsg: string;
+      if (axios.isAxiosError(error)) {
+        errMsg = `${error.message}${
+          error.response != null ? ` (HTTP ${error.response.status})` : ''
+        }`;
+      } else if (error instanceof Error) {
+        errMsg = error.message;
+      } else if (typeof error === 'string') {
+        errMsg = error;
+      } else {
+        errMsg = 'unknown error';
+      }
       this.loggerService.error('Error fetching credentials:', errMsg);
       if (!res.headersSent) {
         APIResponse.error(
@@ -1637,9 +1662,8 @@ export class CertificateService implements OnModuleInit, OnModuleDestroy {
       const page = await browser.newPage();
       let imageBuffer: Buffer;
       try {
-        const templateType = await this.getCertificateTypeByTemplateId(
-          templateId,
-        );
+        const templateType =
+          await this.getCertificateTypeByTemplateId(templateId);
         const isPaidAcknowledgement =
           templateType?.toLowerCase() === 'paid_acknowledgement';
 
@@ -1663,7 +1687,7 @@ export class CertificateService implements OnModuleInit, OnModuleDestroy {
 
       const prefix =
         process.env.AWS_STORAGE_CERTIFICATE_PREFIX || 'certificates/';
-      const cleanPrefix = prefix.replace(/^\/+|\/+$/g, '');
+      const cleanPrefix = prefix.replace(/^\/+/, '').replace(/\/+$/, '');
       const fileName = `certificate-${userId}-${courseId}-${credentialId}-${Date.now()}.png`;
       const s3Key = `${cleanPrefix}/${fileName}`;
 
@@ -3104,10 +3128,10 @@ export class CertificateService implements OnModuleInit, OnModuleDestroy {
           updatedBy: courseTemplate.ct_updatedBy,
           template: courseTemplate.t_templatesId
             ? {
-              templatesId: courseTemplate.t_templatesId,
-              templateType: courseTemplate.t_template_type,
-              title: courseTemplate.title,
-            }
+                templatesId: courseTemplate.t_templatesId,
+                templateType: courseTemplate.t_template_type,
+                title: courseTemplate.title,
+              }
             : null,
         }),
       );
@@ -3415,7 +3439,8 @@ export class CertificateService implements OnModuleInit, OnModuleDestroy {
           'Missing required headers for user service update',
         );
         this.loggerService.error(
-          `Missing: ${!tenantId ? 'tenantId ' : ''}${!academicYearId ? 'academicYearId ' : ''
+          `Missing: ${!tenantId ? 'tenantId ' : ''}${
+            !academicYearId ? 'academicYearId ' : ''
           }`,
         );
         return;
@@ -3532,7 +3557,8 @@ export class CertificateService implements OnModuleInit, OnModuleDestroy {
         const userData = getUserDetails[0];
         if (userData && (userData.firstName || userData.lastName)) {
           this.loggerService.log(
-            `Successfully fetched user details: firstName=${userData.firstName || 'null'
+            `Successfully fetched user details: firstName=${
+              userData.firstName || 'null'
             }, lastName=${userData.lastName || 'null'}`,
           );
           return {
