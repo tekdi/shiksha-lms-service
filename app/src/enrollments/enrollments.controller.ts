@@ -30,6 +30,7 @@ import { CommonQueryDto } from '../common/dto/common-query.dto';
 import { ApiId } from '../common/decorators/api-id.decorator';
 import { TenantOrg } from '../common/decorators/tenant-org.decorator';
 import { UsersEnrolledCoursesDto, UsersEnrolledCoursesResponseDto } from './dto/search-enrolled-courses.dto';
+import { DashboardByUserIdDto, DashboardByUserIdResponseDto } from './dto/dashboard-by-user-id.dto';
 
 @ApiTags('Enrollments')
 @ApiBearerAuth()
@@ -197,6 +198,56 @@ export class EnrollmentsController {
       usersEnrolledCoursesDto,
       tenantOrg.tenantId,
       tenantOrg.organisationId
+    );
+  }
+
+  @Post('dashboardByUserId')
+  @ApiId(API_IDS.GET_DASHBOARD_BY_USER_ID)
+  @ApiOperation({
+    summary: 'Get user dashboard metrics by user ID',
+    description:
+      'Returns completed enrolled courses count, track completion count, track started count, certificate count, mandatory due count, completed courses by category, and completed standalone lessons by category.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Dashboard metrics retrieved successfully',
+    type: DashboardByUserIdResponseDto,
+  })
+  @ApiBody({ type: DashboardByUserIdDto })
+  async dashboardByUserIdPost(
+    @Body() dto: DashboardByUserIdDto,
+    @Query() query: CommonQueryDto,
+    @TenantOrg() tenantOrg: { tenantId: string; organisationId: string },
+  ) {
+    const userId = dto.userId || query.userId;
+    return this.enrollmentsService.dashboardByUserId(
+      userId,
+      tenantOrg.tenantId,
+      tenantOrg.organisationId,
+    );
+  }
+
+  @Get('dashboardByUserId')
+  @ApiId(API_IDS.GET_DASHBOARD_BY_USER_ID)
+  @ApiOperation({
+    summary: 'Get user dashboard metrics by user ID (GET query option)',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Dashboard metrics retrieved successfully',
+    type: DashboardByUserIdResponseDto,
+  })
+  @ApiQuery({ name: 'userId', required: true, type: String })
+  async dashboardByUserIdGet(
+    @Query('userId') userIdParam: string,
+    @Query() query: CommonQueryDto,
+    @TenantOrg() tenantOrg: { tenantId: string; organisationId: string },
+  ) {
+    const userId = userIdParam || query.userId;
+    return this.enrollmentsService.dashboardByUserId(
+      userId,
+      tenantOrg.tenantId,
+      tenantOrg.organisationId,
     );
   }
 
