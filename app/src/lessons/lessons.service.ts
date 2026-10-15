@@ -418,15 +418,21 @@ export class LessonsService {
         (searchDto.isStandalone !== undefined ? `:isStandalone:${searchDto.isStandalone}` : '') +
         `:offset:${offset}:limit:${limit}`;
 
+      // hasTrack results are user-specific and change on every tracking update,
+      // which does not invalidate this cache, so they are never cached
+      const isTrackFilter = !!searchDto.userId && searchDto.hasTrack !== undefined;
+
       // Try to get from cache first
-      const cachedResult = await this.cacheService.get<{
-        totalElements: number;
-        offset: number;
-        limit: number;
-        lessons: Lesson[];
-      }>(cacheKey);
-      if (cachedResult) {
-        return cachedResult;
+      if (!isTrackFilter) {
+        const cachedResult = await this.cacheService.get<{
+          totalElements: number;
+          offset: number;
+          limit: number;
+          lessons: Lesson[];
+        }>(cacheKey);
+        if (cachedResult) {
+          return cachedResult;
+        }
       }
 
       // Execute query with pagination and joins to ensure only published courses and modules
@@ -525,10 +531,16 @@ export class LessonsService {
             'lesson.lessonTrack',
             LessonTrack,
             'lesson_track',
-            'lesson_track.lessonId = lesson.lessonId AND lesson_track.userId = :userId',
+            // Join only the user's most recently updated track per lesson so
+            // multiple attempts don't produce duplicate rows
+            `lesson_track.lessonTrackId = (
+              SELECT lt."lessontrackid" FROM lesson_track lt
+              WHERE lt."lessonId" = lesson."lessonId" AND lt."userId" = :userId
+              ORDER BY lt."updatedAt" DESC
+              LIMIT 1
+            )`,
             { userId: searchDto.userId }
           );
-          queryBuilder = queryBuilder.orderBy('lesson_track."updatedAt"', 'DESC').limit(1);
         } else if (isHasTrackFalse) {
           queryBuilder = queryBuilder.leftJoin(
             LessonTrack,
@@ -539,20 +551,27 @@ export class LessonsService {
           queryBuilder = queryBuilder.andWhere('lesson_track.lessonTrackId IS NULL');
         }
       }
+      queryBuilder = isHasTrackTrue && searchDto.userId
+        ? queryBuilder
+            .orderBy('lesson_track.updatedAt', 'DESC')
+            .addOrderBy('lesson.createdAt', 'DESC')
+        : queryBuilder.orderBy('lesson.createdAt', 'DESC');
+
       const [lessons, totalElements] = await queryBuilder
         .skip(offset)
         .take(limit)
-        .orderBy('lesson.createdAt', 'DESC')
         .getManyAndCount();
 
       const result = { totalElements, offset, limit, lessons };
 
       // Cache the result
-      await this.cacheService.set(
-        cacheKey,
-        result,
-        this.cacheConfig.LESSON_TTL,
-      );
+      if (!isTrackFilter) {
+        await this.cacheService.set(
+          cacheKey,
+          result,
+          this.cacheConfig.LESSON_TTL,
+        );
+      }
 
       return result;
     } catch (error) {
