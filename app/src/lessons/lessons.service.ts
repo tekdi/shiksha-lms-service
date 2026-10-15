@@ -415,6 +415,9 @@ export class LessonsService {
           ? `:categoryIds:${[...searchDto.categoryIds].sort((a, b) => a.localeCompare(b)).join(',')}`
           : '') +
         (searchDto.hasTrack !== undefined ? `:hasTrack:${searchDto.hasTrack}:userId:${searchDto.userId}` : '') +
+        (searchDto.trackingStatus?.length
+          ? `:trackingStatus:${[...searchDto.trackingStatus].sort((a, b) => a.localeCompare(b)).join(',')}`
+          : '') +
         (searchDto.isStandalone !== undefined ? `:isStandalone:${searchDto.isStandalone}` : '') +
         `:offset:${offset}:limit:${limit}`;
 
@@ -541,6 +544,13 @@ export class LessonsService {
             )`,
             { userId: searchDto.userId }
           );
+          // Filter on the joined (latest) track's actual status; multiple statuses are OR-ed
+          if (searchDto.trackingStatus?.length) {
+            queryBuilder = queryBuilder.andWhere(
+              'lesson_track.status IN (:...trackingStatuses)',
+              { trackingStatuses: searchDto.trackingStatus }
+            );
+          }
         } else if (isHasTrackFalse) {
           queryBuilder = queryBuilder.leftJoin(
             LessonTrack,

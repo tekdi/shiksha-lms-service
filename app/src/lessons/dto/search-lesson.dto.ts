@@ -6,6 +6,8 @@ import { IsArray, IsEnum, IsOptional, ValidateIf, IsNotEmpty } from "class-valid
 import { IsString } from "class-validator";
 import { Transform } from "class-transformer";
 import { HelperUtil } from "../../common/utils/helper.util";
+import { TrackingStatus } from "../../tracking/entities/course-track.entity";
+import { VALIDATION_MESSAGES } from "../../common/constants/response-messages.constant";
 
 
 export class SearchLessonDto {
@@ -67,6 +69,27 @@ categoryIds?: string[];
   return undefined;
 })
 hasTrack?: boolean;
+
+@ApiPropertyOptional({
+  description:
+    'Filter by one or more lesson tracking statuses (comma-separated or repeated; only applies when hasTrack=true). Returns lessons whose latest lesson_track status matches any of the given statuses.',
+  enum: TrackingStatus,
+  isArray: true,
+})
+@IsOptional()
+@Transform(({ obj, key }) => {
+  const values = HelperUtil.toStringArray(obj[key]);
+  // Accept "not started" / "not-started" as well as "not_started"
+  return Array.isArray(values)
+    ? values.map((v) => (typeof v === 'string' ? v.toLowerCase().replace(/[\s-]+/g, '_') : v))
+    : values;
+})
+@IsArray()
+@IsEnum(TrackingStatus, {
+  each: true,
+  message: VALIDATION_MESSAGES.COMMON.ENUM('Tracking status'),
+})
+trackingStatus?: TrackingStatus[];
 
 @ApiPropertyOptional({ description: 'User ID for tracking filter (Required if hasTrack is provided)' })
 @ValidateIf(o => o.hasTrack !== undefined)

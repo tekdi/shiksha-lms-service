@@ -59,14 +59,19 @@ export class UsersEnrolledCoursesDto {
   hasEnroll?: boolean;
 
   @ApiPropertyOptional({
-    description: 'Filter by course tracking status (only applies when hasEnroll=true)',
+    description:
+      'Filter by one or more course tracking statuses (comma-separated or repeated; only applies when hasEnroll=true). Returns courses matching any of the given statuses.',
     enum: TrackingStatus,
+    isArray: true,
   })
   @IsOptional()
+  @Transform(({ obj, key }) => HelperUtil.toStringArray(obj[key]))
+  @IsArray()
   @IsEnum(TrackingStatus, {
+    each: true,
     message: VALIDATION_MESSAGES.COMMON.ENUM('Tracking status'),
   })
-  trackingStatus?: TrackingStatus;
+  trackingStatus?: TrackingStatus[];
 
   @ApiPropertyOptional({ description: 'Filter by pathway ID' })
   @IsOptional()
@@ -122,6 +127,13 @@ export class UserEnrolledCourseDto extends Course {
       "The user's latest course tracking (only when hasEnroll=true; null if not started)",
   })
   courseTracking?: CourseTrack | null;
+
+  @ApiPropertyOptional({
+    enum: TrackingStatus,
+    description:
+      "The user's course tracking status from course_track (only when hasEnroll=true; not_started if there is no tracking record)",
+  })
+  trackingStatus?: TrackingStatus;
 
   @ApiPropertyOptional({
     type: UserEnrollment,
