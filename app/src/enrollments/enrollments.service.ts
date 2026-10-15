@@ -756,7 +756,7 @@ export class EnrollmentsService {
       qb.andWhere('enrollment.userId = :userId', { userId: filters.userId });
     }
 
-    if (filters?.hasEnroll === true && filters?.trackingStatus && filters?.userId) {
+    if (filters?.hasEnroll === true && filters?.trackingStatus?.length && filters?.userId) {
       this.applyTrackingStatusFilter(qb, filters.trackingStatus);
     }
 
@@ -783,17 +783,19 @@ export class EnrollmentsService {
     return [...new Set(enrollments.map((e) => e.courseId))];
   }
 
-  private applyTrackingStatusFilter(qb: any, status: TrackingStatus): void {
-    if (status === TrackingStatus.NOT_STARTED) {
+  private applyTrackingStatusFilter(qb: any, statuses: TrackingStatus[]): void {
+    const hasStatusMatch =
+      'EXISTS (SELECT 1 FROM "course_track" "ct" WHERE "ct"."courseId" = "course"."courseId" AND "ct"."userId" = :userId AND "ct"."tenantId" = :tenantId AND "ct"."organisationId" = :organisationId AND "ct"."status" IN (:...trackingStatuses))';
+    // A course without a course_track row also counts as not started
+    if (statuses.includes(TrackingStatus.NOT_STARTED)) {
       qb.andWhere(
-        '(NOT EXISTS (SELECT 1 FROM "course_track" "ct" WHERE "ct"."courseId" = "course"."courseId" AND "ct"."userId" = :userId AND "ct"."tenantId" = :tenantId AND "ct"."organisationId" = :organisationId) OR EXISTS (SELECT 1 FROM "course_track" "ct" WHERE "ct"."courseId" = "course"."courseId" AND "ct"."userId" = :userId AND "ct"."tenantId" = :tenantId AND "ct"."organisationId" = :organisationId AND "ct"."status" = :trackingStatus))',
-        { trackingStatus: status },
+        '(NOT EXISTS (SELECT 1 FROM "course_track" "ct" WHERE "ct"."courseId" = "course"."courseId" AND "ct"."userId" = :userId AND "ct"."tenantId" = :tenantId AND "ct"."organisationId" = :organisationId) OR ' +
+          hasStatusMatch +
+          ')',
+        { trackingStatuses: statuses },
       );
     } else {
-      qb.andWhere(
-        'EXISTS (SELECT 1 FROM "course_track" "ct" WHERE "ct"."courseId" = "course"."courseId" AND "ct"."userId" = :userId AND "ct"."tenantId" = :tenantId AND "ct"."organisationId" = :organisationId AND "ct"."status" = :trackingStatus)',
-        { trackingStatus: status },
-      );
+      qb.andWhere(hasStatusMatch, { trackingStatuses: statuses });
     }
   }
 
@@ -1118,6 +1120,9 @@ export class EnrollmentsService {
         daysAllocationCount: Number(progress?.daysAllocationCount ?? 0),
         completedModuleCount: Number(progress?.completedModuleCount ?? 0),
         courseTracking: progress?.courseTracking ?? null,
+        // No course_track row yet means the user has not started the course
+        trackingStatus:
+          progress?.courseTracking?.status ?? TrackingStatus.NOT_STARTED,
         enrollment: progress?.enrollment ?? null,
       };
     });
