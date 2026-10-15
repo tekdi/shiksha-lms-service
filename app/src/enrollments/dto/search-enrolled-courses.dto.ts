@@ -63,7 +63,6 @@ export class UsersEnrolledCoursesDto {
       'Filter by one or more course tracking statuses (comma-separated or repeated; only applies when hasEnroll=true). Returns courses matching any of the given statuses.',
     enum: TrackingStatus,
     isArray: true,
-    example: 'started,completed',
   })
   @IsOptional()
   @Transform(({ obj, key }) => HelperUtil.toStringArray(obj[key]))
