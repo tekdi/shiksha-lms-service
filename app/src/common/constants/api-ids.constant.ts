@@ -52,6 +52,7 @@ export const API_IDS = {
   DELETE_ENROLLMENT: 'api.enrollment.delete',
   GET_ENROLLED_COURSES: 'api.enrollment.courses',
   GET_DASHBOARD_BY_USER_ID: 'api.enrollment.dashboard.byuserid',
+  GET_COACH_PROGRESS_DASHBOARD: 'api.enrollment.dashboard.coachprogress',
 
 
   // Tracking APIs

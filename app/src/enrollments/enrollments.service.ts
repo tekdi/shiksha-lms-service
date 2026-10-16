@@ -49,6 +49,10 @@ import {
   DashboardByUserIdResponseDto,
   CategoryCountDto,
 } from './dto/dashboard-by-user-id.dto';
+import {
+  CoachProgressDashboardResponseDto,
+  PathwayCompletionDto,
+} from './dto/coach-progress-dashboard.dto';
 
 // Course metadata columns returned by users-courses (shared by the enrolled and not-enrolled queries)
 const USER_COURSE_META_COLUMNS = [
@@ -1458,6 +1462,159 @@ export class EnrollmentsService {
       mandatoryDueCount: mandatoryDueCount || 0,
       completedCoursesByCategory,
       completedStandaloneLessonsByCategory,
+    };
+  }
+
+  /**
+   * Get coach progress dashboard metrics (Admin App) across all coaches
+   * @param tenantId Tenant ID for data isolation
+   * @param organisationId Organization ID for data isolation
+   */
+  async getCoachProgressDashboard(
+    tenantId: string,
+    organisationId: string,
+  ): Promise<CoachProgressDashboardResponseDto> {
+    this.logger.log('Fetching coach progress dashboard metrics');
+
+    // 1. coachesAssigned: distinct users with a published enrollment in a non-archived course
+    const coachesAssignedQuery = this.userEnrollmentRepository
+      .createQueryBuilder('enrollment')
+      .innerJoin(Course, 'course', 'course.courseId = enrollment.courseId')
+      .select('COUNT(DISTINCT enrollment.userId)', 'count')
+      .where('enrollment.tenantId = :tenantId', { tenantId })
+      .andWhere('enrollment.organisationId = :organisationId', {
+        organisationId,
+      })
+      .andWhere('enrollment.status = :enrollmentStatus', {
+        enrollmentStatus: EnrollmentStatus.PUBLISHED,
+      })
+      .andWhere('course.status != :archivedCourseStatus', {
+        archivedCourseStatus: CourseStatus.ARCHIVED,
+      })
+      .getRawOne<{ count: string }>();
+
+    // 2. coursesCompleted: course_track is unique per (userId, courseId)
+    const coursesCompletedQuery = this.courseTrackRepository
+      .createQueryBuilder('courseTrack')
+      .innerJoin(Course, 'course', 'course.courseId = courseTrack.courseId')
+      .where('courseTrack.tenantId = :tenantId', { tenantId })
+      .andWhere('courseTrack.organisationId = :organisationId', {
+        organisationId,
+      })
+      .andWhere('courseTrack.status = :completedStatus', {
+        completedStatus: TrackingStatus.COMPLETED,
+      })
+      .andWhere('course.status != :archivedCourseStatus', {
+        archivedCourseStatus: CourseStatus.ARCHIVED,
+      })
+      .getCount();
+
+    // 3. modulesCompleted: one per (userId, moduleId) for non-archived modules
+    const modulesCompletedQuery = this.moduleTrackRepository
+      .createQueryBuilder('moduleTrack')
+      .innerJoin(
+        CourseModule,
+        'module',
+        'module.moduleId = moduleTrack.moduleId',
+      )
+      .select(
+        "COUNT(DISTINCT CONCAT(moduleTrack.userId, ':', moduleTrack.moduleId))",
+        'count',
+      )
+      .where('moduleTrack.tenantId = :tenantId', { tenantId })
+      .andWhere('moduleTrack.organisationId = :organisationId', {
+        organisationId,
+      })
+      .andWhere('moduleTrack.status = :completedStatus', {
+        completedStatus: ModuleTrackStatus.COMPLETED,
+      })
+      .andWhere('module.status != :archivedModuleStatus', {
+        archivedModuleStatus: ModuleStatus.ARCHIVED,
+      })
+      .getRawOne<{ count: string }>();
+
+    // Completed lesson tracks (course and standalone lessons); a lesson can have several
+    // attempts, so completions are counted once per (userId, lessonId)
+    const completedLessonsQuery = () =>
+      this.lessonTrackRepository
+        .createQueryBuilder('lessonTrack')
+        .innerJoin(Lesson, 'lesson', 'lesson.lessonId = lessonTrack.lessonId')
+        .where('lessonTrack.tenantId = :tenantId', { tenantId })
+        .andWhere('lessonTrack.organisationId = :organisationId', {
+          organisationId,
+        })
+        .andWhere('lessonTrack.status = :completedStatus', {
+          completedStatus: TrackingStatus.COMPLETED,
+        })
+        .andWhere('lesson.status != :archivedLessonStatus', {
+          archivedLessonStatus: LessonStatus.ARCHIVED,
+        });
+    const completedLessonKey =
+      "COUNT(DISTINCT CONCAT(lessonTrack.userId, ':', lessonTrack.lessonId))";
+
+    // 4. contentCompleted
+    const contentCompletedQuery = completedLessonsQuery()
+      .select(completedLessonKey, 'count')
+      .getRawOne<{ count: string }>();
+
+    // 5. completedByPathway: lessons carry their own categoryIds; legacy lessons without
+    // categories fall back to their course's categoryIds. UNNEST runs in a subquery since
+    // set-returning functions are not allowed in GROUP BY.
+    const completedLessonCategories = completedLessonsQuery()
+      .leftJoin(Course, 'course', 'course.courseId = lesson.courseId')
+      .select('lessonTrack.userId', 'userId')
+      .addSelect('lessonTrack.lessonId', 'lessonId')
+      .addSelect(
+        'UNNEST(COALESCE(lesson.categoryIds, course.categoryIds))',
+        'categoryId',
+      );
+    const completedByPathwayQuery = this.dataSource
+      .createQueryBuilder()
+      .select('"completed"."categoryId"', 'categoryId')
+      .addSelect(
+        'COUNT(DISTINCT CONCAT("completed"."userId", \':\', "completed"."lessonId"))',
+        'count',
+      )
+      .from(`(${completedLessonCategories.getQuery()})`, 'completed')
+      .setParameters(completedLessonCategories.getParameters())
+      .groupBy('"completed"."categoryId"')
+      .getRawMany<{ categoryId: string; count: string }>();
+
+    const [
+      coachesAssignedRaw,
+      coursesCompleted,
+      modulesCompletedRaw,
+      contentCompletedRaw,
+      completedByPathwayRaw,
+    ] = await Promise.all([
+      coachesAssignedQuery,
+      coursesCompletedQuery,
+      modulesCompletedQuery,
+      contentCompletedQuery,
+      completedByPathwayQuery,
+    ]);
+
+    const contentCompleted = Number(contentCompletedRaw?.count || 0);
+
+    const completedByPathway: PathwayCompletionDto[] = completedByPathwayRaw
+      .filter((row) => row.categoryId)
+      .map((row) => {
+        const completedCount = Number(row.count || 0);
+        return {
+          categoryId: row.categoryId,
+          completedCount,
+          percentage: contentCompleted
+            ? Math.round((completedCount / contentCompleted) * 10000) / 100
+            : 0,
+        };
+      });
+
+    return {
+      coachesAssigned: Number(coachesAssignedRaw?.count || 0),
+      coursesCompleted: coursesCompleted || 0,
+      modulesCompleted: Number(modulesCompletedRaw?.count || 0),
+      contentCompleted,
+      completedByPathway,
     };
   }
 }

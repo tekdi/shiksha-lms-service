@@ -31,6 +31,7 @@ import { ApiId } from '../common/decorators/api-id.decorator';
 import { TenantOrg } from '../common/decorators/tenant-org.decorator';
 import { UsersEnrolledCoursesDto, UsersEnrolledCoursesResponseDto } from './dto/search-enrolled-courses.dto';
 import { DashboardByUserIdDto, DashboardByUserIdResponseDto } from './dto/dashboard-by-user-id.dto';
+import { CoachProgressDashboardResponseDto } from './dto/coach-progress-dashboard.dto';
 
 @ApiTags('Enrollments')
 @ApiBearerAuth()
@@ -246,6 +247,27 @@ export class EnrollmentsController {
     const userId = userIdParam || query.userId;
     return this.enrollmentsService.dashboardByUserId(
       userId,
+      tenantOrg.tenantId,
+      tenantOrg.organisationId,
+    );
+  }
+
+  @Get('coachProgressDashboard')
+  @ApiId(API_IDS.GET_COACH_PROGRESS_DASHBOARD)
+  @ApiOperation({
+    summary: 'Get coach progress dashboard metrics',
+    description:
+      'Returns coaches assigned to courses, overall completed course/module/content counts, and completed content grouped by Development Pathway (category ID).',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Coach progress dashboard metrics retrieved successfully',
+    type: CoachProgressDashboardResponseDto,
+  })
+  async getCoachProgressDashboard(
+    @TenantOrg() tenantOrg: { tenantId: string; organisationId: string },
+  ) {
+    return this.enrollmentsService.getCoachProgressDashboard(
       tenantOrg.tenantId,
       tenantOrg.organisationId,
     );
