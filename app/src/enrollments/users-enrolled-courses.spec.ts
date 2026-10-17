@@ -97,6 +97,7 @@ describe('EnrollmentsService.usersEnrolledCourses - hasEnroll', () => {
       } as any,
       {} as any, // configService
       {} as any, // lessonRepository
+      {} as any, // userCertificateRepository
       {} as any, // dataSource
       {} as any, // cacheConfig
     );

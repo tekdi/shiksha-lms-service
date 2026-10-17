@@ -11,6 +11,7 @@ import { ModuleTrack } from '../tracking/entities/module-track.entity';
 import { LessonTrack } from '../tracking/entities/lesson-track.entity';
 import { CacheModule } from '../cache/cache.module';
 import { Lesson } from '../lessons/entities/lesson.entity';
+import { UserCourseCertificate } from '../certificate/entities/user_certificates';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { Lesson } from '../lessons/entities/lesson.entity';
       ModuleTrack,
       LessonTrack,
       Lesson,
+      UserCourseCertificate,
     ]),
     ConfigModule,
     CacheModule,
