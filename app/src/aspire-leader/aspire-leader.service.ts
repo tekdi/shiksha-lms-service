@@ -171,6 +171,10 @@ export class AspireLeaderService {
         (reportDto.orderBy?.toUpperCase() as 'ASC' | 'DESC') || 'DESC',
       )
       .addOrderBy('courseTrack.lastAccessedDate', 'DESC') // Secondary sort for consistent ordering
+      // Unique tie-breaker: without it, rows tied on the sort columns (e.g. 0
+      // completed lessons, never accessed) come back in a different order per
+      // page, so offset pagination repeats some users and skips others.
+      .addOrderBy('courseTrack.courseTrackId', 'ASC')
       .skip(reportDto.offset || 0)
       .take(reportDto.limit || 10)
       .getMany();
@@ -350,6 +354,7 @@ export class AspireLeaderService {
         (reportDto.orderBy?.toUpperCase() as 'ASC' | 'DESC') || 'DESC',
       )
       .addOrderBy('lessonTrack.updatedAt', 'DESC') // Tertiary sort by last update time
+      .addOrderBy('lessonTrack.lessonTrackId', 'ASC') // Unique tie-breaker for stable pagination
       .skip(reportDto.offset || 0)
       .take(reportDto.limit || 10)
       .getMany();
