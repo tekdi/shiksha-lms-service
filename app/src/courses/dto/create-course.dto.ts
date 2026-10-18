@@ -136,10 +136,10 @@ export class CreateCourseDto {
 
   @ApiPropertyOptional({ 
     description: VALIDATION_MESSAGES.COURSE.TEMPLATE_ID,
-    example: '123e4567-e89b-12d3-a456-426614174000'
+    example: 'cmv7rfjir000ips0pvhya6ikr'
   })
   @IsOptional()
-  @IsUUID('4', { message: VALIDATION_MESSAGES.COMMON.UUID('Template ID') })
+  @IsString({ message: VALIDATION_MESSAGES.COMMON.STRING('Template ID') })
   templateId?: string;
 
   @ApiPropertyOptional({ 

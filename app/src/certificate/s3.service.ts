@@ -32,10 +32,12 @@ export class S3Service {
         accessKeyId:
           this.configService.get<string>('AWS_ACCESS_KEY_ID') ||
           this.configService.get<string>('CLOUD_STORAGE_ACCOUNTNAME') ||
+          this.configService.get<string>('CLOUD_STORAGE_ACCESS_KEY_ID') ||
           '',
         secretAccessKey:
           this.configService.get<string>('AWS_SECRET_ACCESS_KEY') ||
           this.configService.get<string>('CLOUD_STORAGE_SECRET') ||
+          this.configService.get<string>('CLOUD_STORAGE_SECRET_ACCESS_KEY') ||
           '',
       },
     });
@@ -44,6 +46,7 @@ export class S3Service {
     this.bucket =
       this.configService.get<string>('AWS_BUCKET') ||
       this.configService.get<string>('CLOUD_STORAGE_BUCKETNAME') ||
+      this.configService.get<string>('CLOUD_STORAGE_BUCKET_NAME') ||
       '';
   }
 
