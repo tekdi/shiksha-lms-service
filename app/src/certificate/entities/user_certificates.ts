@@ -58,4 +58,7 @@ export class UserCourseCertificate {
 
   @Column({ type: 'text', nullable: true, name: 'certificateurl' })
   certificateUrl: string | null;
+
+  @Column({ type: 'text', nullable: true, name: 'pdfurl' })
+  pdfUrl: string | null;
 }

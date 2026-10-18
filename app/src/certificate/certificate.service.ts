@@ -21,6 +21,15 @@ import { GetUserCertificatesDto } from './dto/get-user-certificates-dto';
 import { RegenerateCertificatesDto } from './dto/regenerate-certificates-dto';
 import { S3Service } from './s3.service';
 import { TrackingService } from '../tracking/tracking.service';
+import { Course } from '../courses/entities/course.entity';
+import {
+  CourseTrack,
+  TrackingStatus,
+} from '../tracking/entities/course-track.entity';
+import {
+  CourseCertificatePdfDto,
+  CoursePdfTemplateSource,
+} from './dto/course-certificate-pdf-dto';
 
 @Injectable()
 export class CertificateService implements OnModuleInit, OnModuleDestroy {
@@ -225,11 +234,16 @@ export class CertificateService implements OnModuleInit, OnModuleDestroy {
       // Decode the payload (second part of JWT)
       const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString());
 
-      // Try different possible user ID fields (sub is the standard JWT field for user ID)
+      // Try different possible user ID fields (sub is the standard JWT field for user ID;
+      // the user service nests the numeric id under data.id)
       const userId =
-        payload?.sub || payload?.id || payload?.userId || payload?.user_id;
+        payload?.sub ||
+        payload?.id ||
+        payload?.userId ||
+        payload?.user_id ||
+        payload?.data?.id;
 
-      return userId || null;
+      return userId ? String(userId) : null;
     } catch (error) {
       this.loggerService.error(
         'Error extracting user ID from token:',
@@ -237,6 +251,45 @@ export class CertificateService implements OnModuleInit, OnModuleDestroy {
       );
       return null;
     }
+  }
+
+  /** Credential issue request for one learner and course (shared by every issue path). */
+  private buildCourseCredentialPayload(
+    issueCredential: any,
+    learnerDid: string,
+    issuedOn: string,
+  ) {
+    return {
+      credential: {
+        '@context': [
+          'https://www.w3.org/2018/credentials/v1',
+          this.configService.get('VERIFICATION_SCHEMA_URL'),
+        ],
+        type: [
+          'VerifiableCredential',
+          this.configService.get('VERIFICATION_SCHEMA_NAME'),
+        ],
+        issuer: this.configService.get('CERTIFICATE_ISSUER_DID'),
+        issuanceDate: issueCredential.issuanceDate,
+        expirationDate: issueCredential.expirationDate,
+        credentialSubject: {
+          id: learnerDid,
+          type: this.configService.get('VERIFICATION_SCHEMA_NAME'),
+          firstName: issueCredential.firstName,
+          middleName: '',
+          lastName: issueCredential.lastName ?? '',
+          userId: issueCredential.userId,
+          courseId: issueCredential.courseId,
+          courseName: issueCredential.courseName,
+          issuedOn,
+          // Generate a unique certificate identifier
+          certificateId: randomUUID(),
+        },
+      },
+      credentialSchemaId: this.configService.get('SCHEMA_ID'),
+      credentialSchemaVersion: '1.0.0',
+      tags: [],
+    };
   }
 
   async generateDid(userId: string, res: Response, request: any) {
@@ -552,37 +605,11 @@ export class CertificateService implements OnModuleInit, OnModuleDestroy {
         ? `${baseUrl}credentials/issue`
         : `${baseUrl}/credentials/issue`;
 
-      const credetialObj = {
-        credential: {
-          '@context': [
-            'https://www.w3.org/2018/credentials/v1',
-            this.configService.get('VERIFICATION_SCHEMA_URL'),
-          ],
-          type: [
-            'VerifiableCredential',
-            this.configService.get('VERIFICATION_SCHEMA_NAME'),
-          ],
-          issuer: this.configService.get('CERTIFICATE_ISSUER_DID'),
-          issuanceDate: issueCredential.issuanceDate,
-          expirationDate: issueCredential.expirationDate,
-          credentialSubject: {
-            id: learnerDid,
-            type: this.configService.get('VERIFICATION_SCHEMA_NAME'),
-            firstName: issueCredential.firstName,
-            middleName: '',
-            lastName: issueCredential.lastName ?? '',
-            userId: issueCredential.userId,
-            courseId: issueCredential.courseId,
-            courseName: issueCredential.courseName,
-            issuedOn: issueCredential.issuedOn || formattedIssuanceDate,
-            // Generate a unique certificate identifier
-            certificateId: randomUUID(),
-          },
-        },
-        credentialSchemaId: this.configService.get('SCHEMA_ID'),
-        credentialSchemaVersion: '1.0.0',
-        tags: [],
-      };
+      const credetialObj = this.buildCourseCredentialPayload(
+        issueCredential,
+        learnerDid,
+        issueCredential.issuedOn || formattedIssuanceDate,
+      );
       const issueResponse = await axios.post(url, credetialObj, {
         headers: {
           'Content-Type': 'application/json',
@@ -717,36 +744,11 @@ export class CertificateService implements OnModuleInit, OnModuleDestroy {
             );
 
             // Generate a new credential for this specific template type
-            const templateCredentialObj = {
-              credential: {
-                '@context': [
-                  'https://www.w3.org/2018/credentials/v1',
-                  this.configService.get('VERIFICATION_SCHEMA_URL'),
-                ],
-                type: [
-                  'VerifiableCredential',
-                  this.configService.get('VERIFICATION_SCHEMA_NAME'),
-                ],
-                issuer: this.configService.get('CERTIFICATE_ISSUER_DID'),
-                issuanceDate: issueCredential.issuanceDate,
-                expirationDate: issueCredential.expirationDate,
-                credentialSubject: {
-                  id: learnerDid,
-                  type: this.configService.get('VERIFICATION_SCHEMA_NAME'),
-                  firstName: issueCredential.firstName,
-                  middleName: '',
-                  lastName: issueCredential.lastName ?? '',
-                  userId: issueCredential.userId,
-                  courseId: issueCredential.courseId,
-                  courseName: issueCredential.courseName,
-                  issuedOn: issueCredential.issuedOn || formattedIssuanceDate,
-                  certificateId: randomUUID(),
-                },
-              },
-              credentialSchemaId: this.configService.get('SCHEMA_ID'),
-              credentialSchemaVersion: '1.0.0',
-              tags: [],
-            };
+            const templateCredentialObj = this.buildCourseCredentialPayload(
+              issueCredential,
+              learnerDid,
+              issueCredential.issuedOn || formattedIssuanceDate,
+            );
 
             // Call external API to get a unique credential for this template type
             this.loggerService.log(
@@ -774,8 +776,11 @@ export class CertificateService implements OnModuleInit, OnModuleDestroy {
               `Generated credential ID: ${templateIssueResponse.data.credential.id} for type: ${template.certificateType} (UPDATE)`,
             );
 
+            // The stored PDF belongs to the replaced credential
+            const oldPdfUrl = existingCertificate.pdfUrl;
             existingCertificate.certificateId =
               templateIssueResponse.data.credential.id; // Use the new credential ID
+            existingCertificate.pdfUrl = null;
             existingCertificate.status = 'issued';
             existingCertificate.issuedOn = issuedOnDbDate;
             existingCertificate.updatedOn = new Date();
@@ -785,6 +790,7 @@ export class CertificateService implements OnModuleInit, OnModuleDestroy {
             await this.userCourseCertificateRepository.save(
               existingCertificate,
             );
+            await this.deleteStoredPdf(oldPdfUrl);
 
             // Upload certificate image to S3 for all certificate types; persist URL on certificateUrl
             // Delete old certificate image from S3 if it exists
@@ -880,36 +886,11 @@ export class CertificateService implements OnModuleInit, OnModuleDestroy {
             }
 
             // Generate a new credential for this specific template type
-            const templateCredentialObj = {
-              credential: {
-                '@context': [
-                  'https://www.w3.org/2018/credentials/v1',
-                  this.configService.get('VERIFICATION_SCHEMA_URL'),
-                ],
-                type: [
-                  'VerifiableCredential',
-                  this.configService.get('VERIFICATION_SCHEMA_NAME'),
-                ],
-                issuer: this.configService.get('CERTIFICATE_ISSUER_DID'),
-                issuanceDate: issueCredential.issuanceDate,
-                expirationDate: issueCredential.expirationDate,
-                credentialSubject: {
-                  id: learnerDid,
-                  type: this.configService.get('VERIFICATION_SCHEMA_NAME'),
-                  firstName: issueCredential.firstName,
-                  middleName: '',
-                  lastName: issueCredential.lastName ?? '',
-                  userId: issueCredential.userId,
-                  courseId: issueCredential.courseId,
-                  courseName: issueCredential.courseName,
-                  issuedOn: issueCredential.issuedOn || formattedIssuanceDate,
-                  certificateId: randomUUID(),
-                },
-              },
-              credentialSchemaId: this.configService.get('SCHEMA_ID'),
-              credentialSchemaVersion: '1.0.0',
-              tags: [],
-            };
+            const templateCredentialObj = this.buildCourseCredentialPayload(
+              issueCredential,
+              learnerDid,
+              issueCredential.issuedOn || formattedIssuanceDate,
+            );
 
             // Call external API to get a unique credential for this template type
             this.loggerService.log(
@@ -1274,15 +1255,19 @@ export class CertificateService implements OnModuleInit, OnModuleDestroy {
           );
 
           const oldCertificateUrl = existingCertificate.certificateUrl;
+          // The stored PDF belongs to the replaced credential
+          const oldPdfUrl = existingCertificate.pdfUrl;
 
           existingCertificate.certificateId =
             templateIssueResponse.data.credential.id;
+          existingCertificate.pdfUrl = null;
           existingCertificate.status = 'issued';
           existingCertificate.updatedOn = new Date();
           existingCertificate.updatedBy =
             this.extractUserIdFromToken(request) || 'system-user';
 
           await this.userCourseCertificateRepository.save(existingCertificate);
+          await this.deleteStoredPdf(oldPdfUrl);
 
           // Upload certificate image to S3 for all certificate types; persist URL on certificateUrl
           if (oldCertificateUrl) {
@@ -1539,47 +1524,18 @@ export class CertificateService implements OnModuleInit, OnModuleDestroy {
     const apiId = 'api.get.Certificate';
 
     try {
-      let url =
-        this.configService.get('RC_CREDENTIALS_API_BASE_URL') +
-        '/credentials/' +
-        credentialId;
-      const response = await axios.get(url, {
-        headers: {
-          templateid: templateId,
-          Accept: 'text/html',
-        },
-      });
-      response.data = response?.data?.replace('**Id**', credentialId);
+      const pdfBuffer = await this.renderCertificatePdfBuffer(
+        credentialId,
+        templateId,
+      );
 
-      const browser = await this.getPooledBrowser();
-      const page = await browser.newPage();
-      try {
-        await page.setContent(response.data, { waitUntil: 'load' });
-
-        const templateType =
-          await this.getCertificateTypeByTemplateId(templateId);
-        const isPaidAcknowledgement =
-          templateType?.toLowerCase() === 'paid_acknowledgement';
-
-        const rawPdf = await page.pdf({
-          width: isPaidAcknowledgement ? '785px' : '1100px',
-          height: isPaidAcknowledgement ? '987px' : '900px',
-          printBackground: true,
-        });
-        const pdfBuffer = Buffer.isBuffer(rawPdf)
-          ? rawPdf
-          : Buffer.from(rawPdf as Uint8Array);
-
-        res.setHeader('Content-Type', 'application/pdf');
-        res.setHeader(
-          'Content-Disposition',
-          'attachment; filename="generated.pdf"',
-        );
-        res.setHeader('Content-Length', String(pdfBuffer.length));
-        res.end(pdfBuffer);
-      } finally {
-        await page.close().catch(() => undefined);
-      }
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader(
+        'Content-Disposition',
+        'attachment; filename="generated.pdf"',
+      );
+      res.setHeader('Content-Length', String(pdfBuffer.length));
+      res.end(pdfBuffer);
     } catch (error) {
       let errMsg: string;
       if (axios.isAxiosError(error)) {
@@ -1604,6 +1560,460 @@ export class CertificateService implements OnModuleInit, OnModuleDestroy {
         );
       }
     }
+  }
+
+  /**
+   * Render a credential's certificate HTML to a PDF buffer.
+   * Page size follows the template type (paid_acknowledgement is portrait).
+   */
+  private async renderCertificatePdfBuffer(
+    credentialId: string,
+    templateId: string,
+  ): Promise<Buffer> {
+    const url =
+      this.configService.get('RC_CREDENTIALS_API_BASE_URL') +
+      '/credentials/' +
+      credentialId;
+    const response = await axios.get(url, {
+      headers: {
+        templateid: templateId,
+        Accept: 'text/html',
+      },
+    });
+    if (!response?.data) {
+      throw new Error(`No certificate HTML for credentialId=${credentialId}`);
+    }
+    const html = response.data.replace('**Id**', credentialId);
+
+    const browser = await this.getPooledBrowser();
+    const page = await browser.newPage();
+    try {
+      await page.setContent(html, { waitUntil: 'load' });
+
+      const templateType =
+        await this.getCertificateTypeByTemplateId(templateId);
+      const isPaidAcknowledgement =
+        templateType?.toLowerCase() === 'paid_acknowledgement';
+
+      const rawPdf = await page.pdf({
+        width: isPaidAcknowledgement ? '785px' : '1100px',
+        height: isPaidAcknowledgement ? '987px' : '900px',
+        printBackground: true,
+      });
+      return Buffer.isBuffer(rawPdf)
+        ? rawPdf
+        : Buffer.from(rawPdf as Uint8Array);
+    } finally {
+      await page.close().catch(() => undefined);
+    }
+  }
+
+  /** Best-effort removal of a stored certificate PDF that no longer matches its credential. */
+  private async deleteStoredPdf(pdfUrl: string | null): Promise<void> {
+    const key = pdfUrl ? this.s3Service.extractKeyFromUrl(pdfUrl) : null;
+    if (!key) {
+      return;
+    }
+    try {
+      await this.s3Service.deleteFile(key);
+    } catch (error) {
+      this.loggerService.warn(
+        `Failed to delete old certificate PDF from S3 (${key}): ${error.message}`,
+      );
+    }
+  }
+
+  /**
+   * POST /certificate/course-pdf
+   * Issues (or reuses) the caller's course certificate, renders it as a PDF, stores it in
+   * S3 and saves the URL on user_certificates.pdfurl. Idempotent: an already stored PDF is
+   * returned without reissuing, rerendering or uploading. Calls for the same
+   * tenant/user/course/type are serialised with a Postgres advisory lock.
+   */
+  async generateCoursePdfCertificate(
+    dto: CourseCertificatePdfDto,
+    request: any,
+    response: Response,
+  ) {
+    const apiId = 'api.certificate.coursePdf';
+    const fail = (message: string, error: string, status: HttpStatus) =>
+      APIResponse.error(response, apiId, message, error, status);
+
+    const tenantId: string | undefined = request.headers?.['tenantid'];
+    const organisationId: string | undefined =
+      request.headers?.['organisationid'];
+    if (!tenantId) {
+      return fail(
+        'tenantid header is required',
+        'BAD_REQUEST',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    // The certificate owner always comes from the caller's token; a body userId must match it
+    const userId = this.extractUserIdFromToken(request);
+    if (!userId) {
+      return fail(
+        'Unable to identify the user from the Authorization token',
+        'UNAUTHORIZED',
+        HttpStatus.UNAUTHORIZED,
+      );
+    }
+    if (dto.userId && dto.userId !== userId) {
+      return fail(
+        'You can only generate your own certificate',
+        'FORBIDDEN',
+        HttpStatus.FORBIDDEN,
+      );
+    }
+
+    const courseId = dto.courseId;
+    const scope = { tenantId, ...(organisationId && { organisationId }) };
+    const manager = this.userCourseCertificateRepository.manager;
+
+    let course: Course | null;
+    let courseTrack: CourseTrack | null;
+    try {
+      course = await manager.findOne(Course, {
+        where: { courseId, ...scope },
+        select: ['courseId', 'title', 'templateId'],
+      });
+      courseTrack = course
+        ? await manager.findOne(CourseTrack, {
+            where: { courseId, userId, ...scope },
+            select: ['courseTrackId', 'status'],
+          })
+        : null;
+    } catch (error) {
+      this.loggerService.error(
+        `[COURSE_PDF] Course lookup failed for course ${courseId}: ${error.message}`,
+      );
+      return fail(
+        'Failed to load course details',
+        'INTERNAL_SERVER_ERROR',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+    if (!course) {
+      return fail('Course not found', 'NOT_FOUND', HttpStatus.NOT_FOUND);
+    }
+    if (courseTrack?.status !== TrackingStatus.COMPLETED) {
+      return fail(
+        'Course is not completed by the user',
+        'FORBIDDEN',
+        HttpStatus.FORBIDDEN,
+      );
+    }
+
+    let templateId: string | undefined;
+    let certificateType: string;
+    if (dto.templateSource === CoursePdfTemplateSource.COURSE_TEMPLATE) {
+      // Legacy mapping: course_templates row of the requested certificate type
+      certificateType = (dto.certificateType || 'certificate').toLowerCase();
+      const templates = await this.getAllTemplatesByContextId(courseId);
+      templateId = templates.find(
+        (t) => t.certificateType?.toLowerCase() === certificateType,
+      )?.templateId;
+    } else {
+      // Default: template set on the course itself (courses.templateId)
+      templateId = course.templateId;
+      certificateType = (
+        (templateId &&
+          (await this.getCertificateTypeByTemplateId(templateId))) ||
+        'certificate'
+      ).toLowerCase();
+    }
+    if (!templateId) {
+      return fail(
+        'No certificate template is configured for this course',
+        'NOT_FOUND',
+        HttpStatus.NOT_FOUND,
+      );
+    }
+
+    const lockKey = `certificate-pdf:${tenantId}:${userId}:${courseId}:${certificateType}`;
+    const queryRunner = manager.connection.createQueryRunner();
+    try {
+      await queryRunner.connect();
+      const [{ locked }] = await queryRunner.query(
+        'SELECT pg_try_advisory_lock(hashtext($1)) AS locked',
+        [lockKey],
+      );
+      if (!locked) {
+        return fail(
+          'Certificate PDF generation is already in progress. Please retry shortly.',
+          'CONFLICT',
+          HttpStatus.CONFLICT,
+        );
+      }
+      try {
+        return await this.issueAndStoreCoursePdf(
+          {
+            tenantId,
+            organisationId,
+            userId,
+            courseId,
+            courseName: course.title,
+            certificateType,
+            templateId,
+          },
+          request,
+          response,
+          fail,
+        );
+      } finally {
+        await queryRunner
+          .query('SELECT pg_advisory_unlock(hashtext($1))', [lockKey])
+          .catch(() => undefined);
+      }
+    } catch (error) {
+      this.loggerService.error(
+        `[COURSE_PDF] Unexpected error for user ${userId}, course ${courseId}: ${error.message}`,
+      );
+      return fail(
+        'Error while generating certificate PDF',
+        'INTERNAL_SERVER_ERROR',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    } finally {
+      await queryRunner.release();
+    }
+  }
+
+  /** Runs under the advisory lock taken by generateCoursePdfCertificate. */
+  private async issueAndStoreCoursePdf(
+    ctx: {
+      tenantId: string;
+      organisationId?: string;
+      userId: string;
+      courseId: string;
+      courseName: string;
+      certificateType: string;
+      templateId: string;
+    },
+    request: any,
+    response: Response,
+    fail: (message: string, error: string, status: HttpStatus) => unknown,
+  ) {
+    const apiId = 'api.certificate.coursePdf';
+    const logContext = `user ${ctx.userId}, course ${ctx.courseId}, type ${ctx.certificateType}`;
+
+    let certificate: UserCourseCertificate | null;
+    try {
+      certificate = await this.userCourseCertificateRepository.findOne({
+        where: {
+          userId: ctx.userId,
+          contextId: ctx.courseId,
+          tenantId: ctx.tenantId,
+          certificate_type: ctx.certificateType,
+        },
+        order: { updatedOn: 'DESC' },
+      });
+    } catch (error) {
+      this.loggerService.error(
+        `[COURSE_PDF] Certificate lookup failed for ${logContext}: ${error.message}`,
+      );
+      return fail(
+        'Failed to load certificate record',
+        'INTERNAL_SERVER_ERROR',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+
+    if (certificate?.pdfUrl) {
+      return APIResponse.success(
+        response,
+        apiId,
+        { pdfUrl: certificate.pdfUrl },
+        HttpStatus.OK,
+        'Certificate PDF already generated',
+      );
+    }
+
+    // Reuse the credential already issued for this course; issue one only when none exists
+    if (!certificate) {
+      let credentialId: string;
+      try {
+        const userDetails = await this.fetchUserDetailsFromUserService(
+          [ctx.userId],
+          request,
+        );
+        if (!userDetails?.firstName) {
+          return fail(
+            'Unable to fetch user details for the certificate',
+            'BAD_GATEWAY',
+            HttpStatus.BAD_GATEWAY,
+          );
+        }
+        const learnerDid = await this.generateDidByUserId(ctx.userId);
+        const payload = this.buildCourseCredentialPayload(
+          {
+            firstName: userDetails.firstName,
+            lastName: userDetails.lastName,
+            userId: ctx.userId,
+            courseId: ctx.courseId,
+            courseName: ctx.courseName,
+          },
+          learnerDid,
+          new Date().toLocaleDateString('en-US', {
+            month: 'long',
+            year: 'numeric',
+          }),
+        );
+        const baseUrl = this.configService.get('RC_CREDENTIALS_API_BASE_URL');
+        const issueUrl = baseUrl?.endsWith('/')
+          ? `${baseUrl}credentials/issue`
+          : `${baseUrl}/credentials/issue`;
+        const issueResponse = await axios.post(issueUrl, payload, {
+          headers: { 'Content-Type': 'application/json' },
+          timeout: 60000,
+        });
+        credentialId = issueResponse.data?.credential?.id;
+        if (!credentialId) {
+          throw new Error('credential id missing in issue response');
+        }
+      } catch (error) {
+        this.loggerService.error(
+          `[COURSE_PDF] Credential issue failed for ${logContext}: ${error.message}`,
+        );
+        return fail(
+          'Failed to issue certificate credential',
+          'BAD_GATEWAY',
+          HttpStatus.BAD_GATEWAY,
+        );
+      }
+
+      try {
+        const now = new Date();
+        certificate = await this.userCourseCertificateRepository.save(
+          this.userCourseCertificateRepository.create({
+            usercertificateId: randomUUID(),
+            userId: ctx.userId,
+            contextId: ctx.courseId,
+            contextType: 'courses',
+            tenantId: ctx.tenantId,
+            certificateId: credentialId,
+            certificate_type: ctx.certificateType,
+            status: 'issued',
+            issuedOn: now,
+            createdBy: ctx.userId,
+            updatedBy: ctx.userId,
+            createdOn: now,
+            updatedOn: now,
+          }),
+        );
+      } catch (error) {
+        this.loggerService.error(
+          `[COURSE_PDF] Saving issued credential ${credentialId} failed for ${logContext}: ${error.message}`,
+        );
+        return fail(
+          'Failed to save certificate record',
+          'INTERNAL_SERVER_ERROR',
+          HttpStatus.INTERNAL_SERVER_ERROR,
+        );
+      }
+
+      // Keep course tracking in sync so the completion cron does not issue again
+      await this.trackingService
+        .updateCourseTracking(
+          ctx.courseId,
+          ctx.userId,
+          { certificateIssued: true },
+          ctx.tenantId,
+          ctx.organisationId,
+        )
+        .catch((error) =>
+          this.loggerService.warn(
+            `[COURSE_PDF] Could not mark certificateIssued for ${logContext}: ${error.message}`,
+          ),
+        );
+    }
+    let pdfBuffer: Buffer;
+    try {
+      pdfBuffer = await this.renderCertificatePdfBuffer(
+        certificate.certificateId,
+        ctx.templateId,
+      );
+    } catch (error) {
+      const rcResponse = axios.isAxiosError(error) ? error.response : undefined;
+      const rcStatus = rcResponse?.status;
+      this.loggerService.error(
+        `[COURSE_PDF] PDF render failed for ${logContext}, templateId ${
+          ctx.templateId
+        }: ${(error as Error)?.message}${
+          rcResponse
+            ? ` | credentials service ${rcStatus}: ${JSON.stringify(
+                rcResponse.data,
+              )}`
+            : ''
+        }`,
+      );
+      // The credentials service answers 400/404 when it does not know the course's template
+      if (
+        rcStatus === HttpStatus.BAD_REQUEST ||
+        rcStatus === HttpStatus.NOT_FOUND
+      ) {
+        return fail(
+          `Certificate template ${ctx.templateId} was not found in the credentials service`,
+          'UNPROCESSABLE_ENTITY',
+          HttpStatus.UNPROCESSABLE_ENTITY,
+        );
+      }
+      return fail(
+        'Failed to render certificate PDF',
+        'BAD_GATEWAY',
+        HttpStatus.BAD_GATEWAY,
+      );
+    }
+
+    let pdfUrl: string;
+    try {
+      const prefix = (
+        process.env.AWS_STORAGE_CERTIFICATE_PREFIX || 'certificates/'
+      )
+        .replace(/^\/+/, '')
+        .replace(/\/+$/, '');
+      // Deterministic key: a retry after a failed DB save overwrites instead of orphaning files
+      const fileName = `certificate-${ctx.userId}-${ctx.courseId}-${certificate.certificateId}.pdf`;
+      pdfUrl = await this.s3Service.uploadFile(
+        pdfBuffer,
+        `${prefix}/${fileName.replace(/[^\w.-]/g, '_')}`,
+        'application/pdf',
+      );
+    } catch (error) {
+      this.loggerService.error(
+        `[COURSE_PDF] S3 upload failed for ${logContext}: ${error.message}`,
+      );
+      return fail(
+        'Failed to upload certificate PDF',
+        'BAD_GATEWAY',
+        HttpStatus.BAD_GATEWAY,
+      );
+    }
+
+    try {
+      await this.userCourseCertificateRepository.update(
+        { usercertificateId: certificate.usercertificateId },
+        { pdfUrl, updatedBy: ctx.userId, updatedOn: new Date() },
+      );
+    } catch (error) {
+      this.loggerService.error(
+        `[COURSE_PDF] Saving PDF URL failed for ${logContext}: ${error.message}`,
+      );
+      return fail(
+        'Failed to save certificate PDF URL',
+        'INTERNAL_SERVER_ERROR',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+
+    return APIResponse.success(
+      response,
+      apiId,
+      { pdfUrl },
+      HttpStatus.CREATED,
+      'Certificate PDF generated successfully',
+    );
   }
 
   /**
@@ -3508,8 +3918,6 @@ export class CertificateService implements OnModuleInit, OnModuleDestroy {
   private async fetchUserDetailsFromUserService(
     userId: string[],
     request: any,
-    limit: number = 10,
-    offset: number = 0,
   ): Promise<{ firstName: string; lastName: string } | null> {
     try {
       const userServiceUrl = this.configService.get<string>('USER_SERVICE_URL');
@@ -3519,7 +3927,7 @@ export class CertificateService implements OnModuleInit, OnModuleDestroy {
       }
 
       // Construct the User Service API endpoint
-      const endpoint = '/user/v1/list';
+      const endpoint = '/user/read';
       const url = userServiceUrl.endsWith('/')
         ? `${userServiceUrl.slice(0, -1)}${endpoint}`
         : `${userServiceUrl}${endpoint}`;
@@ -3528,42 +3936,36 @@ export class CertificateService implements OnModuleInit, OnModuleDestroy {
         `Fetching user details from User Service: ${url} for userId: ${userId}`,
       );
 
-      // Prepare request body with filters
-      const requestBody = {
-        limit: limit,
-        offset: offset,
-        filters: {
-          userId: userId,
-        },
-        sort: ['name', 'asc'],
-      };
-
-      const response = await axios.post(url, requestBody, {
+      // The user service expects the caller's raw token in x-auth-token
+      const authorization: string =
+        request?.headers?.authorization ||
+        request?.headers?.Authorization ||
+        '';
+      const token = authorization.replace(/^Bearer\s+/i, '');
+      const response = await axios.get(url, {
         headers: {
           'Content-Type': 'application/json',
           accept: 'application/json, text/plain, */*',
+          'x-auth-token': token,
         },
         timeout: 30000, // 30 seconds timeout
       });
 
       // Extract firstName and lastName from response
       // Response structure: result.getUserDetails[0].firstName and result.getUserDetails[0].lastName
-      const getUserDetails = response.data?.result?.getUserDetails;
+      const userData = response.data?.result;
       if (
-        getUserDetails &&
-        Array.isArray(getUserDetails) &&
-        getUserDetails.length > 0
+        userData?.name
       ) {
-        const userData = getUserDetails[0];
-        if (userData && (userData.firstName || userData.lastName)) {
+        if (userData && (userData.name)) {
           this.loggerService.log(
-            `Successfully fetched user details: firstName=${
-              userData.firstName || 'null'
-            }, lastName=${userData.lastName || 'null'}`,
+            `Successfully fetched user details: name=${
+              userData.name || 'null'
+            }, lastName=""`,
           );
           return {
-            firstName: userData.firstName || '',
-            lastName: userData.lastName || '',
+            firstName: userData.name || '',
+            lastName: '',
           };
         } else {
           this.loggerService.warn(

@@ -77,8 +77,9 @@ export class Course {
   @Column({ type: 'varchar', length: 50, nullable: true })
   rewardType: RewardType;
 
-  @ApiProperty({ description: 'Template ID for the reward', example: '123e4567-e89b-12d3-a456-426614174000', required: false })
-  @Column({ type: 'uuid', nullable: true })
+  // Credentials-service template id (not a UUID, e.g. 'cmv7rfjir000ips0pvhya6ikr')
+  @ApiProperty({ description: 'Template ID for the reward', example: 'cmv7rfjir000ips0pvhya6ikr', required: false })
+  @Column({ type: 'varchar', nullable: true })
   templateId: string;
 
   @ApiProperty({ 

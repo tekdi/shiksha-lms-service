@@ -15,6 +15,10 @@ import {
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiParam,
+  ApiCreatedResponse,
+  ApiUnauthorizedResponse,
+  ApiForbiddenResponse,
+  ApiConflictResponse,
 } from '@nestjs/swagger';
 import { Request, Response } from 'express';
 import { CertificateService } from './certificate.service';
@@ -29,6 +33,7 @@ import { CourseTemplateListDto } from './dto/course-template-list-dto';
 import { EditTemplateDto } from './dto/edit-template-dto';
 import { GetCertificateUrlDto } from './dto/get-certificate-url-dto';
 import { RegenerateCertificatesDto } from './dto/regenerate-certificates-dto';
+import { CourseCertificatePdfDto } from './dto/course-certificate-pdf-dto';
 
 @Controller('certificate')
 export class CertificateController {
@@ -372,6 +377,28 @@ export class CertificateController {
         timestamp: new Date().toISOString(),
       });
     }
+  }
+
+  // API to issue (or reuse) the caller's course certificate as a PDF stored in S3
+  @ApiOkResponse({ description: 'Certificate PDF already generated' })
+  @ApiCreatedResponse({ description: 'Certificate PDF generated successfully' })
+  @ApiBadRequestResponse({ description: 'Bad Request.' })
+  @ApiUnauthorizedResponse({ description: 'User not identified from token' })
+  @ApiForbiddenResponse({ description: 'Not the token user, or course not completed' })
+  @ApiNotFoundResponse({ description: 'Course or certificate template not found' })
+  @ApiConflictResponse({ description: 'Generation already in progress' })
+  @ApiInternalServerErrorResponse({ description: 'Internal Server Error.' })
+  @Post('course-pdf')
+  async generateCoursePdf(
+    @Body() courseCertificatePdfDto: CourseCertificatePdfDto,
+    @Req() request: Request,
+    @Res() response: Response,
+  ) {
+    return this.certificateService.generateCoursePdfCertificate(
+      courseCertificatePdfDto,
+      request,
+      response,
+    );
   }
 
   // API to get certificate URL by certificateId
