@@ -10,7 +10,8 @@ import {
 const TENANT = 'brac';
 const USER = '3129';
 const COURSE_ID = '11111111-1111-4111-8111-111111111111';
-const TEMPLATE_ID = 'template-1';
+const TEMPLATE_ID = 'cmv6ca4qk000aps0pjd3jw7jv';
+const TEMPLATES_ID = 'd599aa23-f3b9-400c-a7b0-05e2c0be55c1';
 const CREDENTIAL_ID = 'did:rcw:credential-1';
 const PDF_URL = 'https://bucket.s3.amazonaws.com/certificates/x.pdf';
 
@@ -28,6 +29,8 @@ describe('CertificateService - generateCoursePdfCertificate', () => {
   let course: any;
   let courseTrack: any;
   let existingCertificate: any;
+  let templateRow: any;
+  let templatesRepository: any;
 
   const request = (headers: Record<string, string> = {}) => ({
     headers: {
@@ -47,7 +50,17 @@ describe('CertificateService - generateCoursePdfCertificate', () => {
     course = {
       courseId: COURSE_ID,
       title: 'Course A',
+      templateId: TEMPLATES_ID,
+    };
+    templateRow = {
+      templatesId: TEMPLATES_ID,
       templateId: TEMPLATE_ID,
+      template_type: 'certificate',
+    };
+    templatesRepository = {
+      findOne: jest.fn(async ({ where }) =>
+        where.templatesId === templateRow?.templatesId ? templateRow : null,
+      ),
     };
     courseTrack = { courseTrackId: 'ct-1', status: TrackingStatus.COMPLETED };
     existingCertificate = null;
@@ -91,7 +104,7 @@ describe('CertificateService - generateCoursePdfCertificate', () => {
 
     service = new CertificateService(
       repository,
-      {} as any,
+      templatesRepository,
       {} as any,
       configService as any,
       logger as any,
@@ -103,9 +116,6 @@ describe('CertificateService - generateCoursePdfCertificate', () => {
       .mockResolvedValue([
         { templateId: TEMPLATE_ID, certificateType: 'certificate' },
       ]);
-    jest
-      .spyOn(service, 'getCertificateTypeByTemplateId')
-      .mockResolvedValue('certificate');
     jest.spyOn(service, 'generateDidByUserId').mockResolvedValue('did:learner');
     jest
       .spyOn(service as any, 'fetchUserDetailsFromUserService')
@@ -185,8 +195,12 @@ describe('CertificateService - generateCoursePdfCertificate', () => {
   });
 
   describe('template source', () => {
-    it('uses courses.templateId by default without reading course_templates', async () => {
+    it('resolves courses.templateId (templatesId) to the credentials-service template', async () => {
       await call();
+      expect(templatesRepository.findOne).toHaveBeenCalledWith({
+        where: { templatesId: TEMPLATES_ID },
+        select: ['templatesId', 'templateId', 'template_type'],
+      });
       expect(service.getAllTemplatesByContextId).not.toHaveBeenCalled();
       expect((service as any).renderCertificatePdfBuffer).toHaveBeenCalledWith(
         CREDENTIAL_ID,
@@ -197,14 +211,36 @@ describe('CertificateService - generateCoursePdfCertificate', () => {
       );
     });
 
-    it('uses the template type of the course template for the certificate row', async () => {
-      (service.getCertificateTypeByTemplateId as jest.Mock).mockResolvedValue(
-        'Paid_Certificate',
-      );
+    it('uses the template_type of the templates row for the certificate row', async () => {
+      templateRow.template_type = 'Paid_Certificate';
       await call();
       expect(repository.findOne.mock.calls[0][0].where.certificate_type).toBe(
         'paid_certificate',
       );
+    });
+
+    it('returns 404 when courses.templateId matches no templates row', async () => {
+      templateRow = null;
+      await call();
+      expect(sentStatus()).toBe(404);
+      expectNoSideEffects();
+    });
+
+    it('returns 404 without querying when courses.templateId is not a UUID', async () => {
+      course.templateId = 'cmv6ca4qk000aps0pjd3jw7jv';
+      await call();
+      expect(templatesRepository.findOne).not.toHaveBeenCalled();
+      expect(sentStatus()).toBe(404);
+    });
+
+    it('returns 500 when the templates lookup fails', async () => {
+      templatesRepository.findOne.mockRejectedValue(new Error('db'));
+      await call();
+      expect(sentStatus()).toBe(500);
+      expect(sentBody().params.errmsg).toBe(
+        'Failed to load certificate template',
+      );
+      expectNoSideEffects();
     });
 
     it('uses the course_templates mapping when templateSource is course_template', async () => {

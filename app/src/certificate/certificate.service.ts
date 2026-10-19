@@ -17,6 +17,7 @@ import { Response } from 'express';
 import puppeteer, { Browser } from 'puppeteer';
 import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
+import { isUUID } from 'class-validator';
 import { GetUserCertificatesDto } from './dto/get-user-certificates-dto';
 import { RegenerateCertificatesDto } from './dto/regenerate-certificates-dto';
 import { S3Service } from './s3.service';
@@ -1715,12 +1716,24 @@ export class CertificateService implements OnModuleInit, OnModuleDestroy {
         (t) => t.certificateType?.toLowerCase() === certificateType,
       )?.templateId;
     } else {
-      // Default: template set on the course itself (courses.templateId)
-      templateId = course.templateId;
+      // Default: courses.templateId is the templates row primary key (templatesId);
+      // that row holds the credentials-service templateId and the template type
+      let template: Templates | null;
+      try {
+        template = await this.getTemplateByTemplatesId(course.templateId);
+      } catch (error) {
+        this.loggerService.error(
+          `[COURSE_PDF] Template lookup failed for course ${courseId}: ${(error as Error).message}`,
+        );
+        return fail(
+          'Failed to load certificate template',
+          'INTERNAL_SERVER_ERROR',
+          HttpStatus.INTERNAL_SERVER_ERROR,
+        );
+      }
+      templateId = template?.templateId;
       certificateType = (
-        (templateId &&
-          (await this.getCertificateTypeByTemplateId(templateId))) ||
-        'certificate'
+        template?.template_type || 'certificate'
       ).toLowerCase();
     }
     if (!templateId) {
@@ -2297,6 +2310,24 @@ export class CertificateService implements OnModuleInit, OnModuleDestroy {
    * @param templateId - Template ID to search for certificate_type
    * @returns Promise<string | null> - Certificate type or null if not found
    */
+  /**
+   * Get a templates row by its primary key (templatesId), as stored in courses.templateId.
+   * Unlike getCertificateTypeByTemplateId, which takes the credentials-service templateId.
+   * @returns Promise<Templates | null> - null when the id is empty, not a UUID or not found
+   */
+  async getTemplateByTemplatesId(
+    templatesId: string | null | undefined,
+  ): Promise<Templates | null> {
+    // templatesId is a uuid column; a non-UUID value would make Postgres throw
+    if (!templatesId || !isUUID(templatesId)) {
+      return null;
+    }
+    return this.templatesRepository.findOne({
+      where: { templatesId },
+      select: ['templatesId', 'templateId', 'template_type'],
+    });
+  }
+
   async getCertificateTypeByTemplateId(
     templateId: string,
   ): Promise<string | null> {
@@ -3954,10 +3985,8 @@ export class CertificateService implements OnModuleInit, OnModuleDestroy {
       // Extract firstName and lastName from response
       // Response structure: result.getUserDetails[0].firstName and result.getUserDetails[0].lastName
       const userData = response.data?.result;
-      if (
-        userData?.name
-      ) {
-        if (userData && (userData.name)) {
+      if (userData?.name) {
+        if (userData && userData.name) {
           this.loggerService.log(
             `Successfully fetched user details: name=${
               userData.name || 'null'
