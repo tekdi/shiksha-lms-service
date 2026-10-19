@@ -13,6 +13,7 @@ import {
   FindOptionsWhere,
   DataSource,
   In,
+  SelectQueryBuilder,
 } from 'typeorm';
 import {
   UserEnrollment,
@@ -51,12 +52,8 @@ import {
 } from './dto/dashboard-by-user-id.dto';
 import {
   CoachProgressDashboardResponseDto,
-  PathwayCompletionDto,
-  CoachProgressDto,
-  CoachCertificateDto,
-  CoachJourneyItemDto,
+  CategoryProgressDto,
 } from './dto/coach-progress-dashboard.dto';
-import { UserCourseCertificate } from '../certificate/entities/user_certificates';
 import axios from 'axios';
 
 // Course metadata columns returned by users-courses (shared by the enrolled and not-enrolled queries)
@@ -100,8 +97,6 @@ export class EnrollmentsService {
     private readonly configService: ConfigService,
     @InjectRepository(Lesson)
     private readonly lessonRepository: Repository<Lesson>,
-    @InjectRepository(UserCourseCertificate)
-    private readonly userCertificateRepository: Repository<UserCourseCertificate>,
     @InjectDataSource()
     private readonly dataSource: DataSource,
     private readonly cacheConfig: CacheConfigService,
@@ -1476,32 +1471,34 @@ export class EnrollmentsService {
    * Get coach progress dashboard metrics (Admin App) across all coaches
    * @param tenantId Tenant ID for data isolation
    * @param organisationId Organization ID for data isolation
-   * @param authorization Caller's bearer token, forwarded to the user service for coach profiles
-   * @param userId Optional coach ID: limits `coaches` to that coach and adds their learning journey
+   * @param authorization Caller's bearer token, forwarded to the project service for the LMS categories
    */
   async getCoachProgressDashboard(
     tenantId: string,
     organisationId: string,
     authorization?: string,
-    userId?: string,
   ): Promise<CoachProgressDashboardResponseDto> {
     this.logger.log('Fetching coach progress dashboard metrics');
 
+    // Published enrollments of coaches in non-archived courses (courses assigned to them)
+    const assignedCoursesQuery = () =>
+      this.userEnrollmentRepository
+        .createQueryBuilder('enrollment')
+        .innerJoin(Course, 'course', 'course.courseId = enrollment.courseId')
+        .where('enrollment.tenantId = :tenantId', { tenantId })
+        .andWhere('enrollment.organisationId = :organisationId', {
+          organisationId,
+        })
+        .andWhere('enrollment.status = :enrollmentStatus', {
+          enrollmentStatus: EnrollmentStatus.PUBLISHED,
+        })
+        .andWhere('course.status != :archivedCourseStatus', {
+          archivedCourseStatus: CourseStatus.ARCHIVED,
+        });
+
     // 1. coachesAssigned: distinct users with a published enrollment in a non-archived course
-    const coachesAssignedQuery = this.userEnrollmentRepository
-      .createQueryBuilder('enrollment')
-      .innerJoin(Course, 'course', 'course.courseId = enrollment.courseId')
+    const coachesAssignedQuery = assignedCoursesQuery()
       .select('COUNT(DISTINCT enrollment.userId)', 'count')
-      .where('enrollment.tenantId = :tenantId', { tenantId })
-      .andWhere('enrollment.organisationId = :organisationId', {
-        organisationId,
-      })
-      .andWhere('enrollment.status = :enrollmentStatus', {
-        enrollmentStatus: EnrollmentStatus.PUBLISHED,
-      })
-      .andWhere('course.status != :archivedCourseStatus', {
-        archivedCourseStatus: CourseStatus.ARCHIVED,
-      })
       .getRawOne<{ count: string }>();
 
     // 2. coursesCompleted: course_track is unique per (userId, courseId)
@@ -1568,478 +1565,172 @@ export class EnrollmentsService {
       .select(completedLessonKey, 'count')
       .getRawOne<{ count: string }>();
 
-    // 5. completedByPathway: lessons carry their own categoryIds; legacy lessons without
-    // categories fall back to their course's categoryIds. UNNEST runs in a subquery since
-    // set-returning functions are not allowed in GROUP BY.
-    const completedLessonCategories = completedLessonsQuery()
-      .leftJoin(Course, 'course', 'course.courseId = lesson.courseId')
-      .select('lessonTrack.userId', 'userId')
-      .addSelect('lessonTrack.lessonId', 'lessonId')
-      .addSelect(
-        'UNNEST(COALESCE(lesson.categoryIds, course.categoryIds))',
-        'categoryId',
-      );
-    const completedByPathwayQuery = this.dataSource
-      .createQueryBuilder()
-      .select('"completed"."categoryId"', 'categoryId')
-      .addSelect(
-        'COUNT(DISTINCT CONCAT("completed"."userId", \':\', "completed"."lessonId"))',
-        'count',
-      )
-      .from(`(${completedLessonCategories.getQuery()})`, 'completed')
-      .setParameters(completedLessonCategories.getParameters())
-      .groupBy('"completed"."categoryId"')
-      .getRawMany<{ categoryId: string; count: string }>();
-
-    // 6. certificatesEarned: issued certificates for assigned (published enrollment) courses
-    const certificatesEarnedQuery = this.coachCertificatesQuery(
-      tenantId,
-      organisationId,
-    )
-      .select('COUNT(DISTINCT certificate.usercertificateId)', 'count')
-      .getRawOne<{ count: string }>();
-
     const [
       coachesAssignedRaw,
       coursesCompleted,
       modulesCompletedRaw,
       contentCompletedRaw,
-      completedByPathwayRaw,
-      certificatesEarnedRaw,
-      coaches,
+      categoryIds,
     ] = await Promise.all([
       coachesAssignedQuery,
       coursesCompletedQuery,
       modulesCompletedQuery,
       contentCompletedQuery,
-      completedByPathwayQuery,
-      certificatesEarnedQuery,
-      this.getCoachProgressRows(
-        tenantId,
-        organisationId,
-        authorization,
-        userId,
-      ),
+      this.fetchLmsCategoryIds(tenantId, authorization),
     ]);
 
-    const contentCompleted = Number(contentCompletedRaw?.count || 0);
+    // Category-wise counts are limited to the categories returned by the LMS categories API.
+    // Rows are (itemId, categoryId, completed); UNNEST runs in a subquery since
+    // set-returning functions are not allowed in GROUP BY.
+    const countByCategory = (rows: SelectQueryBuilder<any>) =>
+      categoryIds.length
+        ? this.dataSource
+            .createQueryBuilder()
+            .select('"rows"."categoryId"', 'categoryId')
+            .addSelect('COUNT(DISTINCT "rows"."itemId")', 'totalCount')
+            .addSelect(
+              'COUNT(DISTINCT "rows"."itemId") FILTER (WHERE "rows"."completed")',
+              'completedCount',
+            )
+            .from(`(${rows.getQuery()})`, 'rows')
+            .setParameters(rows.getParameters())
+            .where('"rows"."categoryId" IN (:...categoryIds)', { categoryIds })
+            .groupBy('"rows"."categoryId"')
+            .getRawMany<{
+              categoryId: string;
+              totalCount: string;
+              completedCount: string;
+            }>()
+        : Promise.resolve([]);
 
-    const completedByPathway: PathwayCompletionDto[] = completedByPathwayRaw
-      .filter((row) => row.categoryId)
-      .map((row) => {
-        const completedCount = Number(row.count || 0);
-        return {
-          categoryId: row.categoryId,
-          completedCount,
-          percentage: contentCompleted
-            ? Math.round((completedCount / contentCompleted) * 10000) / 100
-            : 0,
-        };
-      });
+    // 5. completedCoursesByCategory: published courses of the category, completed when a
+    // course_track of the course is completed
+    const courseCategories = this.courseRepository
+      .createQueryBuilder('course')
+      .select('course.courseId', 'itemId')
+      .addSelect('UNNEST(course.categoryIds)', 'categoryId')
+      .addSelect(
+        `EXISTS (${this.courseTrackRepository
+          .createQueryBuilder('courseTrack')
+          .select('1')
+          .where('courseTrack.courseId = course.courseId')
+          .andWhere('courseTrack.tenantId = course.tenantId')
+          .andWhere('courseTrack.organisationId = course.organisationId')
+          .andWhere('courseTrack.status = :completedStatus')
+          .getQuery()})`,
+        'completed',
+      )
+      .where('course.tenantId = :tenantId', { tenantId })
+      .andWhere('course.organisationId = :organisationId', { organisationId })
+      .andWhere('course.status = :publishedCourseStatus', {
+        publishedCourseStatus: CourseStatus.PUBLISHED,
+      })
+      .setParameter('completedStatus', TrackingStatus.COMPLETED);
+
+    // 6. completedContentsByCategory: published standalone content (parent lessons outside any
+    // course/module) of the category, completed when a standalone lesson_track attempt is completed
+    const contentCategories = this.lessonRepository
+      .createQueryBuilder('lesson')
+      .select('lesson.lessonId', 'itemId')
+      .addSelect('UNNEST(lesson.categoryIds)', 'categoryId')
+      .addSelect(
+        `EXISTS (${this.lessonTrackRepository
+          .createQueryBuilder('lessonTrack')
+          .select('1')
+          .where('lessonTrack.lessonId = lesson.lessonId')
+          .andWhere('lessonTrack.courseId IS NULL')
+          .andWhere('lessonTrack.tenantId = lesson.tenantId')
+          .andWhere('lessonTrack.organisationId = lesson.organisationId')
+          .andWhere('lessonTrack.status = :completedStatus')
+          .getQuery()})`,
+        'completed',
+      )
+      .where('lesson.tenantId = :tenantId', { tenantId })
+      .andWhere('lesson.organisationId = :organisationId', { organisationId })
+      .andWhere('lesson.courseId IS NULL AND lesson.moduleId IS NULL')
+      .andWhere('lesson.parentId IS NULL')
+      .andWhere('lesson.status = :publishedLessonStatus', {
+        publishedLessonStatus: LessonStatus.PUBLISHED,
+      })
+      .setParameter('completedStatus', TrackingStatus.COMPLETED);
+
+    const [coursesByCategoryRaw, contentsByCategoryRaw] = await Promise.all([
+      countByCategory(courseCategories),
+      countByCategory(contentCategories),
+    ]);
+
+    // Every LMS category is returned, in the categories API order, with 0 when it has no rows
+    const toCategoryProgress = (
+      rows: {
+        categoryId: string;
+        totalCount: string;
+        completedCount: string;
+      }[],
+    ): CategoryProgressDto[] => {
+      const counts = new Map(rows.map((row) => [row.categoryId, row]));
+      return categoryIds.map((categoryId) => ({
+        categoryId,
+        totalCount: Number(counts.get(categoryId)?.totalCount || 0),
+        completedCount: Number(counts.get(categoryId)?.completedCount || 0),
+      }));
+    };
 
     return {
       coachesAssigned: Number(coachesAssignedRaw?.count || 0),
       coursesCompleted: coursesCompleted || 0,
       modulesCompleted: Number(modulesCompletedRaw?.count || 0),
-      contentCompleted,
-      completedByPathway,
-      certificatesEarned: Number(certificatesEarnedRaw?.count || 0),
-      coaches,
+      contentCompleted: Number(contentCompletedRaw?.count || 0),
+      completedCoursesByCategory: toCategoryProgress(coursesByCategoryRaw),
+      completedContentsByCategory: toCategoryProgress(contentsByCategoryRaw),
     };
   }
 
   /**
-   * Issued course certificates of coaches, limited to courses they hold a published
-   * enrollment in (same scope as coachesAssigned). user_certificates.tenantId/userId are
-   * uuid columns while enrollments use varchar, so they are compared as text.
+   * Category (Development Pathway) IDs from the project service's LMS categories API
+   * (GET /api/project/v1/library/categories/list?keywords=lms), the same list the Admin App
+   * uses. On failure an empty list is returned, so no category-wise counts are reported.
    */
-  private coachCertificatesQuery(
+  private async fetchLmsCategoryIds(
     tenantId: string,
-    organisationId: string,
-    userId?: string,
-  ) {
-    const query = this.userCertificateRepository
-      .createQueryBuilder('certificate')
-      .innerJoin(
-        UserEnrollment,
-        'enrollment',
-        'enrollment.userId = CAST(certificate.userId AS text) AND CAST(enrollment.courseId AS text) = certificate.contextId',
-      )
-      .innerJoin(Course, 'course', 'course.courseId = enrollment.courseId')
-      .where('CAST(certificate.tenantId AS text) = :tenantId', { tenantId })
-      .andWhere('certificate.contextType = :contextType', {
-        contextType: 'courses',
-      })
-      .andWhere('certificate.status = :certificateStatus', {
-        certificateStatus: 'issued',
-      })
-      .andWhere('enrollment.tenantId = :tenantId', { tenantId })
-      .andWhere('enrollment.organisationId = :organisationId', {
-        organisationId,
-      })
-      .andWhere('enrollment.status = :enrollmentStatus', {
-        enrollmentStatus: EnrollmentStatus.PUBLISHED,
-      })
-      .andWhere('course.status != :archivedCourseStatus', {
-        archivedCourseStatus: CourseStatus.ARCHIVED,
-      });
-    if (userId) {
-      query.andWhere('enrollment.userId = :userId', { userId });
-    }
-    return query;
-  }
-
-  /**
-   * Per-coach rows for the Coach Progress Dashboard table: every coach with a published
-   * enrollment in a non-archived course (i.e. assigned from the course list), with
-   * province/site from the user service, pathway IDs, progress and certificates.
-   */
-  private async getCoachProgressRows(
-    tenantId: string,
-    organisationId: string,
     authorization?: string,
-    userId?: string,
-  ): Promise<CoachProgressDto[]> {
-    const enrollmentsQuery = this.userEnrollmentRepository
-      .createQueryBuilder('enrollment')
-      .innerJoin(Course, 'course', 'course.courseId = enrollment.courseId')
-      .leftJoin(
-        CourseTrack,
-        'courseTrack',
-        'courseTrack.userId = enrollment.userId AND courseTrack.courseId = enrollment.courseId AND courseTrack.tenantId = enrollment.tenantId AND courseTrack.organisationId = enrollment.organisationId',
-      )
-      .select('enrollment.userId', 'userId')
-      .addSelect('enrollment.courseId', 'courseId')
-      .addSelect(
-        'COALESCE(enrollment.enrolledOnTime, enrollment.enrolledAt)',
-        'enrolledOn',
-      )
-      .addSelect('course.title', 'courseTitle')
-      .addSelect('course.categoryIds', 'categoryIds')
-      .addSelect('courseTrack.status', 'trackStatus')
-      .addSelect('courseTrack.completedLessons', 'completedLessons')
-      .addSelect('courseTrack.noOfLessons', 'noOfLessons')
-      .addSelect('courseTrack.endDatetime', 'completedOn')
-      .where('enrollment.tenantId = :tenantId', { tenantId })
-      .andWhere('enrollment.organisationId = :organisationId', {
-        organisationId,
-      })
-      .andWhere('enrollment.status = :enrollmentStatus', {
-        enrollmentStatus: EnrollmentStatus.PUBLISHED,
-      })
-      .andWhere('course.status != :archivedCourseStatus', {
-        archivedCourseStatus: CourseStatus.ARCHIVED,
-      });
-    if (userId) {
-      enrollmentsQuery.andWhere('enrollment.userId = :userId', { userId });
-    }
-
-    const certificatesQuery = this.coachCertificatesQuery(
-      tenantId,
-      organisationId,
-      userId,
-    )
-      .select('certificate.usercertificateId', 'usercertificateId')
-      .addSelect('CAST(certificate.userId AS text)', 'userId')
-      .addSelect('certificate.contextId', 'courseId')
-      .addSelect('course.title', 'courseTitle')
-      .addSelect('certificate.certificate_type', 'certificateType')
-      .addSelect('certificate.issuedOn', 'issuedOn')
-      .addSelect('certificate.certificateUrl', 'certificateUrl')
-      .orderBy('certificate.issuedOn', 'ASC');
-
-    const [enrollmentRows, certificateRows] = await Promise.all([
-      enrollmentsQuery.getRawMany<{
-        userId: string;
-        courseId: string;
-        enrolledOn: Date | null;
-        courseTitle: string;
-        categoryIds: string[] | null;
-        trackStatus: TrackingStatus | null;
-        completedLessons: number | null;
-        noOfLessons: number | null;
-        completedOn: Date | null;
-      }>(),
-      certificatesQuery.getRawMany<CoachCertificateDto & { userId: string }>(),
-    ]);
-
-    const coaches = new Map<
-      string,
-      {
-        pathwayIds: Set<string>;
-        progressTotal: number;
-        totalCourses: number;
-        completedCourses: number;
-        certificates: CoachCertificateDto[];
-      }
-    >();
-    const getCoach = (id: string) => {
-      let coach = coaches.get(id);
-      if (!coach) {
-        coach = {
-          pathwayIds: new Set(),
-          progressTotal: 0,
-          totalCourses: 0,
-          completedCourses: 0,
-          certificates: [],
-        };
-        coaches.set(id, coach);
-      }
-      return coach;
-    };
-
-    for (const row of enrollmentRows) {
-      const coach = getCoach(row.userId);
-      (row.categoryIds || []).forEach((id) => id && coach.pathwayIds.add(id));
-      coach.totalCourses++;
-      // Course progress as in the user journey: completedLessons / noOfLessons from course_track
-      const isCompleted = row.trackStatus === TrackingStatus.COMPLETED;
-      const noOfLessons = Number(row.noOfLessons || 0);
-      const progress = isCompleted
-        ? 100
-        : noOfLessons > 0
-          ? Math.min(
-              100,
-              (Number(row.completedLessons || 0) / noOfLessons) * 100,
-            )
-          : 0;
-      coach.progressTotal += progress;
-      if (isCompleted) coach.completedCourses++;
-    }
-
-    for (const { userId: coachId, ...certificate } of certificateRows) {
-      coaches.get(coachId)?.certificates.push(certificate);
-    }
-
-    const profiles = await this.fetchCoachProfiles(
-      Array.from(coaches.keys()),
-      tenantId,
-      authorization,
-    );
-
-    const journey = userId
-      ? await this.getCoachJourney(
-          userId,
-          tenantId,
-          organisationId,
-          enrollmentRows,
-          certificateRows,
-        )
-      : undefined;
-
-    return Array.from(coaches, ([coachId, coach]) => {
-      const profile = profiles.get(coachId);
-      return {
-        userId: coachId,
-        coachName: profile?.coachName ?? null,
-        province: profile?.province ?? null,
-        provinceId: profile?.provinceId ?? null,
-        site: profile?.site ?? null,
-        siteId: profile?.siteId ?? null,
-        pathwayIds: Array.from(coach.pathwayIds),
-        totalCourses: coach.totalCourses,
-        completedCourses: coach.completedCourses,
-        pathwayProgress: coach.totalCourses
-          ? Math.round(coach.progressTotal / coach.totalCourses)
-          : 0,
-        certificatesEarned: coach.certificates.length,
-        certificates: coach.certificates,
-        ...(journey && { journey }),
-      };
-    }).sort((a, b) => (a.coachName || '').localeCompare(b.coachName || ''));
-  }
-
-  /**
-   * Learning journey timeline of one coach: course enrollments, completed lessons,
-   * completed courses and issued certificates, oldest first.
-   */
-  private async getCoachJourney(
-    userId: string,
-    tenantId: string,
-    organisationId: string,
-    enrollmentRows: {
-      courseId: string;
-      courseTitle: string;
-      enrolledOn: Date | null;
-      trackStatus: TrackingStatus | null;
-      completedOn: Date | null;
-    }[],
-    certificateRows: CoachCertificateDto[],
-  ): Promise<CoachJourneyItemDto[]> {
-    const courseIds = enrollmentRows.map((row) => row.courseId);
-    const journey: CoachJourneyItemDto[] = [];
-
-    enrollmentRows.forEach((row) => {
-      journey.push({
-        type: 'enrolled',
-        title: `Enrolled in ${row.courseTitle}`,
-        date: row.enrolledOn,
-        courseId: row.courseId,
-      });
-      if (row.trackStatus === TrackingStatus.COMPLETED) {
-        journey.push({
-          type: 'course_completed',
-          title: `Completed: ${row.courseTitle}`,
-          date: row.completedOn,
-          courseId: row.courseId,
-        });
-      }
-    });
-
-    if (courseIds.length) {
-      // A lesson can have several attempts; the first completion is the milestone
-      const completedLessons = await this.lessonTrackRepository
-        .createQueryBuilder('lessonTrack')
-        .innerJoin(Lesson, 'lesson', 'lesson.lessonId = lessonTrack.lessonId')
-        .select('lessonTrack.lessonId', 'lessonId')
-        .addSelect('lessonTrack.courseId', 'courseId')
-        .addSelect('lesson.title', 'title')
-        .addSelect('lesson.format', 'format')
-        .addSelect('lesson.subFormat', 'subFormat')
-        .addSelect(
-          'MIN(COALESCE(lessonTrack.endDatetime, lessonTrack.updatedAt))',
-          'completedOn',
-        )
-        .where('lessonTrack.userId = :userId', { userId })
-        .andWhere('lessonTrack.tenantId = :tenantId', { tenantId })
-        .andWhere('lessonTrack.organisationId = :organisationId', {
-          organisationId,
-        })
-        .andWhere('lessonTrack.courseId IN (:...courseIds)', { courseIds })
-        .andWhere('lessonTrack.status = :completedStatus', {
-          completedStatus: TrackingStatus.COMPLETED,
-        })
-        .andWhere('lesson.status != :archivedLessonStatus', {
-          archivedLessonStatus: LessonStatus.ARCHIVED,
-        })
-        .groupBy('lessonTrack.lessonId')
-        .addGroupBy('lessonTrack.courseId')
-        .addGroupBy('lesson.title')
-        .addGroupBy('lesson.format')
-        .addGroupBy('lesson.subFormat')
-        .getRawMany<{
-          lessonId: string;
-          courseId: string;
-          title: string;
-          format: string;
-          subFormat: string;
-          completedOn: Date | null;
-        }>();
-
-      completedLessons.forEach((lesson) =>
-        journey.push({
-          type: 'lesson_completed',
-          title: `Completed: ${lesson.title}`,
-          date: lesson.completedOn,
-          courseId: lesson.courseId,
-          lessonId: lesson.lessonId,
-          format: lesson.format,
-          subFormat: lesson.subFormat,
-        }),
+  ): Promise<string[]> {
+    const projectServiceUrl = this.configService
+      .get<string>('PROJECT_SERVICE_URL', '')
+      .replace(/\/$/, '');
+    if (!projectServiceUrl || !authorization) {
+      this.logger.warn(
+        'LMS categories skipped: PROJECT_SERVICE_URL or authorization missing',
       );
+      return [];
     }
 
-    certificateRows.forEach((certificate) =>
-      journey.push({
-        type: 'certificate_issued',
-        title: `Earned ${certificate.certificateType || 'certificate'}: ${certificate.courseTitle}`,
-        date: certificate.issuedOn,
-        courseId: certificate.courseId,
-        certificateType: certificate.certificateType,
-      }),
-    );
-
-    const time = (date: Date | null) =>
-      date ? new Date(date).getTime() : Number.MAX_SAFE_INTEGER;
-    return journey.sort((a, b) => time(a.date) - time(b.date));
-  }
-
-  /**
-   * Coach name/province/site from the user service, using the same account search as the
-   * course list's coach assignment (type/role org_admin). Profiles are optional: on failure
-   * the rows are still returned with null name/province/site.
-   */
-  private async fetchCoachProfiles(
-    userIds: string[],
-    tenantId: string,
-    authorization?: string,
-  ): Promise<
-    Map<
-      string,
-      {
-        coachName: string | null;
-        province: string | null;
-        provinceId: string | null;
-        site: string | null;
-        siteId: string | null;
-      }
-    >
-  > {
-    const profiles = new Map();
-    const userServiceUrl = this.configService.get<string>(
-      'USER_SERVICE_URL',
-      '',
-    );
-    if (!userIds.length || !userServiceUrl || !authorization) {
-      if (userIds.length) {
-        this.logger.warn(
-          'Coach profiles skipped: USER_SERVICE_URL or authorization missing',
-        );
-      }
-      return profiles;
-    }
-
-    const PAGE_SIZE = 100;
-    const MAX_PAGES = 50;
-    const pending = new Set(userIds);
     try {
-      for (let page = 1; page <= MAX_PAGES && pending.size; page++) {
-        const { data } = await axios.post(
-          `${userServiceUrl}/account/search`,
-          { user_ids: userIds },
-          {
-            params: {
-              tenant_code: tenantId,
-              type: 'org_admin',
-              role: 'org_admin',
-              page,
-              limit: PAGE_SIZE,
-            },
-            headers: {
-              'x-auth-token': authorization.replace(/^Bearer\s+/i, ''),
-              'x-tenant-code': tenantId,
-              'Content-Type': 'application/json',
-            },
-            timeout: 30000,
+      const { data } = await axios.get(
+        `${projectServiceUrl}/api/project/v1/library/categories/list`,
+        {
+          params: { keywords: 'lms' },
+          headers: {
+            'x-auth-token': authorization.replace(/^Bearer\s+/i, ''),
+            'x-tenant-code': tenantId,
           },
-        );
-        const users: any[] = Array.isArray(data?.result?.data)
-          ? data.result.data
-          : [];
-        users.forEach((user) => {
-          const id = String(user.id ?? '');
-          if (!pending.has(id)) return;
-          pending.delete(id);
-          profiles.set(id, {
-            coachName:
-              user.name ||
-              [user.firstName, user.lastName].filter(Boolean).join(' ') ||
-              user.username ||
-              null,
-            province: user.province?.label ?? null,
-            provinceId: user.province?.value ?? null,
-            site: user.site?.label ?? null,
-            siteId: user.site?.value ?? null,
-          });
-        });
-        const total = Number(data?.result?.count || 0);
-        if (users.length < PAGE_SIZE || page * PAGE_SIZE >= total) break;
-      }
+          timeout: 30000,
+        },
+      );
+      const categories: { _id?: string }[] = Array.isArray(data?.result)
+        ? data.result
+        : [];
+      return Array.from(
+        new Set(
+          categories
+            .map((category) => String(category?._id ?? ''))
+            .filter(Boolean),
+        ),
+      );
     } catch (error) {
       this.logger.warn(
-        `Failed to fetch coach profiles from user service: ${error?.response?.status ?? ''} ${error?.message}`,
+        `Failed to fetch LMS categories from project service: ${error?.response?.status ?? ''} ${error?.message}`,
       );
+      return [];
     }
-    return profiles;
   }
 }

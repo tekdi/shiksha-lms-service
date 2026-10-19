@@ -258,13 +258,7 @@ export class EnrollmentsController {
   @ApiOperation({
     summary: 'Get coach progress dashboard metrics',
     description:
-      'Returns coaches assigned to courses, overall completed course/module/content counts, completed content grouped by Development Pathway (category ID), issued certificates, and per-coach rows (province, site, pathway IDs, progress, certificates). Pass userId to get only that coach with their learning journey.',
-  })
-  @ApiQuery({
-    name: 'userId',
-    required: false,
-    type: String,
-    description: 'Coach user ID: limits coaches to this coach and adds their learning journey',
+      'Returns coaches assigned to courses, overall completed course/module/content counts, and per LMS category (from the project service LMS categories API) the completed content and the total/completed assigned courses and content.',
   })
   @ApiResponse({
     status: 200,
@@ -274,13 +268,11 @@ export class EnrollmentsController {
   async getCoachProgressDashboard(
     @TenantOrg() tenantOrg: { tenantId: string; organisationId: string },
     @Headers('authorization') authorization?: string,
-    @Query('userId') userId?: string,
   ) {
     return this.enrollmentsService.getCoachProgressDashboard(
       tenantOrg.tenantId,
       tenantOrg.organisationId,
       authorization,
-      userId,
     );
   }
 
