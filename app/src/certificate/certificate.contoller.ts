@@ -379,13 +379,13 @@ export class CertificateController {
     }
   }
 
-  // API to issue (or reuse) the caller's course certificate as a PDF stored in S3
+  // API to issue (or reuse) the caller's course certificate or module badge as a PDF stored in S3
   @ApiOkResponse({ description: 'Certificate PDF already generated' })
   @ApiCreatedResponse({ description: 'Certificate PDF generated successfully' })
-  @ApiBadRequestResponse({ description: 'Bad Request.' })
+  @ApiBadRequestResponse({ description: 'Invalid context or contextId' })
   @ApiUnauthorizedResponse({ description: 'User not identified from token' })
-  @ApiForbiddenResponse({ description: 'Not the token user, or course not completed' })
-  @ApiNotFoundResponse({ description: 'Course or certificate template not found' })
+  @ApiForbiddenResponse({ description: 'Not the token user, or course/module not completed' })
+  @ApiNotFoundResponse({ description: 'Course/module or its certificate/badge template not found' })
   @ApiConflictResponse({ description: 'Generation already in progress' })
   @ApiInternalServerErrorResponse({ description: 'Internal Server Error.' })
   @Post('course-pdf')

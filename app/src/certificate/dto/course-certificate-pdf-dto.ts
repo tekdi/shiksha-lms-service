@@ -12,14 +12,32 @@ export enum CoursePdfTemplateSource {
   COURSE_TEMPLATE = 'course_template',
 }
 
+export enum CertificatePdfContext {
+  COURSE = 'course',
+  MODULE = 'module',
+}
+
 export class CourseCertificatePdfDto {
   @ApiProperty({
-    description: 'Course to generate the certificate PDF for',
+    description:
+      'What the PDF is for: "course" (course certificate) or "module" (module badge)',
+    enum: CertificatePdfContext,
+    example: CertificatePdfContext.COURSE,
+  })
+  @IsNotEmpty()
+  @IsEnum(CertificatePdfContext, {
+    message: 'context must be one of: course, module',
+  })
+  context: CertificatePdfContext;
+
+  @ApiProperty({
+    description:
+      'courseId when context is "course", moduleId when context is "module"',
     example: '123e4567-e89b-12d3-a456-426614174000',
   })
   @IsNotEmpty()
   @IsUUID()
-  courseId: string;
+  contextId: string;
 
   @ApiPropertyOptional({
     description:
@@ -32,7 +50,7 @@ export class CourseCertificatePdfDto {
 
   @ApiPropertyOptional({
     description:
-      'Where to read the template from: "course" (courses.templateId, default) or "course_template" (course_templates mapping filtered by certificateType).',
+      'Course context only. Where to read the template from: "course" (courses.templateId, default) or "course_template" (course_templates mapping filtered by certificateType). Module badges always use modules.badgeId.',
     enum: CoursePdfTemplateSource,
     default: CoursePdfTemplateSource.COURSE,
   })
