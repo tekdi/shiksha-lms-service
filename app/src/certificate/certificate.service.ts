@@ -2798,6 +2798,7 @@ export class CertificateService implements OnModuleInit, OnModuleDestroy {
           'uc.updatedBy',
           'uc.certificate_type',
           'uc.certificateUrl',
+          'uc.pdfUrl',
         ]);
 
       if (excludeAcknowledgementFromResults) {
@@ -2961,6 +2962,7 @@ export class CertificateService implements OnModuleInit, OnModuleDestroy {
           updatedBy: record.uc_updatedBy,
           certificateurl:
             record.uc_certificateurl ?? record.uc_certificateUrl ?? null,
+          pdfurl: record.uc_pdfurl ?? record.uc_pdfUrl ?? null,
           certificate_type: record.uc_certificate_type,
           courseTemplate,
           template,
