@@ -20,6 +20,20 @@ export class CategoryCountDto {
   count: number;
 }
 
+export class CategoryProgressCountDto extends CategoryCountDto {
+  @ApiProperty({
+    description: 'Items in this category assigned or available to the user',
+    example: 8,
+  })
+  totalCount: number;
+
+  @ApiProperty({
+    description: 'Items in this category completed by the user (same as count)',
+    example: 5,
+  })
+  completedCount: number;
+}
+
 export class DashboardByUserIdResponseDto {
   @ApiProperty({ description: 'Total count of enrolled courses for the user', example: 5 })
   totalCount: number;
@@ -37,10 +51,18 @@ export class DashboardByUserIdResponseDto {
   mandatoryDueCount: number;
 
   @ApiProperty({
-    description: 'Completed courses count categoryId wise',
-    type: [CategoryCountDto],
+    description:
+      'Courses assigned to the user (published enrollment, non-archived course) categoryId wise, with how many of them the user completed',
+    type: [CategoryProgressCountDto],
   })
-  completedCoursesByCategory: CategoryCountDto[];
+  completedCoursesByCategory: CategoryProgressCountDto[];
+
+  @ApiProperty({
+    description:
+      'Published standalone contents (parent lessons outside any course/module) categoryId wise, with how many of them the user completed',
+    type: [CategoryProgressCountDto],
+  })
+  completedContentsByCategory: CategoryProgressCountDto[];
 
   @ApiProperty({
     description: 'Completed standalone lessons (courseId IS NULL AND moduleId IS NULL) count categoryId wise',

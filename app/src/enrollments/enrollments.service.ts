@@ -50,6 +50,7 @@ import {
 import {
   DashboardByUserIdResponseDto,
   CategoryCountDto,
+  CategoryProgressCountDto,
 } from './dto/dashboard-by-user-id.dto';
 import {
   CoachProgressDashboardResponseDto,
@@ -1413,49 +1414,117 @@ export class EnrollmentsService {
       )
       .getCount();
 
-    // 6. completedCoursesByCategory: Course count tracking status completed categoryId wise
-    const completedCoursesRaw = await this.courseTrackRepository
-      .createQueryBuilder('courseTrack')
-      .innerJoin(Course, 'course', 'course.courseId = courseTrack.courseId')
-      .select('UNNEST(course.categoryIds)', 'categoryId')
-      .addSelect('COUNT(DISTINCT courseTrack.courseId)', 'count')
-      .where('courseTrack.userId = :userId', { userId })
-      .andWhere('courseTrack.tenantId = :tenantId', { tenantId })
-      .andWhere('courseTrack.organisationId = :organisationId', { organisationId })
-      .andWhere('courseTrack.status = :status', { status: TrackingStatus.COMPLETED })
-      .andWhere('course.categoryIds IS NOT NULL')
-      .groupBy('UNNEST(course.categoryIds)')
-      .getRawMany<{ categoryId: string; count: string }>();
+    // Rows are (itemId, categoryId, completed); UNNEST runs in a subquery since
+    // set-returning functions are not allowed in GROUP BY
+    const countByCategory = (rows: SelectQueryBuilder<any>) =>
+      this.dataSource
+        .createQueryBuilder()
+        .select('"rows"."categoryId"', 'categoryId')
+        .addSelect('COUNT(DISTINCT "rows"."itemId")', 'totalCount')
+        .addSelect(
+          'COUNT(DISTINCT "rows"."itemId") FILTER (WHERE "rows"."completed")',
+          'completedCount',
+        )
+        .from(`(${rows.getQuery()})`, 'rows')
+        .setParameters(rows.getParameters())
+        .groupBy('"rows"."categoryId"')
+        .orderBy('"rows"."categoryId"')
+        .getRawMany<{
+          categoryId: string;
+          totalCount: string;
+          completedCount: string;
+        }>();
 
-    const completedCoursesByCategory: CategoryCountDto[] = completedCoursesRaw.map(
-      (row) => ({
-        categoryId: row.categoryId,
-        count: Number(row.count || 0),
-      }),
-    );
-
-    // 7. completedStandaloneLessonsByCategory: Standalone lesson track completed (courseId IS NULL AND moduleId IS NULL) categoryId wise
-    const completedStandaloneLessonsRaw = await this.lessonTrackRepository
-      .createQueryBuilder('lessonTrack')
-      .innerJoin(Lesson, 'lesson', 'lesson.lessonId = lessonTrack.lessonId')
-      .select('UNNEST(lesson.categoryIds)', 'categoryId')
-      .addSelect('COUNT(DISTINCT lessonTrack.lessonId)', 'count')
-      .where('lessonTrack.userId = :userId', { userId })
-      .andWhere('lessonTrack.tenantId = :tenantId', { tenantId })
-      .andWhere('lessonTrack.organisationId = :organisationId', { organisationId })
-      .andWhere('lessonTrack.status = :status', { status: TrackingStatus.COMPLETED })
-      .andWhere(
-        '(lessonTrack.courseId IS NULL AND (lesson.courseId IS NULL AND lesson.moduleId IS NULL))',
+    // 6. completedCoursesByCategory: courses assigned to the user (published enrollment in a
+    // non-archived course), completed when the user's course_track is completed
+    const assignedCourseCategories = this.userEnrollmentRepository
+      .createQueryBuilder('enrollment')
+      .innerJoin(
+        Course,
+        'course',
+        'course.courseId = enrollment.courseId AND course.tenantId = enrollment.tenantId AND course.organisationId = enrollment.organisationId',
       )
-      .andWhere('lesson.categoryIds IS NOT NULL')
-      .groupBy('UNNEST(lesson.categoryIds)')
-      .getRawMany<{ categoryId: string; count: string }>();
+      .leftJoin(
+        CourseTrack,
+        'courseTrack',
+        'courseTrack.courseId = enrollment.courseId AND courseTrack.userId = enrollment.userId AND courseTrack.tenantId = enrollment.tenantId AND courseTrack.organisationId = enrollment.organisationId',
+      )
+      .select('enrollment.courseId', 'itemId')
+      .addSelect('UNNEST(course.categoryIds)', 'categoryId')
+      .addSelect(
+        'COALESCE(courseTrack.status = :completedStatus, false)',
+        'completed',
+      )
+      .where('enrollment.userId = :userId', { userId })
+      .andWhere('enrollment.tenantId = :tenantId', { tenantId })
+      .andWhere('enrollment.organisationId = :organisationId', { organisationId })
+      .andWhere('enrollment.status = :enrollmentStatus', {
+        enrollmentStatus: EnrollmentStatus.PUBLISHED,
+      })
+      .andWhere('course.status != :archivedCourseStatus', {
+        archivedCourseStatus: CourseStatus.ARCHIVED,
+      })
+      .setParameter('completedStatus', TrackingStatus.COMPLETED);
 
+    // 7. completedContentsByCategory: published standalone content (parent lessons outside any
+    // course/module) available to the user, completed when one of the user's standalone
+    // lesson_track attempts is completed
+    const standaloneContentCategories = this.lessonRepository
+      .createQueryBuilder('lesson')
+      .select('lesson.lessonId', 'itemId')
+      .addSelect('UNNEST(lesson.categoryIds)', 'categoryId')
+      .addSelect(
+        `EXISTS (${this.lessonTrackRepository
+          .createQueryBuilder('lessonTrack')
+          .select('1')
+          .where('lessonTrack.lessonId = lesson.lessonId')
+          .andWhere('lessonTrack.courseId IS NULL')
+          .andWhere('lessonTrack.userId = :userId')
+          .andWhere('lessonTrack.tenantId = lesson.tenantId')
+          .andWhere('lessonTrack.organisationId = lesson.organisationId')
+          .andWhere('lessonTrack.status = :completedStatus')
+          .getQuery()})`,
+        'completed',
+      )
+      .where('lesson.tenantId = :tenantId', { tenantId })
+      .andWhere('lesson.organisationId = :organisationId', { organisationId })
+      .andWhere('lesson.courseId IS NULL AND lesson.moduleId IS NULL')
+      .andWhere('lesson.parentId IS NULL')
+      .andWhere('lesson.status = :publishedLessonStatus', {
+        publishedLessonStatus: LessonStatus.PUBLISHED,
+      })
+      .setParameters({ userId, completedStatus: TrackingStatus.COMPLETED });
+
+    const [coursesByCategoryRaw, contentsByCategoryRaw] = await Promise.all([
+      countByCategory(assignedCourseCategories),
+      countByCategory(standaloneContentCategories),
+    ]);
+
+    // `count` is kept (same as completedCount) for existing consumers
+    const toCategoryProgress = (
+      rows: { categoryId: string; totalCount: string; completedCount: string }[],
+    ): CategoryProgressCountDto[] =>
+      rows.map((row) => {
+        const completedCount = Number(row.completedCount || 0);
+        return {
+          categoryId: row.categoryId,
+          count: completedCount,
+          totalCount: Number(row.totalCount || 0),
+          completedCount,
+        };
+      });
+
+    const completedCoursesByCategory = toCategoryProgress(coursesByCategoryRaw);
+    const completedContentsByCategory = toCategoryProgress(contentsByCategoryRaw);
+
+    // Kept for existing consumers: completed standalone contents categoryId wise
     const completedStandaloneLessonsByCategory: CategoryCountDto[] =
-      completedStandaloneLessonsRaw.map((row) => ({
-        categoryId: row.categoryId,
-        count: Number(row.count || 0),
-      }));
+      completedContentsByCategory
+        .filter((row) => row.completedCount > 0)
+        .map(({ categoryId, completedCount }) => ({
+          categoryId,
+          count: completedCount,
+        }));
 
     return {
       totalCount: totalCount || 0,
@@ -1464,6 +1533,7 @@ export class EnrollmentsService {
       certificateCount: certificateCount || 0,
       mandatoryDueCount: mandatoryDueCount || 0,
       completedCoursesByCategory,
+      completedContentsByCategory,
       completedStandaloneLessonsByCategory,
     };
   }
