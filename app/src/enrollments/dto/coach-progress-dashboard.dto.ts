@@ -1,4 +1,31 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ArrayNotEmpty, IsArray, IsOptional, IsString } from 'class-validator';
+import { Transform } from 'class-transformer';
+import { VALIDATION_MESSAGES } from '../../common/constants/response-messages.constant';
+import { HelperUtil } from '../../common/utils/helper.util';
+
+export class CoachProgressDashboardQueryDto {
+  @ApiPropertyOptional({
+    description:
+      'Limit the progress counts to these user IDs (array, repeated userIds[] or comma-separated). Omit for all users.',
+    type: [String],
+    example: ['3078', '3129'],
+  })
+  @IsOptional()
+  @Transform(({ obj, key }) => {
+    const values = HelperUtil.toStringArray(obj[key]);
+    return Array.isArray(values) ? Array.from(new Set(values)) : values;
+  })
+  @IsArray({ message: VALIDATION_MESSAGES.COMMON.ARRAY('userIds') })
+  @ArrayNotEmpty({
+    message: VALIDATION_MESSAGES.COMMON.MIN_ARRAY_LENGTH('userIds', 1),
+  })
+  @IsString({
+    each: true,
+    message: VALIDATION_MESSAGES.COMMON.STRING('userIds'),
+  })
+  userIds?: string[];
+}
 
 export class CategoryProgressDto {
   @ApiProperty({

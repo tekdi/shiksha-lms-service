@@ -14,6 +14,7 @@ import {
   DataSource,
   In,
   SelectQueryBuilder,
+  ObjectLiteral,
 } from 'typeorm';
 import {
   UserEnrollment,
@@ -1472,29 +1473,45 @@ export class EnrollmentsService {
    * @param tenantId Tenant ID for data isolation
    * @param organisationId Organization ID for data isolation
    * @param authorization Caller's bearer token, forwarded to the project service for the LMS categories
+   * @param userIds Optional user IDs; when given, progress is counted only for these users
    */
   async getCoachProgressDashboard(
     tenantId: string,
     organisationId: string,
     authorization?: string,
+    userIds?: string[],
   ): Promise<CoachProgressDashboardResponseDto> {
     this.logger.log('Fetching coach progress dashboard metrics');
 
+    // Limits a query to the requested users (applied after its where clauses). Counts stay
+    // distinct per user, so combined counts for several users are not duplicated.
+    const hasUserFilter = !!userIds?.length;
+    const filterByUsers = <T extends ObjectLiteral>(
+      query: SelectQueryBuilder<T>,
+      alias: string,
+    ) =>
+      hasUserFilter
+        ? query.andWhere(`${alias}.userId IN (:...userIds)`, { userIds })
+        : query;
+
     // Published enrollments of coaches in non-archived courses (courses assigned to them)
     const assignedCoursesQuery = () =>
-      this.userEnrollmentRepository
-        .createQueryBuilder('enrollment')
-        .innerJoin(Course, 'course', 'course.courseId = enrollment.courseId')
-        .where('enrollment.tenantId = :tenantId', { tenantId })
-        .andWhere('enrollment.organisationId = :organisationId', {
-          organisationId,
-        })
-        .andWhere('enrollment.status = :enrollmentStatus', {
-          enrollmentStatus: EnrollmentStatus.PUBLISHED,
-        })
-        .andWhere('course.status != :archivedCourseStatus', {
-          archivedCourseStatus: CourseStatus.ARCHIVED,
-        });
+      filterByUsers(
+        this.userEnrollmentRepository
+          .createQueryBuilder('enrollment')
+          .innerJoin(Course, 'course', 'course.courseId = enrollment.courseId')
+          .where('enrollment.tenantId = :tenantId', { tenantId })
+          .andWhere('enrollment.organisationId = :organisationId', {
+            organisationId,
+          })
+          .andWhere('enrollment.status = :enrollmentStatus', {
+            enrollmentStatus: EnrollmentStatus.PUBLISHED,
+          })
+          .andWhere('course.status != :archivedCourseStatus', {
+            archivedCourseStatus: CourseStatus.ARCHIVED,
+          }),
+        'enrollment',
+      );
 
     // 1. coachesAssigned: distinct users with a published enrollment in a non-archived course
     const coachesAssignedQuery = assignedCoursesQuery()
@@ -1502,61 +1519,68 @@ export class EnrollmentsService {
       .getRawOne<{ count: string }>();
 
     // 2. coursesCompleted: course_track is unique per (userId, courseId)
-    const coursesCompletedQuery = this.courseTrackRepository
-      .createQueryBuilder('courseTrack')
-      .innerJoin(Course, 'course', 'course.courseId = courseTrack.courseId')
-      .where('courseTrack.tenantId = :tenantId', { tenantId })
-      .andWhere('courseTrack.organisationId = :organisationId', {
-        organisationId,
-      })
-      .andWhere('courseTrack.status = :completedStatus', {
-        completedStatus: TrackingStatus.COMPLETED,
-      })
-      .andWhere('course.status != :archivedCourseStatus', {
-        archivedCourseStatus: CourseStatus.ARCHIVED,
-      })
-      .getCount();
+    const coursesCompletedQuery = filterByUsers(
+      this.courseTrackRepository
+        .createQueryBuilder('courseTrack')
+        .innerJoin(Course, 'course', 'course.courseId = courseTrack.courseId')
+        .where('courseTrack.tenantId = :tenantId', { tenantId })
+        .andWhere('courseTrack.organisationId = :organisationId', {
+          organisationId,
+        })
+        .andWhere('courseTrack.status = :completedStatus', {
+          completedStatus: TrackingStatus.COMPLETED,
+        })
+        .andWhere('course.status != :archivedCourseStatus', {
+          archivedCourseStatus: CourseStatus.ARCHIVED,
+        }),
+      'courseTrack',
+    ).getCount();
 
     // 3. modulesCompleted: one per (userId, moduleId) for non-archived modules
-    const modulesCompletedQuery = this.moduleTrackRepository
-      .createQueryBuilder('moduleTrack')
-      .innerJoin(
-        CourseModule,
-        'module',
-        'module.moduleId = moduleTrack.moduleId',
-      )
-      .select(
-        "COUNT(DISTINCT CONCAT(moduleTrack.userId, ':', moduleTrack.moduleId))",
-        'count',
-      )
-      .where('moduleTrack.tenantId = :tenantId', { tenantId })
-      .andWhere('moduleTrack.organisationId = :organisationId', {
-        organisationId,
-      })
-      .andWhere('moduleTrack.status = :completedStatus', {
-        completedStatus: ModuleTrackStatus.COMPLETED,
-      })
-      .andWhere('module.status != :archivedModuleStatus', {
-        archivedModuleStatus: ModuleStatus.ARCHIVED,
-      })
-      .getRawOne<{ count: string }>();
+    const modulesCompletedQuery = filterByUsers(
+      this.moduleTrackRepository
+        .createQueryBuilder('moduleTrack')
+        .innerJoin(
+          CourseModule,
+          'module',
+          'module.moduleId = moduleTrack.moduleId',
+        )
+        .select(
+          "COUNT(DISTINCT CONCAT(moduleTrack.userId, ':', moduleTrack.moduleId))",
+          'count',
+        )
+        .where('moduleTrack.tenantId = :tenantId', { tenantId })
+        .andWhere('moduleTrack.organisationId = :organisationId', {
+          organisationId,
+        })
+        .andWhere('moduleTrack.status = :completedStatus', {
+          completedStatus: ModuleTrackStatus.COMPLETED,
+        })
+        .andWhere('module.status != :archivedModuleStatus', {
+          archivedModuleStatus: ModuleStatus.ARCHIVED,
+        }),
+      'moduleTrack',
+    ).getRawOne<{ count: string }>();
 
     // Completed lesson tracks (course and standalone lessons); a lesson can have several
     // attempts, so completions are counted once per (userId, lessonId)
     const completedLessonsQuery = () =>
-      this.lessonTrackRepository
-        .createQueryBuilder('lessonTrack')
-        .innerJoin(Lesson, 'lesson', 'lesson.lessonId = lessonTrack.lessonId')
-        .where('lessonTrack.tenantId = :tenantId', { tenantId })
-        .andWhere('lessonTrack.organisationId = :organisationId', {
-          organisationId,
-        })
-        .andWhere('lessonTrack.status = :completedStatus', {
-          completedStatus: TrackingStatus.COMPLETED,
-        })
-        .andWhere('lesson.status != :archivedLessonStatus', {
-          archivedLessonStatus: LessonStatus.ARCHIVED,
-        });
+      filterByUsers(
+        this.lessonTrackRepository
+          .createQueryBuilder('lessonTrack')
+          .innerJoin(Lesson, 'lesson', 'lesson.lessonId = lessonTrack.lessonId')
+          .where('lessonTrack.tenantId = :tenantId', { tenantId })
+          .andWhere('lessonTrack.organisationId = :organisationId', {
+            organisationId,
+          })
+          .andWhere('lessonTrack.status = :completedStatus', {
+            completedStatus: TrackingStatus.COMPLETED,
+          })
+          .andWhere('lesson.status != :archivedLessonStatus', {
+            archivedLessonStatus: LessonStatus.ARCHIVED,
+          }),
+        'lessonTrack',
+      );
     const completedLessonKey =
       "COUNT(DISTINCT CONCAT(lessonTrack.userId, ':', lessonTrack.lessonId))";
 
@@ -1576,7 +1600,11 @@ export class EnrollmentsService {
       coursesCompletedQuery,
       modulesCompletedQuery,
       contentCompletedQuery,
-      this.fetchLmsCategoryIds(tenantId, authorization),
+      this.fetchLmsCategoryIds(tenantId, authorization).then((ids) =>
+        ids.length
+          ? ids
+          : this.fetchUsedCategoryIds(tenantId, organisationId),
+      ),
     ]);
 
     // Category-wise counts are limited to the categories returned by the LMS categories API.
@@ -1610,14 +1638,16 @@ export class EnrollmentsService {
       .select('course.courseId', 'itemId')
       .addSelect('UNNEST(course.categoryIds)', 'categoryId')
       .addSelect(
-        `EXISTS (${this.courseTrackRepository
-          .createQueryBuilder('courseTrack')
-          .select('1')
-          .where('courseTrack.courseId = course.courseId')
-          .andWhere('courseTrack.tenantId = course.tenantId')
-          .andWhere('courseTrack.organisationId = course.organisationId')
-          .andWhere('courseTrack.status = :completedStatus')
-          .getQuery()})`,
+        `EXISTS (${filterByUsers(
+          this.courseTrackRepository
+            .createQueryBuilder('courseTrack')
+            .select('1')
+            .where('courseTrack.courseId = course.courseId')
+            .andWhere('courseTrack.tenantId = course.tenantId')
+            .andWhere('courseTrack.organisationId = course.organisationId')
+            .andWhere('courseTrack.status = :completedStatus'),
+          'courseTrack',
+        ).getQuery()})`,
         'completed',
       )
       .where('course.tenantId = :tenantId', { tenantId })
@@ -1625,7 +1655,8 @@ export class EnrollmentsService {
       .andWhere('course.status = :publishedCourseStatus', {
         publishedCourseStatus: CourseStatus.PUBLISHED,
       })
-      .setParameter('completedStatus', TrackingStatus.COMPLETED);
+      .setParameter('completedStatus', TrackingStatus.COMPLETED)
+      .setParameters(hasUserFilter ? { userIds } : {});
 
     // 6. completedContentsByCategory: published standalone content (parent lessons outside any
     // course/module) of the category, completed when a standalone lesson_track attempt is completed
@@ -1634,15 +1665,17 @@ export class EnrollmentsService {
       .select('lesson.lessonId', 'itemId')
       .addSelect('UNNEST(lesson.categoryIds)', 'categoryId')
       .addSelect(
-        `EXISTS (${this.lessonTrackRepository
-          .createQueryBuilder('lessonTrack')
-          .select('1')
-          .where('lessonTrack.lessonId = lesson.lessonId')
-          .andWhere('lessonTrack.courseId IS NULL')
-          .andWhere('lessonTrack.tenantId = lesson.tenantId')
-          .andWhere('lessonTrack.organisationId = lesson.organisationId')
-          .andWhere('lessonTrack.status = :completedStatus')
-          .getQuery()})`,
+        `EXISTS (${filterByUsers(
+          this.lessonTrackRepository
+            .createQueryBuilder('lessonTrack')
+            .select('1')
+            .where('lessonTrack.lessonId = lesson.lessonId')
+            .andWhere('lessonTrack.courseId IS NULL')
+            .andWhere('lessonTrack.tenantId = lesson.tenantId')
+            .andWhere('lessonTrack.organisationId = lesson.organisationId')
+            .andWhere('lessonTrack.status = :completedStatus'),
+          'lessonTrack',
+        ).getQuery()})`,
         'completed',
       )
       .where('lesson.tenantId = :tenantId', { tenantId })
@@ -1652,7 +1685,8 @@ export class EnrollmentsService {
       .andWhere('lesson.status = :publishedLessonStatus', {
         publishedLessonStatus: LessonStatus.PUBLISHED,
       })
-      .setParameter('completedStatus', TrackingStatus.COMPLETED);
+      .setParameter('completedStatus', TrackingStatus.COMPLETED)
+      .setParameters(hasUserFilter ? { userIds } : {});
 
     const [coursesByCategoryRaw, contentsByCategoryRaw] = await Promise.all([
       countByCategory(courseCategories),
@@ -1683,6 +1717,45 @@ export class EnrollmentsService {
       completedCoursesByCategory: toCategoryProgress(coursesByCategoryRaw),
       completedContentsByCategory: toCategoryProgress(contentsByCategoryRaw),
     };
+  }
+
+  /**
+   * Fallback when the LMS categories API returns nothing: category IDs set on published
+   * courses and published standalone content (parent lessons outside any course/module).
+   */
+  private async fetchUsedCategoryIds(
+    tenantId: string,
+    organisationId: string,
+  ): Promise<string[]> {
+    const [courseRows, lessonRows] = await Promise.all([
+      this.courseRepository
+        .createQueryBuilder('course')
+        .select('DISTINCT UNNEST(course.categoryIds)', 'categoryId')
+        .where('course.tenantId = :tenantId', { tenantId })
+        .andWhere('course.organisationId = :organisationId', { organisationId })
+        .andWhere('course.status = :publishedCourseStatus', {
+          publishedCourseStatus: CourseStatus.PUBLISHED,
+        })
+        .getRawMany<{ categoryId: string }>(),
+      this.lessonRepository
+        .createQueryBuilder('lesson')
+        .select('DISTINCT UNNEST(lesson.categoryIds)', 'categoryId')
+        .where('lesson.tenantId = :tenantId', { tenantId })
+        .andWhere('lesson.organisationId = :organisationId', { organisationId })
+        .andWhere('lesson.courseId IS NULL AND lesson.moduleId IS NULL')
+        .andWhere('lesson.parentId IS NULL')
+        .andWhere('lesson.status = :publishedLessonStatus', {
+          publishedLessonStatus: LessonStatus.PUBLISHED,
+        })
+        .getRawMany<{ categoryId: string }>(),
+    ]);
+    return Array.from(
+      new Set(
+        [...courseRows, ...lessonRows]
+          .map((row) => row.categoryId)
+          .filter(Boolean),
+      ),
+    ).sort();
   }
 
   /**
