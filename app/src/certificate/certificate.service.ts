@@ -27,10 +27,31 @@ import {
   CourseTrack,
   TrackingStatus,
 } from '../tracking/entities/course-track.entity';
+import { Module as CourseModule } from '../modules/entities/module.entity';
 import {
+  ModuleTrack,
+  ModuleTrackStatus,
+} from '../tracking/entities/module-track.entity';
+import {
+  CertificatePdfContext,
   CourseCertificatePdfDto,
   CoursePdfTemplateSource,
 } from './dto/course-certificate-pdf-dto';
+
+/** What a certificate/badge PDF is issued for, resolved from the request context. */
+interface CertificatePdfSubject {
+  contextType: 'courses' | 'modules';
+  contextId: string;
+  courseId: string;
+  courseName: string;
+  moduleId?: string;
+  moduleName?: string;
+  templateId: string;
+  certificateType: string;
+}
+
+/** A request that cannot be served: [message, error code, HTTP status]. */
+type CertificatePdfFailure = { failure: [string, string, HttpStatus] };
 
 @Injectable()
 export class CertificateService implements OnModuleInit, OnModuleDestroy {
@@ -1626,10 +1647,11 @@ export class CertificateService implements OnModuleInit, OnModuleDestroy {
 
   /**
    * POST /certificate/course-pdf
-   * Issues (or reuses) the caller's course certificate, renders it as a PDF, stores it in
-   * S3 and saves the URL on user_certificates.pdfurl. Idempotent: an already stored PDF is
-   * returned without reissuing, rerendering or uploading. Calls for the same
-   * tenant/user/course/type are serialised with a Postgres advisory lock.
+   * Issues (or reuses) the caller's course certificate (context "course") or module badge
+   * (context "module"), renders it as a PDF, stores it in S3 and saves the URL on
+   * user_certificates.pdfurl. Idempotent: an already stored PDF is returned without
+   * reissuing, rerendering or uploading. Calls for the same tenant/user/context/type are
+   * serialised with a Postgres advisory lock.
    */
   async generateCoursePdfCertificate(
     dto: CourseCertificatePdfDto,
@@ -1668,8 +1690,65 @@ export class CertificateService implements OnModuleInit, OnModuleDestroy {
       );
     }
 
-    const courseId = dto.courseId;
     const scope = { tenantId, ...(organisationId && { organisationId }) };
+    const resolved =
+      dto.context === CertificatePdfContext.MODULE
+        ? await this.resolveModulePdfSubject(dto, userId, scope)
+        : await this.resolveCoursePdfSubject(dto, userId, scope);
+    if ('failure' in resolved) {
+      return fail(...resolved.failure);
+    }
+    const subject = resolved;
+    const manager = this.userCourseCertificateRepository.manager;
+
+    const lockKey = `certificate-pdf:${tenantId}:${userId}:${subject.contextId}:${subject.certificateType}`;
+    const queryRunner = manager.connection.createQueryRunner();
+    try {
+      await queryRunner.connect();
+      const [{ locked }] = await queryRunner.query(
+        'SELECT pg_try_advisory_lock(hashtext($1)) AS locked',
+        [lockKey],
+      );
+      if (!locked) {
+        return fail(
+          'Certificate PDF generation is already in progress. Please retry shortly.',
+          'CONFLICT',
+          HttpStatus.CONFLICT,
+        );
+      }
+      try {
+        return await this.issueAndStoreCoursePdf(
+          { tenantId, organisationId, userId, ...subject },
+          request,
+          response,
+          fail,
+        );
+      } finally {
+        await queryRunner
+          .query('SELECT pg_advisory_unlock(hashtext($1))', [lockKey])
+          .catch(() => undefined);
+      }
+    } catch (error) {
+      this.loggerService.error(
+        `[COURSE_PDF] Unexpected error for user ${userId}, ${dto.context} ${dto.contextId}: ${error.message}`,
+      );
+      return fail(
+        'Error while generating certificate PDF',
+        'INTERNAL_SERVER_ERROR',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    } finally {
+      await queryRunner.release();
+    }
+  }
+
+  /** Course context: the course must be completed; its template is courses.templateId (or course_templates). */
+  private async resolveCoursePdfSubject(
+    dto: CourseCertificatePdfDto,
+    userId: string,
+    scope: { tenantId: string; organisationId?: string },
+  ): Promise<CertificatePdfSubject | CertificatePdfFailure> {
+    const courseId = dto.contextId;
     const manager = this.userCourseCertificateRepository.manager;
 
     let course: Course | null;
@@ -1689,21 +1768,27 @@ export class CertificateService implements OnModuleInit, OnModuleDestroy {
       this.loggerService.error(
         `[COURSE_PDF] Course lookup failed for course ${courseId}: ${error.message}`,
       );
-      return fail(
-        'Failed to load course details',
-        'INTERNAL_SERVER_ERROR',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+      return {
+        failure: [
+          'Failed to load course details',
+          'INTERNAL_SERVER_ERROR',
+          HttpStatus.INTERNAL_SERVER_ERROR,
+        ],
+      };
     }
     if (!course) {
-      return fail('Course not found', 'NOT_FOUND', HttpStatus.NOT_FOUND);
+      return {
+        failure: ['Course not found', 'NOT_FOUND', HttpStatus.NOT_FOUND],
+      };
     }
     if (courseTrack?.status !== TrackingStatus.COMPLETED) {
-      return fail(
-        'Course is not completed by the user',
-        'FORBIDDEN',
-        HttpStatus.FORBIDDEN,
-      );
+      return {
+        failure: [
+          'Course is not completed by the user',
+          'FORBIDDEN',
+          HttpStatus.FORBIDDEN,
+        ],
+      };
     }
 
     let templateId: string | undefined;
@@ -1725,11 +1810,13 @@ export class CertificateService implements OnModuleInit, OnModuleDestroy {
         this.loggerService.error(
           `[COURSE_PDF] Template lookup failed for course ${courseId}: ${(error as Error).message}`,
         );
-        return fail(
-          'Failed to load certificate template',
-          'INTERNAL_SERVER_ERROR',
-          HttpStatus.INTERNAL_SERVER_ERROR,
-        );
+        return {
+          failure: [
+            'Failed to load certificate template',
+            'INTERNAL_SERVER_ERROR',
+            HttpStatus.INTERNAL_SERVER_ERROR,
+          ],
+        };
       }
       templateId = template?.templateId;
       certificateType = (
@@ -1737,86 +1824,158 @@ export class CertificateService implements OnModuleInit, OnModuleDestroy {
       ).toLowerCase();
     }
     if (!templateId) {
-      return fail(
-        'No certificate template is configured for this course',
-        'NOT_FOUND',
-        HttpStatus.NOT_FOUND,
-      );
+      return {
+        failure: [
+          'No certificate template is configured for this course',
+          'NOT_FOUND',
+          HttpStatus.NOT_FOUND,
+        ],
+      };
     }
 
-    const lockKey = `certificate-pdf:${tenantId}:${userId}:${courseId}:${certificateType}`;
-    const queryRunner = manager.connection.createQueryRunner();
+    return {
+      contextType: 'courses',
+      contextId: courseId,
+      courseId,
+      courseName: course.title,
+      templateId,
+      certificateType,
+    };
+  }
+
+  /** Module context: the module must be completed; its badge template is modules.badgeId. */
+  private async resolveModulePdfSubject(
+    dto: CourseCertificatePdfDto,
+    userId: string,
+    scope: { tenantId: string; organisationId?: string },
+  ): Promise<CertificatePdfSubject | CertificatePdfFailure> {
+    const moduleId = dto.contextId;
+    if (dto.templateSource === CoursePdfTemplateSource.COURSE_TEMPLATE) {
+      return {
+        failure: [
+          'templateSource "course_template" is only supported for context "course"',
+          'BAD_REQUEST',
+          HttpStatus.BAD_REQUEST,
+        ],
+      };
+    }
+    const manager = this.userCourseCertificateRepository.manager;
+
+    let module: CourseModule | null;
+    let moduleTrack: ModuleTrack | null;
+    let course: Course | null;
     try {
-      await queryRunner.connect();
-      const [{ locked }] = await queryRunner.query(
-        'SELECT pg_try_advisory_lock(hashtext($1)) AS locked',
-        [lockKey],
-      );
-      if (!locked) {
-        return fail(
-          'Certificate PDF generation is already in progress. Please retry shortly.',
-          'CONFLICT',
-          HttpStatus.CONFLICT,
-        );
-      }
-      try {
-        return await this.issueAndStoreCoursePdf(
-          {
-            tenantId,
-            organisationId,
-            userId,
-            courseId,
-            courseName: course.title,
-            certificateType,
-            templateId,
-          },
-          request,
-          response,
-          fail,
-        );
-      } finally {
-        await queryRunner
-          .query('SELECT pg_advisory_unlock(hashtext($1))', [lockKey])
-          .catch(() => undefined);
-      }
+      module = await manager.findOne(CourseModule, {
+        where: { moduleId, ...scope },
+        select: ['moduleId', 'courseId', 'title', 'badgeId'],
+      });
+      moduleTrack = module
+        ? await manager.findOne(ModuleTrack, {
+            where: { moduleId, userId, ...scope },
+            select: ['moduleTrackId', 'status'],
+          })
+        : null;
+      // The badge credential also names the module's course
+      course =
+        module && moduleTrack?.status === ModuleTrackStatus.COMPLETED
+          ? await manager.findOne(Course, {
+              where: { courseId: module.courseId, ...scope },
+              select: ['courseId', 'title'],
+            })
+          : null;
     } catch (error) {
       this.loggerService.error(
-        `[COURSE_PDF] Unexpected error for user ${userId}, course ${courseId}: ${error.message}`,
+        `[COURSE_PDF] Module lookup failed for module ${moduleId}: ${error.message}`,
       );
-      return fail(
-        'Error while generating certificate PDF',
-        'INTERNAL_SERVER_ERROR',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
-    } finally {
-      await queryRunner.release();
+      return {
+        failure: [
+          'Failed to load module details',
+          'INTERNAL_SERVER_ERROR',
+          HttpStatus.INTERNAL_SERVER_ERROR,
+        ],
+      };
     }
+    if (!module) {
+      return {
+        failure: ['Module not found', 'NOT_FOUND', HttpStatus.NOT_FOUND],
+      };
+    }
+    if (moduleTrack?.status !== ModuleTrackStatus.COMPLETED) {
+      return {
+        failure: [
+          'Module is not completed by the user',
+          'FORBIDDEN',
+          HttpStatus.FORBIDDEN,
+        ],
+      };
+    }
+    if (!course) {
+      return {
+        failure: [
+          'Course of the module not found',
+          'NOT_FOUND',
+          HttpStatus.NOT_FOUND,
+        ],
+      };
+    }
+
+    let template: Templates | null;
+    try {
+      template = await this.getTemplateByTemplatesId(module.badgeId);
+    } catch (error) {
+      this.loggerService.error(
+        `[COURSE_PDF] Badge template lookup failed for module ${moduleId}: ${(error as Error).message}`,
+      );
+      return {
+        failure: [
+          'Failed to load badge template',
+          'INTERNAL_SERVER_ERROR',
+          HttpStatus.INTERNAL_SERVER_ERROR,
+        ],
+      };
+    }
+    if (!template?.templateId) {
+      return {
+        failure: [
+          'No badge template is configured for this module',
+          'NOT_FOUND',
+          HttpStatus.NOT_FOUND,
+        ],
+      };
+    }
+
+    return {
+      contextType: 'modules',
+      contextId: moduleId,
+      courseId: course.courseId,
+      courseName: course.title,
+      moduleId,
+      moduleName: module.title,
+      templateId: template.templateId,
+      certificateType: (template.template_type || 'badge').toLowerCase(),
+    };
   }
 
   /** Runs under the advisory lock taken by generateCoursePdfCertificate. */
   private async issueAndStoreCoursePdf(
-    ctx: {
+    ctx: CertificatePdfSubject & {
       tenantId: string;
       organisationId?: string;
       userId: string;
-      courseId: string;
-      courseName: string;
-      certificateType: string;
-      templateId: string;
     },
     request: any,
     response: Response,
     fail: (message: string, error: string, status: HttpStatus) => unknown,
   ) {
     const apiId = 'api.certificate.coursePdf';
-    const logContext = `user ${ctx.userId}, course ${ctx.courseId}, type ${ctx.certificateType}`;
+    const logContext = `user ${ctx.userId}, ${ctx.contextType} ${ctx.contextId}, type ${ctx.certificateType}`;
 
     let certificate: UserCourseCertificate | null;
     try {
       certificate = await this.userCourseCertificateRepository.findOne({
         where: {
           userId: ctx.userId,
-          contextId: ctx.courseId,
+          contextId: ctx.contextId,
           tenantId: ctx.tenantId,
           certificate_type: ctx.certificateType,
         },
@@ -1865,7 +2024,9 @@ export class CertificateService implements OnModuleInit, OnModuleDestroy {
             lastName: userDetails.lastName,
             userId: ctx.userId,
             courseId: ctx.courseId,
-            courseName: ctx.courseName,
+            // Fields outside the schema's JSON-LD context break signing, so a module badge
+            // carries the module title in courseName (the field badge templates print)
+            courseName: ctx.moduleName ?? ctx.courseName,
           },
           learnerDid,
           new Date().toLocaleDateString('en-US', {
@@ -1902,8 +2063,8 @@ export class CertificateService implements OnModuleInit, OnModuleDestroy {
           this.userCourseCertificateRepository.create({
             usercertificateId: randomUUID(),
             userId: ctx.userId,
-            contextId: ctx.courseId,
-            contextType: 'courses',
+            contextId: ctx.contextId,
+            contextType: ctx.contextType,
             tenantId: ctx.tenantId,
             certificateId: credentialId,
             certificate_type: ctx.certificateType,
@@ -1926,20 +2087,39 @@ export class CertificateService implements OnModuleInit, OnModuleDestroy {
         );
       }
 
-      // Keep course tracking in sync so the completion cron does not issue again
-      await this.trackingService
-        .updateCourseTracking(
-          ctx.courseId,
-          ctx.userId,
-          { certificateIssued: true },
-          ctx.tenantId,
-          ctx.organisationId,
-        )
-        .catch((error) =>
-          this.loggerService.warn(
-            `[COURSE_PDF] Could not mark certificateIssued for ${logContext}: ${error.message}`,
-          ),
-        );
+      // Record the issue on the tracking row (for courses this stops the completion cron issuing again)
+      if (ctx.contextType === 'modules') {
+        await this.userCourseCertificateRepository.manager
+          .update(
+            ModuleTrack,
+            {
+              moduleId: ctx.contextId,
+              userId: ctx.userId,
+              tenantId: ctx.tenantId,
+              ...(ctx.organisationId && { organisationId: ctx.organisationId }),
+            },
+            { badgeGenDate: certificate.issuedOn },
+          )
+          .catch((error) =>
+            this.loggerService.warn(
+              `[COURSE_PDF] Could not set badgeGenDate for ${logContext}: ${error.message}`,
+            ),
+          );
+      } else {
+        await this.trackingService
+          .updateCourseTracking(
+            ctx.courseId,
+            ctx.userId,
+            { certificateIssued: true },
+            ctx.tenantId,
+            ctx.organisationId,
+          )
+          .catch((error) =>
+            this.loggerService.warn(
+              `[COURSE_PDF] Could not mark certificateIssued for ${logContext}: ${error.message}`,
+            ),
+          );
+      }
     }
     let pdfBuffer: Buffer;
     try {
@@ -1987,7 +2167,7 @@ export class CertificateService implements OnModuleInit, OnModuleDestroy {
         .replace(/^\/+/, '')
         .replace(/\/+$/, '');
       // Deterministic key: a retry after a failed DB save overwrites instead of orphaning files
-      const fileName = `certificate-${ctx.userId}-${ctx.courseId}-${certificate.certificateId}.pdf`;
+      const fileName = `certificate-${ctx.userId}-${ctx.contextId}-${certificate.certificateId}.pdf`;
       pdfUrl = await this.s3Service.uploadFile(
         pdfBuffer,
         `${prefix}/${fileName.replace(/[^\w.-]/g, '_')}`,
