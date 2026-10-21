@@ -1,5 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { IsNotEmpty, IsString } from 'class-validator';
+import { CategoryProgressDto } from './coach-progress-dashboard.dto';
 
 export class DashboardByUserIdDto {
   @ApiProperty({
@@ -9,15 +10,6 @@ export class DashboardByUserIdDto {
   @IsNotEmpty()
   @IsString()
   userId: string;
-}
-
-export class CategoryCountDto {
-  @ApiProperty({ description: 'Category ID', example: 'livelihoods' })
-  @IsString()
-  categoryId: string;
-
-  @ApiProperty({ description: 'Completed count for this category', example: 5 })
-  count: number;
 }
 
 export class DashboardByUserIdResponseDto {
@@ -37,14 +29,16 @@ export class DashboardByUserIdResponseDto {
   mandatoryDueCount: number;
 
   @ApiProperty({
-    description: 'Completed courses count categoryId wise',
-    type: [CategoryCountDto],
+    description:
+      'Course tracking per category for the user: completed vs tracked courses (courses.categoryIds; "other" when a course has none). Archived courses are excluded.',
+    type: [CategoryProgressDto],
   })
-  completedCoursesByCategory: CategoryCountDto[];
+  courses: CategoryProgressDto[];
 
   @ApiProperty({
-    description: 'Completed standalone lessons (courseId IS NULL AND moduleId IS NULL) count categoryId wise',
-    type: [CategoryCountDto],
+    description:
+      "Lesson tracking per category for the user (course and standalone lessons): completed vs tracked lessons (lessons.categoryIds, falling back to the course's; \"other\" when neither has one). A lesson is completed when any attempt is completed. Archived lessons are excluded.",
+    type: [CategoryProgressDto],
   })
-  completedStandaloneLessonsByCategory: CategoryCountDto[];
+  lessons: CategoryProgressDto[];
 }
