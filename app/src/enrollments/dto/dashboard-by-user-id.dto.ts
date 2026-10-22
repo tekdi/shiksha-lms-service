@@ -1,5 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { IsNotEmpty, IsString } from 'class-validator';
+import { CategoryProgressDto } from './coach-progress-dashboard.dto';
 
 export class DashboardByUserIdDto {
   @ApiProperty({
@@ -11,23 +12,22 @@ export class DashboardByUserIdDto {
   userId: string;
 }
 
-export class CategoryCountDto {
-  @ApiProperty({ description: 'Category ID', example: 'livelihoods' })
-  @IsString()
-  categoryId: string;
-
-  @ApiProperty({ description: 'Completed count for this category', example: 5 })
-  count: number;
-}
-
 export class DashboardByUserIdResponseDto {
-  @ApiProperty({ description: 'Total count of enrolled courses for the user', example: 5 })
+  @ApiProperty({
+    description:
+      'Assigned courses: published enrollments in published courses (same list as users-courses hasEnroll=true)',
+    example: 22,
+  })
   totalCount: number;
 
-  @ApiProperty({ description: 'Course completion count', example: 5 })
+  @ApiProperty({ description: 'Assigned courses with course tracking completed', example: 9 })
   courseCompletionCount: number;
 
-  @ApiProperty({ description: 'Course status started count', example: 3 })
+  @ApiProperty({
+    description:
+      'In progress: assigned courses with course tracking incomplete (users-courses trackingStatus=incomplete)',
+    example: 3,
+  })
   courseStatusStartedCount: number;
 
   @ApiProperty({ description: 'Certificate count (default 0 if not set)', example: 4 })
@@ -37,14 +37,16 @@ export class DashboardByUserIdResponseDto {
   mandatoryDueCount: number;
 
   @ApiProperty({
-    description: 'Completed courses count categoryId wise',
-    type: [CategoryCountDto],
+    description:
+      'The assigned courses counted in totalCount, per category: completed vs total. A course counts towards each of its categories; courses without one are grouped as "other"',
+    type: [CategoryProgressDto],
   })
-  completedCoursesByCategory: CategoryCountDto[];
+  courses: CategoryProgressDto[];
 
   @ApiProperty({
-    description: 'Completed standalone lessons (courseId IS NULL AND moduleId IS NULL) count categoryId wise',
-    type: [CategoryCountDto],
+    description:
+      "Standalone lessons (no course) the user has tracking for, per category, as the lessons list (isStandalone=true, hasTrack=true) shows them: completed vs total, using the status of the user's most recently updated attempt. Lessons without a category are grouped as \"other\". Archived lessons are excluded.",
+    type: [CategoryProgressDto],
   })
-  completedStandaloneLessonsByCategory: CategoryCountDto[];
+  lessons: CategoryProgressDto[];
 }

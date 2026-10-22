@@ -8,7 +8,8 @@ import {
   Param,
   Query,
   ParseUUIDPipe,
-  Headers,
+  HttpCode,
+  HttpStatus,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -32,7 +33,10 @@ import { ApiId } from '../common/decorators/api-id.decorator';
 import { TenantOrg } from '../common/decorators/tenant-org.decorator';
 import { UsersEnrolledCoursesDto, UsersEnrolledCoursesResponseDto } from './dto/search-enrolled-courses.dto';
 import { DashboardByUserIdDto, DashboardByUserIdResponseDto } from './dto/dashboard-by-user-id.dto';
-import { CoachProgressDashboardResponseDto } from './dto/coach-progress-dashboard.dto';
+import {
+  CoachProgressDashboardDto,
+  CoachProgressDashboardResponseDto,
+} from './dto/coach-progress-dashboard.dto';
 
 @ApiTags('Enrollments')
 @ApiBearerAuth()
@@ -208,7 +212,7 @@ export class EnrollmentsController {
   @ApiOperation({
     summary: 'Get user dashboard metrics by user ID',
     description:
-      'Returns completed enrolled courses count, track completion count, track started count, certificate count, mandatory due count, completed courses by category, and completed standalone lessons by category.',
+      'Returns completed enrolled courses count, track completion count, track started count, certificate count, mandatory due count, and course and lesson completed/total counts per category (courses, lessons).',
   })
   @ApiResponse({
     status: 200,
@@ -253,18 +257,36 @@ export class EnrollmentsController {
     );
   }
 
-  @Get('coachProgressDashboard')
+  @Post('coachProgressDashboard')
+  @HttpCode(HttpStatus.OK)
   @ApiId(API_IDS.GET_COACH_PROGRESS_DASHBOARD)
   @ApiOperation({
     summary: 'Get coach progress dashboard metrics',
     description:
-      'Returns coaches assigned to courses, overall completed course/module/content counts, completed content grouped by Development Pathway (category ID), issued certificates, and per-coach rows (province, site, pathway IDs, progress, certificates). Pass userId to get only that coach with their learning journey.',
+      'Returns coaches assigned to courses, completed course/module/content counts, issued certificates, and course and lesson completed/total counts per category. Pass userIds to limit every metric to those users; omit it for overall statistics.',
   })
-  @ApiQuery({
-    name: 'userId',
-    required: false,
-    type: String,
-    description: 'Coach user ID: limits coaches to this coach and adds their learning journey',
+  @ApiBody({ type: CoachProgressDashboardDto })
+  @ApiResponse({
+    status: 200,
+    description: 'Coach progress dashboard metrics retrieved successfully',
+    type: CoachProgressDashboardResponseDto,
+  })
+  async coachProgressDashboardPost(
+    @Body() dto: CoachProgressDashboardDto,
+    @TenantOrg() tenantOrg: { tenantId: string; organisationId: string },
+  ) {
+    return this.enrollmentsService.getCoachProgressDashboard(
+      tenantOrg.tenantId,
+      tenantOrg.organisationId,
+      dto.userIds,
+    );
+  }
+
+  @Get('coachProgressDashboard')
+  @ApiId(API_IDS.GET_COACH_PROGRESS_DASHBOARD)
+  @ApiOperation({
+    summary:
+      'Get coach progress dashboard metrics for all users (GET option, no userIds filter)',
   })
   @ApiResponse({
     status: 200,
@@ -273,14 +295,10 @@ export class EnrollmentsController {
   })
   async getCoachProgressDashboard(
     @TenantOrg() tenantOrg: { tenantId: string; organisationId: string },
-    @Headers('authorization') authorization?: string,
-    @Query('userId') userId?: string,
   ) {
     return this.enrollmentsService.getCoachProgressDashboard(
       tenantOrg.tenantId,
       tenantOrg.organisationId,
-      authorization,
-      userId,
     );
   }
 
