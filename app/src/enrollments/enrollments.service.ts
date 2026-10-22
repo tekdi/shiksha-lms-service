@@ -1358,35 +1358,46 @@ export class EnrollmentsService {
   ): Promise<DashboardByUserIdResponseDto> {
     this.logger.log(`Fetching dashboard metrics for user: ${userId}`);
 
-    // 1. totalCount: Total count of enrolled courses for the user
-    const totalCount = await this.userEnrollmentRepository.count({
-      where: {
-        userId,
-        tenantId,
-        organisationId,
-        status: EnrollmentStatus.PUBLISHED,
-      },
-    });
+    // The user's courses as users-courses (hasEnroll=true) lists them: published enrollments in
+    // published courses, with the user's course track when there is one
+    const assignedCoursesQuery = () =>
+      this.userEnrollmentRepository
+        .createQueryBuilder('enrollment')
+        .innerJoin(Course, 'course', 'course.courseId = enrollment.courseId')
+        .leftJoin(
+          CourseTrack,
+          'courseTrack',
+          'courseTrack.courseId = enrollment.courseId AND courseTrack.userId = enrollment.userId AND courseTrack.tenantId = enrollment.tenantId AND courseTrack.organisationId = enrollment.organisationId',
+        )
+        .where('enrollment.userId = :userId', { userId })
+        .andWhere('enrollment.tenantId = :tenantId', { tenantId })
+        .andWhere('enrollment.organisationId = :organisationId', {
+          organisationId,
+        })
+        .andWhere('enrollment.status = :enrollmentStatus', {
+          enrollmentStatus: EnrollmentStatus.PUBLISHED,
+        })
+        .andWhere('course.status = :coursePublishedStatus', {
+          coursePublishedStatus: CourseStatus.PUBLISHED,
+        });
 
-    // 2. courseCompletionCount: Total course tracks with status = completed
-    const courseCompletionCount = await this.courseTrackRepository.count({
-      where: {
-        userId,
-        tenantId,
-        organisationId,
-        status: TrackingStatus.COMPLETED,
-      },
-    });
-
-    // 3. courseStatusStartedCount: Total course tracks with status = started
-    const courseStatusStartedCount = await this.courseTrackRepository.count({
-      where: {
-        userId,
-        tenantId,
-        organisationId,
-        status: TrackingStatus.STARTED,
-      },
-    });
+    // 1-3. totalCount (assigned courses), courseCompletionCount (completed) and
+    // courseStatusStartedCount (in progress: incomplete, as users-courses trackingStatus=incomplete)
+    const courseCounts = await assignedCoursesQuery()
+      .select('COUNT(DISTINCT enrollment.courseId)', 'total')
+      .addSelect(
+        'COUNT(DISTINCT enrollment.courseId) FILTER (WHERE courseTrack.status = :completedStatus)',
+        'completed',
+      )
+      .addSelect(
+        'COUNT(DISTINCT enrollment.courseId) FILTER (WHERE courseTrack.status = :inProgressStatus)',
+        'inProgress',
+      )
+      .setParameters({
+        completedStatus: TrackingStatus.COMPLETED,
+        inProgressStatus: TrackingStatus.INCOMPLETE,
+      })
+      .getRawOne<{ total: string; completed: string; inProgress: string }>();
 
     // 4. certificateCount: Total certificates issued (default to 0)
     const certificateCount = await this.courseTrackRepository.count({
@@ -1419,17 +1430,56 @@ export class EnrollmentsService {
       )
       .getCount();
 
-    // 6. courses and lessons per category for this user: completed vs tracked
-    const { courses, lessons } = await this.getCategoryProgress(
-      tenantId,
-      organisationId,
-      [userId],
-    );
+    // 6. courses per category: the same assigned courses, so the totals add up to totalCount
+    // and the completed counts to courseCompletionCount
+    const courseRows = assignedCoursesQuery()
+      .select('enrollment.userId', 'userId')
+      .addSelect('enrollment.courseId', 'itemId')
+      .addSelect('courseTrack.status', 'status')
+      .addSelect(
+        `UNNEST(COALESCE(${assignedCategoryIds('course.categoryIds')}, ARRAY['${UNCATEGORIZED_CATEGORY_ID}']::varchar[]))`,
+        'categoryId',
+      );
+
+    // 7. lessons per category, as the lessons list (isStandalone=true, hasTrack=true) shows them:
+    // standalone lessons (no course) the user has tracked, with the status of the user's most
+    // recently updated attempt
+    const lessonRows = this.lessonRepository
+      .createQueryBuilder('lesson')
+      .innerJoin(
+        LessonTrack,
+        'lessonTrack',
+        `lessonTrack.lessonTrackId = (
+          SELECT lt."lessontrackid" FROM lesson_track lt
+          WHERE lt."lessonId" = lesson."lessonId" AND lt."userId" = :userId
+          ORDER BY lt."updatedAt" DESC
+          LIMIT 1
+        )`,
+        { userId },
+      )
+      .select('lessonTrack.userId', 'userId')
+      .addSelect('lesson.lessonId', 'itemId')
+      .addSelect('lessonTrack.status', 'status')
+      .addSelect(
+        `UNNEST(COALESCE(${assignedCategoryIds('lesson.categoryIds')}, ARRAY['${UNCATEGORIZED_CATEGORY_ID}']::varchar[]))`,
+        'categoryId',
+      )
+      .where('lesson.tenantId = :tenantId', { tenantId })
+      .andWhere('lesson.organisationId = :organisationId', { organisationId })
+      .andWhere('lesson.courseId IS NULL')
+      .andWhere('lesson.status != :archivedLessonStatus', {
+        archivedLessonStatus: LessonStatus.ARCHIVED,
+      });
+
+    const [courses, lessons] = await Promise.all([
+      this.categoryProgressQuery(courseRows),
+      this.categoryProgressQuery(lessonRows),
+    ]);
 
     return {
-      totalCount: totalCount || 0,
-      courseCompletionCount: courseCompletionCount || 0,
-      courseStatusStartedCount: courseStatusStartedCount || 0,
+      totalCount: Number(courseCounts?.total || 0),
+      courseCompletionCount: Number(courseCounts?.completed || 0),
+      courseStatusStartedCount: Number(courseCounts?.inProgress || 0),
       certificateCount: certificateCount || 0,
       mandatoryDueCount: mandatoryDueCount || 0,
       courses,

@@ -13,13 +13,21 @@ export class DashboardByUserIdDto {
 }
 
 export class DashboardByUserIdResponseDto {
-  @ApiProperty({ description: 'Total count of enrolled courses for the user', example: 5 })
+  @ApiProperty({
+    description:
+      'Assigned courses: published enrollments in published courses (same list as users-courses hasEnroll=true)',
+    example: 22,
+  })
   totalCount: number;
 
-  @ApiProperty({ description: 'Course completion count', example: 5 })
+  @ApiProperty({ description: 'Assigned courses with course tracking completed', example: 9 })
   courseCompletionCount: number;
 
-  @ApiProperty({ description: 'Course status started count', example: 3 })
+  @ApiProperty({
+    description:
+      'In progress: assigned courses with course tracking incomplete (users-courses trackingStatus=incomplete)',
+    example: 3,
+  })
   courseStatusStartedCount: number;
 
   @ApiProperty({ description: 'Certificate count (default 0 if not set)', example: 4 })
@@ -30,14 +38,14 @@ export class DashboardByUserIdResponseDto {
 
   @ApiProperty({
     description:
-      'Course tracking per category for the user: completed vs tracked courses (courses.categoryIds; "other" when a course has none). Archived courses are excluded.',
+      'The assigned courses counted in totalCount, per category: completed vs total. A course counts towards each of its categories; courses without one are grouped as "other"',
     type: [CategoryProgressDto],
   })
   courses: CategoryProgressDto[];
 
   @ApiProperty({
     description:
-      "Lesson tracking per category for the user (course and standalone lessons): completed vs tracked lessons (lessons.categoryIds, falling back to the course's; \"other\" when neither has one). A lesson is completed when any attempt is completed. Archived lessons are excluded.",
+      "Standalone lessons (no course) the user has tracking for, per category, as the lessons list (isStandalone=true, hasTrack=true) shows them: completed vs total, using the status of the user's most recently updated attempt. Lessons without a category are grouped as \"other\". Archived lessons are excluded.",
     type: [CategoryProgressDto],
   })
   lessons: CategoryProgressDto[];

@@ -315,36 +315,103 @@ describe('EnrollmentsService - getCoachProgressDashboard', () => {
     });
   });
 
-  describe('dashboardByUserId category progress', () => {
-    it('returns courses and lessons per category for that user only', async () => {
+  describe('dashboardByUserId', () => {
+    const assigned = () =>
+      built.enrollment.filter((qb) =>
+        qb.conditions().includes('course.status = :coursePublishedStatus'),
+      );
+
+    beforeEach(() => {
+      Object.assign(service, {
+        userEnrollmentRepository: repository('enrollment', {
+          rawOne: { total: '22', completed: '9', inProgress: '3' },
+          count: 3,
+        }),
+        lessonRepository: repository('lesson', {}),
+      });
+    });
+
+    it('counts the courses users-courses lists: total, completed and in progress (incomplete)', async () => {
+      const result = await service.dashboardByUserId('3129', TENANT, ORG);
+
+      expect(result).toMatchObject({
+        totalCount: 22,
+        courseCompletionCount: 9,
+        courseStatusStartedCount: 3,
+        mandatoryDueCount: 3,
+      });
+      const [counts] = assigned();
+      expect(counts.selects()).toEqual([
+        'COUNT(DISTINCT enrollment.courseId)',
+        'COUNT(DISTINCT enrollment.courseId) FILTER (WHERE courseTrack.status = :completedStatus)',
+        'COUNT(DISTINCT enrollment.courseId) FILTER (WHERE courseTrack.status = :inProgressStatus)',
+      ]);
+      expect(counts.params).toMatchObject({
+        userId: '3129',
+        tenantId: TENANT,
+        organisationId: ORG,
+        enrollmentStatus: 'published',
+        coursePublishedStatus: 'published',
+        completedStatus: 'completed',
+        inProgressStatus: 'incomplete',
+      });
+      expect(counts.args('leftJoin')[0][1]).toBe('courseTrack');
+    });
+
+    it('groups the same assigned courses by category so the totals add up', async () => {
       const result = await service.dashboardByUserId('3129', TENANT, ORG);
 
       expect(result.courses).toEqual([
         { categoryId: 'agriculture', completedCount: 2, totalCount: 5 },
       ]);
+      const courseRows = assigned()[1];
+      expect(courseRows.args('select')[0]).toEqual([
+        'enrollment.userId',
+        'userId',
+      ]);
+      expect(courseRows.args('addSelect')).toEqual([
+        ['enrollment.courseId', 'itemId'],
+        ['courseTrack.status', 'status'],
+        [
+          "UNNEST(COALESCE(NULLIF(ARRAY_REMOVE(ARRAY_REMOVE(course.categoryIds, NULL), ''), '{}'), ARRAY['other']::varchar[]))",
+          'categoryId',
+        ],
+      ]);
+      expect(built.category[0].args('from')[0][0]).toBe(
+        '(SUBQUERY(enrollment))',
+      );
+    });
+
+    it('groups standalone lessons as the lessons list shows them: no course, latest attempt status', async () => {
+      const result = await service.dashboardByUserId('3129', TENANT, ORG);
+
       expect(result.lessons).toEqual([
         { categoryId: 'agriculture', completedCount: 7, totalCount: 9 },
         { categoryId: 'health', completedCount: 0, totalCount: 3 },
       ]);
-      // Same per-category rows as the coach dashboard, limited to the user
-      const [courseRows] = built.courseTrack.filter((qb) =>
-        qb.selects().includes('courseTrack.courseId'),
-      );
-      const [lessonRows] = built.lessonTrack.filter((qb) =>
-        qb.selects().includes('lessonTrack.lessonId'),
-      );
-      for (const [qb, column] of [
-        [courseRows, 'courseTrack.userId'],
-        [lessonRows, 'lessonTrack.userId'],
-      ] as const) {
-        expect(userFilters(qb)).toEqual([`${column} IN (:...userIds)`]);
-        expect(qb.params).toMatchObject({
-          userIds: ['3129'],
-          tenantId: TENANT,
-          organisationId: ORG,
-        });
-      }
-      expect(built.category).toHaveLength(2);
+      const [lessonRows] = built.lesson;
+      const [join] = lessonRows.args('innerJoin');
+      expect(join[1]).toBe('lessonTrack');
+      // One track per lesson: the user's most recently updated attempt
+      expect(join[2]).toContain('ORDER BY lt."updatedAt" DESC');
+      expect(join[2]).toContain('LIMIT 1');
+      expect(join[3]).toEqual({ userId: '3129' });
+      expect(lessonRows.conditions()).toEqual([
+        'lesson.tenantId = :tenantId',
+        'lesson.organisationId = :organisationId',
+        'lesson.courseId IS NULL',
+        'lesson.status != :archivedLessonStatus',
+      ]);
+      expect(lessonRows.args('addSelect')).toEqual([
+        ['lesson.lessonId', 'itemId'],
+        ['lessonTrack.status', 'status'],
+        [
+          "UNNEST(COALESCE(NULLIF(ARRAY_REMOVE(ARRAY_REMOVE(lesson.categoryIds, NULL), ''), '{}'), ARRAY['other']::varchar[]))",
+          'categoryId',
+        ],
+      ]);
+      expect(built.category[1].args('from')[0][0]).toBe('(SUBQUERY(lesson))');
+      expect(built.lessonTrack ?? []).toEqual([]);
     });
 
     it('no longer returns the old completed-by-category fields', async () => {
