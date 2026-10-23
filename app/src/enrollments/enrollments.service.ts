@@ -968,8 +968,15 @@ export class EnrollmentsService {
       });
     }
 
+    // Newest first on request (Learner catalog): a published course's last update is when it was
+    // published (it can't be edited while published without unpublishing), then its creation.
+    // Otherwise the saved course ordering.
+    if (filters?.sort === 'newest') {
+      queryBuilder.orderBy('course.updatedAt', 'DESC').addOrderBy('course.createdAt', 'DESC');
+    } else {
+      queryBuilder.orderBy('course.ordering', 'ASC');
+    }
     const [courses, totalElements] = await queryBuilder
-      .orderBy('course.ordering', 'ASC')
       .addOrderBy('course.courseId', 'ASC')
       .skip(offset)
       .take(limit)
@@ -1399,15 +1406,23 @@ export class EnrollmentsService {
       })
       .getRawOne<{ total: string; completed: string; inProgress: string }>();
 
-    // 4. certificateCount: Total certificates issued (default to 0)
-    const certificateCount = await this.courseTrackRepository.count({
-      where: {
-        userId,
-        tenantId,
-        organisationId,
-        certificateIssued: true,
-      },
-    });
+    // 4. certificateCount: the user's issued course certificates and module badges, as the
+    // learner's certificates and badges lists (user-certificates) show them. course_track's
+    // certificateIssued flag can't be used: it has no module badges and can be set without a
+    // certificate. user_certificates has no organisationId; its tenantId/userId are uuid columns.
+    const certificateCountRaw = await this.userCertificateRepository
+      .createQueryBuilder('certificate')
+      .select('COUNT(DISTINCT certificate.usercertificateId)', 'count')
+      .where('CAST(certificate.userId AS text) = :userId', { userId })
+      .andWhere('CAST(certificate.tenantId AS text) = :tenantId', { tenantId })
+      .andWhere('certificate.status = :certificateStatus', {
+        certificateStatus: 'issued',
+      })
+      .andWhere('certificate.certificate_type IN (:...certificateTypes)', {
+        certificateTypes: ['certificate', 'badge'],
+      })
+      .getRawOne<{ count: string }>();
+    const certificateCount = Number(certificateCountRaw?.count || 0);
 
     // 5. mandatoryDueCount: enrolledBy != userId and course track status != completed (or null)
     const mandatoryDueCount = await this.userEnrollmentRepository
