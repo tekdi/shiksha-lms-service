@@ -9,6 +9,7 @@ import {
   ValidateBy,
   IsEnum,
   IsArray,
+  IsIn,
 } from 'class-validator';
 import { Transform, Type } from 'class-transformer';
 import { Course } from '../../courses/entities/course.entity';
@@ -102,6 +103,15 @@ export class UsersEnrolledCoursesDto {
   @Min(0)
   @Type(() => Number)
   offset?: number = 0;
+
+  @ApiPropertyOptional({
+    description:
+      'Course order for hasEnroll=false (courses the user can enrol in): "newest" lists the most recently published (last updated) first, like standalone lessons. Omitted keeps the course ordering.',
+    enum: ['newest'],
+  })
+  @IsOptional()
+  @IsIn(['newest'])
+  sort?: 'newest';
 }
 
 export class UserEnrolledCourseDto extends Course {

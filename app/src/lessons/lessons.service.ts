@@ -3,6 +3,7 @@ import {
   NotFoundException,
   BadRequestException,
   InternalServerErrorException,
+  HttpException,
   Logger,
   Inject,
   forwardRef,
@@ -1594,6 +1595,7 @@ export class LessonsService {
     newCourseId: string,
     authorization: string,
     preserveSourceOrdering: boolean,
+    clonedTestIds?: string[],
   ): Promise<Lesson | boolean> {
     try {
       if (originalLesson.format === LessonFormat.EVENT) {
@@ -1631,6 +1633,8 @@ export class LessonsService {
                 userId,
                 authorization,
               );
+              // The test is committed in the assessment service, outside this transaction
+              clonedTestIds?.push(clonedTestId);
             }
 
             const newMediaData = {
@@ -1688,6 +1692,8 @@ export class LessonsService {
           params: originalLesson.params || {},
           sampleLesson: originalLesson.sampleLesson,
           considerForPassing: originalLesson.considerForPassing,
+          // Category is mandatory for every lesson, so the copy keeps the original's
+          categoryIds: originalLesson.categoryIds,
           ordering: lessonOrdering,
           // Explicitly preserve allowResubmission value from original lesson (true stays true, false stays false)
           // This applies to all lesson formats: feedback, quiz, assessment, reflection.prompt, etc.
@@ -1953,7 +1959,11 @@ export class LessonsService {
       }
 
       // Generic error
-      throw new BadRequestException('Failed to clone test');
+      throw new BadRequestException(
+        error.code
+          ? `Failed to clone test: ${error.code}`
+          : 'Failed to clone test',
+      );
     }
   }
 
@@ -1970,6 +1980,7 @@ export class LessonsService {
     newModuleId: string,
   ): Promise<Lesson> {
     this.logger.log(`Cloning lesson: ${lessonId}`);
+    const clonedTestIds: string[] = [];
 
     try {
       // Use a database transaction to ensure data consistency
@@ -2036,10 +2047,13 @@ export class LessonsService {
             newCourseId,
             authorization,
             false,
+            clonedTestIds,
           );
 
           if (typeof clonedLesson === 'boolean') {
-            throw new Error(RESPONSE_MESSAGES.ERROR.LESSON_COPY_FAILED);
+            throw new BadRequestException(
+              RESPONSE_MESSAGES.ERROR.LESSON_COPY_FAILED,
+            );
           }
 
           // Update the title and alias
@@ -2075,11 +2089,54 @@ export class LessonsService {
         error.stack,
       );
 
-      if (error instanceof NotFoundException) {
+      // The lesson copy was rolled back, so drop the test copy it would have pointed to
+      for (const clonedTestId of clonedTestIds) {
+        await this.archiveClonedTest(
+          clonedTestId,
+          organisationId,
+          tenantId,
+          userId,
+          authorization,
+        );
+      }
+
+      // Not found / assessment service errors carry a meaningful message and status
+      if (error instanceof HttpException) {
         throw error;
       }
       throw new InternalServerErrorException(
-        RESPONSE_MESSAGES.ERROR.LESSON_COPY_FAILED,
+        `${RESPONSE_MESSAGES.ERROR.LESSON_COPY_FAILED}: ${error.message}`,
+      );
+    }
+  }
+
+  /**
+   * Archive a test cloned for a lesson copy that was not saved
+   */
+  private async archiveClonedTest(
+    testId: string,
+    organisationId: string,
+    tenantId: string,
+    userId: string,
+    authorization: string,
+  ): Promise<void> {
+    try {
+      const assessmentServiceUrl =
+        this.configService.get<string>('ASSESSMENT_SERVICE_URL') || '';
+      await axios.delete(`${assessmentServiceUrl}/tests/${testId}`, {
+        headers: {
+          organisationId: organisationId,
+          tenantId: tenantId,
+          authorization: authorization,
+          userId: userId,
+        },
+      });
+      this.logger.log(
+        `Archived cloned test ${testId} after failed lesson copy`,
+      );
+    } catch (error) {
+      this.logger.error(
+        `Failed to archive cloned test ${testId} after failed lesson copy: ${error.message}`,
       );
     }
   }

@@ -414,6 +414,33 @@ describe('EnrollmentsService - getCoachProgressDashboard', () => {
       expect(built.lessonTrack ?? []).toEqual([]);
     });
 
+    it('counts the issued certificates and badges the user certificates lists show, not course tracks', async () => {
+      const result = await service.dashboardByUserId('3129', TENANT, ORG);
+
+      expect(result.certificateCount).toBe(4);
+      const [certificates] = built.certificate;
+      expect(certificates.selects()).toEqual([
+        'COUNT(DISTINCT certificate.usercertificateId)',
+      ]);
+      expect(certificates.conditions()).toEqual([
+        'CAST(certificate.userId AS text) = :userId',
+        'CAST(certificate.tenantId AS text) = :tenantId',
+        'certificate.status = :certificateStatus',
+        'certificate.certificate_type IN (:...certificateTypes)',
+      ]);
+      expect(certificates.params).toMatchObject({
+        userId: '3129',
+        tenantId: TENANT,
+        certificateStatus: 'issued',
+        certificateTypes: ['certificate', 'badge'],
+      });
+      // Module badges have no enrollment, and an archived course's certificate stays earned
+      expect(certificates.args('innerJoin')).toEqual([]);
+      expect(
+        (service as any).courseTrackRepository.count,
+      ).not.toHaveBeenCalled();
+    });
+
     it('no longer returns the old completed-by-category fields', async () => {
       const result = await service.dashboardByUserId('3129', TENANT, ORG);
       expect(result).not.toHaveProperty('completedCoursesByCategory');
