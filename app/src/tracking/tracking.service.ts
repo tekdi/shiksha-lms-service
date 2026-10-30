@@ -864,7 +864,7 @@ export class TrackingService {
 
     // Skip the user-service call until every course in the pathway is completed.
     const pathwayStatus = await this.getPathwayCompletionStatus(pathwayId, userId, tenantId, organisationId);
-    if (!pathwayStatus.allCompleted) {
+    if (!pathwayStatus.allRequiredCoursesCompleted) {
       return;
     }
 
@@ -1979,7 +1979,8 @@ export class TrackingService {
     userId: string;
     totalCourses: number;
     completedCourses: number;
-    allCompleted: boolean;
+    skippedCourses: number;
+    allRequiredCoursesCompleted: boolean;
   }> {
     // Plain object equality on a jsonb column (params: { pathwayId }) only matches when
     // params is EXACTLY that one key — any course whose params also has cohortId or other
@@ -1998,23 +1999,37 @@ export class TrackingService {
     const totalCourses = courseIds.length;
 
     if (totalCourses === 0) {
-      return { pathwayId, userId, totalCourses: 0, completedCourses: 0, allCompleted: false };
+      return { pathwayId, userId, totalCourses: 0, completedCourses: 0, skippedCourses: 0, allRequiredCoursesCompleted: false };
     }
 
-    const completedCourses = await this.courseTrackRepository.count({
+    const tracks = await this.courseTrackRepository.find({
       where: {
         userId,
         courseId: In(courseIds),
-        status: TrackingStatus.COMPLETED,
       } as FindOptionsWhere<CourseTrack>,
+      select: ['courseId', 'status', 'noOfLessons'],
     });
+
+    // A course whose track has noOfLessons = 0 (no published lesson with
+    // considerForPassing = true) can never reach COMPLETED, so it is skipped.
+    // A course with no track at all (user not enrolled) still blocks completion.
+    let completedCourses = 0;
+    let skippedCourses = 0;
+    for (const track of tracks) {
+      if (track.status === TrackingStatus.COMPLETED) {
+        completedCourses++;
+      } else if (track.noOfLessons <= 0) {
+        skippedCourses++;
+      }
+    }
 
     return {
       pathwayId,
       userId,
       totalCourses,
       completedCourses,
-      allCompleted: completedCourses >= totalCourses,
+      skippedCourses,
+      allRequiredCoursesCompleted: completedCourses > 0 && completedCourses + skippedCourses >= totalCourses,
     };
   }
 
