@@ -2018,7 +2018,7 @@ export class TrackingService {
     for (const track of tracks) {
       if (track.status === TrackingStatus.COMPLETED) {
         completedCourses++;
-      } else if (!(track.noOfLessons > 0)) {
+      } else if (track.noOfLessons <= 0) {
         skippedCourses++;
       }
     }
