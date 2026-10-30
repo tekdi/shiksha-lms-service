@@ -2010,9 +2010,34 @@ export class TrackingService {
       select: ['courseId', 'status', 'noOfLessons'],
     });
 
-    // A course whose track has noOfLessons = 0 (no published lesson with
-    // considerForPassing = true) can never reach COMPLETED, so it is skipped.
-    // A course with no track at all (user not enrolled) still blocks completion.
+    // Courses with noOfLessons = 0 are skipped; untracked courses still block.
+    return {
+      pathwayId,
+      userId,
+      totalCourses,
+      ...this.getRequiredCoursesCompletionSummary(tracks, totalCourses),
+    };
+  }
+
+  /**
+   * Shared rule for "are all required courses in a set completed" — used by the
+   * pathway-completion gate (getPathwayCompletionStatus) and the completion popup
+   * flag (AspireLeaderService.getAggregatedCourses), so the two can never disagree.
+   *
+   * - A COMPLETED track counts as completed.
+   * - A track with noOfLessons = 0 (no published lesson with considerForPassing = true)
+   *   can never reach COMPLETED, so it is skipped.
+   * - A course with no track at all still blocks completion.
+   * - At least one course must be completed, so a set of only skipped courses is not complete.
+   */
+  getRequiredCoursesCompletionSummary(
+    tracks: Array<{ status: TrackingStatus; noOfLessons: number }>,
+    totalCourses: number,
+  ): {
+    completedCourses: number;
+    skippedCourses: number;
+    allRequiredCoursesCompleted: boolean;
+  } {
     let completedCourses = 0;
     let skippedCourses = 0;
     for (const track of tracks) {
@@ -2024,12 +2049,12 @@ export class TrackingService {
     }
 
     return {
-      pathwayId,
-      userId,
-      totalCourses,
       completedCourses,
       skippedCourses,
-      allRequiredCoursesCompleted: completedCourses > 0 && completedCourses + skippedCourses >= totalCourses,
+      allRequiredCoursesCompleted:
+        totalCourses > 0 &&
+        completedCourses > 0 &&
+        completedCourses + skippedCourses >= totalCourses,
     };
   }
 

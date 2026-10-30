@@ -1571,9 +1571,13 @@ const courses = await queryBuilder.getMany();
       };
     });
 
-    const completionStatus = resultCourses.every(
-      (course) => course.tracking.status === TrackingStatus.COMPLETED,
-    );
+    // Same rule as the pathway-completion gate: courses with noOfLessons = 0 are
+    // skipped, untracked enrolled courses still block.
+    const { allRequiredCoursesCompleted: completionStatus } =
+      this.trackingService.getRequiredCoursesCompletionSummary(
+        courseTracks,
+        enrolledCourses.length,
+      );
 
     return { courses: resultCourses, completionStatus };
   }
