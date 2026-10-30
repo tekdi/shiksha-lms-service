@@ -864,7 +864,7 @@ export class TrackingService {
 
     // Skip the user-service call until every course in the pathway is completed.
     const pathwayStatus = await this.getPathwayCompletionStatus(pathwayId, userId, tenantId, organisationId);
-    if (!pathwayStatus.allCompleted) {
+    if (!pathwayStatus.allRequiredCoursesCompleted) {
       return;
     }
 
@@ -1980,7 +1980,7 @@ export class TrackingService {
     totalCourses: number;
     completedCourses: number;
     skippedCourses: number;
-    allCompleted: boolean;
+    allRequiredCoursesCompleted: boolean;
   }> {
     // Plain object equality on a jsonb column (params: { pathwayId }) only matches when
     // params is EXACTLY that one key — any course whose params also has cohortId or other
@@ -1999,7 +1999,7 @@ export class TrackingService {
     const totalCourses = courseIds.length;
 
     if (totalCourses === 0) {
-      return { pathwayId, userId, totalCourses: 0, completedCourses: 0, skippedCourses: 0, allCompleted: false };
+      return { pathwayId, userId, totalCourses: 0, completedCourses: 0, skippedCourses: 0, allRequiredCoursesCompleted: false };
     }
 
     const tracks = await this.courseTrackRepository.find({
@@ -2029,7 +2029,7 @@ export class TrackingService {
       totalCourses,
       completedCourses,
       skippedCourses,
-      allCompleted: completedCourses > 0 && completedCourses + skippedCourses >= totalCourses,
+      allRequiredCoursesCompleted: completedCourses > 0 && completedCourses + skippedCourses >= totalCourses,
     };
   }
 
