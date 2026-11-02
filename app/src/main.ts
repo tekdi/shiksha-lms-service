@@ -8,7 +8,7 @@ import { ConfigService } from '@nestjs/config';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { ConfigurationService } from './configuration/configuration.service';
 import { NestExpressApplication } from '@nestjs/platform-express';
-import * as path from 'path';
+import * as path from 'node:path';
 
 async function bootstrap() {
   try {
