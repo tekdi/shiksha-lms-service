@@ -32,10 +32,17 @@ import { redisStore } from 'cache-manager-redis-yet';
           `Connecting to Redis at ${redisOptions.socket.host}:${redisOptions.socket.port}`
         );
 
-        return {
-          store: await redisStore(redisOptions),
-          ttl: Number(configService.get('CACHE_DEFAULT_TTL') || 3600),
-        };
+        try {
+          return {
+            store: await redisStore(redisOptions),
+            ttl: Number(configService.get('CACHE_DEFAULT_TTL') || 3600),
+          };
+        } catch (error) {
+          logger.error(
+            `Failed to connect to Redis at ${redisOptions.socket.host}:${redisOptions.socket.port}. Falling back to in-memory store: ${error.message}`
+          );
+          return { ttl: 300, max: 1000 };
+        }
       },
     }),
   ],

@@ -51,6 +51,7 @@ import { DashboardByUserIdResponseDto } from './dto/dashboard-by-user-id.dto';
 import {
   CategoryProgressDto,
   CoachProgressDashboardResponseDto,
+  CoachWiseCountsResponseDto,
 } from './dto/coach-progress-dashboard.dto';
 import { UserCourseCertificate } from '../certificate/entities/user_certificates';
 
@@ -1629,6 +1630,109 @@ export class EnrollmentsService {
       certificatesEarned: Number(certificatesEarnedRaw?.count || 0),
       courses,
       lessons,
+    };
+  }
+
+  /**
+   * Certificate, mandatory and self-enrolled counts for each given coach. Courses are the
+   * coach's assigned courses as dashboardByUserId counts them (published enrollment in a
+   * published course); an enrollment is self-enrolled when enrolledBy = userId, otherwise
+   * mandatory, and completed when the coach's course track is completed. Certificates use
+   * the coachProgressDashboard scope. Coaches without data get zeros.
+   */
+  async getCoachWiseCounts(
+    tenantId: string,
+    organisationId: string,
+    userIds: string[],
+  ): Promise<CoachWiseCountsResponseDto> {
+    this.logger.log('Fetching coach-wise counts');
+
+    const users = [...new Set(userIds)];
+
+    const courseCountsQuery = this.userEnrollmentRepository
+      .createQueryBuilder('enrollment')
+      .innerJoin(Course, 'course', 'course.courseId = enrollment.courseId')
+      .leftJoin(
+        CourseTrack,
+        'courseTrack',
+        'courseTrack.courseId = enrollment.courseId AND courseTrack.userId = enrollment.userId AND courseTrack.tenantId = enrollment.tenantId AND courseTrack.organisationId = enrollment.organisationId',
+      )
+      .select('enrollment.userId', 'userId')
+      .addSelect(
+        'COUNT(DISTINCT enrollment.courseId) FILTER (WHERE enrollment.enrolledBy = enrollment.userId)',
+        'enrolledTotal',
+      )
+      .addSelect(
+        'COUNT(DISTINCT enrollment.courseId) FILTER (WHERE enrollment.enrolledBy = enrollment.userId AND courseTrack.status = :completedStatus)',
+        'enrolledCompleted',
+      )
+      .addSelect(
+        'COUNT(DISTINCT enrollment.courseId) FILTER (WHERE enrollment.enrolledBy != enrollment.userId)',
+        'mandatoryTotal',
+      )
+      .addSelect(
+        'COUNT(DISTINCT enrollment.courseId) FILTER (WHERE enrollment.enrolledBy != enrollment.userId AND courseTrack.status = :completedStatus)',
+        'mandatoryCompleted',
+      )
+      .where('enrollment.userId IN (:...userIds)', { userIds: users })
+      .andWhere('enrollment.tenantId = :tenantId', { tenantId })
+      .andWhere('enrollment.organisationId = :organisationId', {
+        organisationId,
+      })
+      .andWhere('enrollment.status = :enrollmentStatus', {
+        enrollmentStatus: EnrollmentStatus.PUBLISHED,
+      })
+      .andWhere('course.status = :coursePublishedStatus', {
+        coursePublishedStatus: CourseStatus.PUBLISHED,
+      })
+      .setParameter('completedStatus', TrackingStatus.COMPLETED)
+      .groupBy('enrollment.userId')
+      .getRawMany<{
+        userId: string;
+        enrolledTotal: string;
+        enrolledCompleted: string;
+        mandatoryTotal: string;
+        mandatoryCompleted: string;
+      }>();
+
+    const certificateCountsQuery = this.coachCertificatesQuery(
+      tenantId,
+      organisationId,
+    )
+      .andWhere('enrollment.userId IN (:...userIds)', { userIds: users })
+      .select('enrollment.userId', 'userId')
+      .addSelect('COUNT(DISTINCT certificate.usercertificateId)', 'count')
+      .groupBy('enrollment.userId')
+      .getRawMany<{ userId: string; count: string }>();
+
+    const [courseCounts, certificateCounts] = await Promise.all([
+      courseCountsQuery,
+      certificateCountsQuery,
+    ]);
+
+    // Keyed by userId, never by position
+    const courseCountsByUser = new Map(courseCounts.map((row) => [row.userId, row]));
+    const certificatesByUser = new Map(
+      certificateCounts.map((row) => [row.userId, Number(row.count)]),
+    );
+
+    return {
+      status: '200',
+      data: users.map((userId) => {
+        const counts = courseCountsByUser.get(userId);
+        return {
+          userId,
+          certificateCount: certificatesByUser.get(userId) ?? 0,
+          enrolled: {
+            total: Number(counts?.enrolledTotal || 0),
+            completedCount: Number(counts?.enrolledCompleted || 0),
+          },
+          mandatory: {
+            total: Number(counts?.mandatoryTotal || 0),
+            completedCount: Number(counts?.mandatoryCompleted || 0),
+          },
+        };
+      }),
     };
   }
 

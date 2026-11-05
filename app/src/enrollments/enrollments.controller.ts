@@ -36,6 +36,8 @@ import { DashboardByUserIdDto, DashboardByUserIdResponseDto } from './dto/dashbo
 import {
   CoachProgressDashboardDto,
   CoachProgressDashboardResponseDto,
+  CoachWiseCountsDto,
+  CoachWiseCountsResponseDto,
 } from './dto/coach-progress-dashboard.dto';
 
 @ApiTags('Enrollments')
@@ -276,6 +278,31 @@ export class EnrollmentsController {
     @TenantOrg() tenantOrg: { tenantId: string; organisationId: string },
   ) {
     return this.enrollmentsService.getCoachProgressDashboard(
+      tenantOrg.tenantId,
+      tenantOrg.organisationId,
+      dto.userIds,
+    );
+  }
+
+  @Post('coachWiseCounts')
+  @HttpCode(HttpStatus.OK)
+  @ApiId(API_IDS.GET_COACH_WISE_COUNTS)
+  @ApiOperation({
+    summary: 'Get certificate, mandatory and self-enrolled counts per coach',
+    description:
+      'For each given coach userId returns certificates earned, mandatory courses (assigned by someone else) and self-enrolled courses (enrolledBy = userId), each with total and completed counts.',
+  })
+  @ApiBody({ type: CoachWiseCountsDto })
+  @ApiResponse({
+    status: 200,
+    description: 'Coach-wise counts retrieved successfully',
+    type: CoachWiseCountsResponseDto,
+  })
+  async coachWiseCounts(
+    @Body() dto: CoachWiseCountsDto,
+    @TenantOrg() tenantOrg: { tenantId: string; organisationId: string },
+  ) {
+    return this.enrollmentsService.getCoachWiseCounts(
       tenantOrg.tenantId,
       tenantOrg.organisationId,
       dto.userIds,

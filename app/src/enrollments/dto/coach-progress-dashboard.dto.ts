@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsArray, IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { ArrayNotEmpty, IsArray, IsNotEmpty, IsOptional, IsString } from 'class-validator';
 
 export class CoachProgressDashboardDto {
   @ApiPropertyOptional({
@@ -84,4 +84,53 @@ export class CoachProgressDashboardResponseDto {
     type: [CategoryProgressDto],
   })
   lessons: CategoryProgressDto[];
+}
+
+export class CoachWiseCountsDto {
+  @ApiProperty({
+    description: 'Coach user IDs to return the counts for',
+    example: ['1001', '1002'],
+    type: [String],
+  })
+  @IsArray()
+  @ArrayNotEmpty()
+  @IsString({ each: true })
+  @IsNotEmpty({ each: true })
+  userIds: string[];
+}
+
+export class CourseCompletionCountDto {
+  @ApiProperty({ description: 'Courses in this group', example: 10 })
+  total: number;
+
+  @ApiProperty({ description: 'Courses in this group that are completed', example: 5 })
+  completedCount: number;
+}
+
+export class CoachWiseCountDto {
+  @ApiProperty({ description: 'Coach user ID', example: '1001' })
+  userId: string;
+
+  @ApiProperty({ description: 'Issued course certificates of the coach', example: 12 })
+  certificateCount: number;
+
+  @ApiProperty({
+    description: 'Courses the coach enrolled in themselves (enrolledBy = userId)',
+    type: CourseCompletionCountDto,
+  })
+  enrolled: CourseCompletionCountDto;
+
+  @ApiProperty({
+    description: 'Courses assigned to the coach by someone else (enrolledBy != userId)',
+    type: CourseCompletionCountDto,
+  })
+  mandatory: CourseCompletionCountDto;
+}
+
+export class CoachWiseCountsResponseDto {
+  @ApiProperty({ example: '200' })
+  status: string;
+
+  @ApiProperty({ description: 'One entry per requested coach, in request order', type: [CoachWiseCountDto] })
+  data: CoachWiseCountDto[];
 }
