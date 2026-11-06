@@ -11,12 +11,12 @@ import {
   BadRequestException,
   ParseUUIDPipe
 } from '@nestjs/common';
-import { 
-  ApiTags, 
-  ApiOperation, 
-  ApiResponse, 
-  ApiConsumes, 
-  ApiParam, 
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiConsumes,
+  ApiParam,
   ApiQuery
 } from '@nestjs/swagger';
 import { FileInterceptor } from '@nestjs/platform-express';
@@ -34,7 +34,7 @@ import { RESPONSE_MESSAGES } from '../common/constants/response-messages.constan
 @ApiTags('Media')
 @Controller('media')
 export class MediaController {
-  constructor(private readonly mediaService: MediaService) {}
+  constructor(private readonly mediaService: MediaService) { }
 
   @Post('upload')
   @ApiId(API_IDS.UPLOAD_MEDIA)
@@ -49,14 +49,47 @@ export class MediaController {
     @Query() query: CommonQueryDto,
     @TenantOrg() tenantOrg: { tenantId: string; organisationId: string },
   ) {
-   // TODO: Check if file is required based on format - need to test file upload
+    // TODO: Check if file is required based on format - need to test file upload
     if (file) {
       const filePath = getUploadPath('lessonMedia', file.filename);
       createMediaDto.path = filePath;
     }
 
     return this.mediaService.uploadMedia(
-      createMediaDto, 
+      createMediaDto,
+      file,
+      query.userId,
+      tenantOrg.tenantId,
+      tenantOrg.organisationId,
+    );
+  }
+
+  /**
+   * Upload a video file (MP4/WebM, up to 500MB) for a video lesson.
+   * Separate from /media/upload so PDFs keep their own type and size limits.
+   * Returns the media record; its `path` is served at /lms-service<path>.
+   */
+  @Post('upload-video')
+  @ApiId(API_IDS.UPLOAD_MEDIA)
+  @ApiOperation({ summary: 'Upload video file (mp4/webm, max 500MB)' })
+  @ApiConsumes('multipart/form-data')
+  @ApiResponse({ status: 201, description: 'Video uploaded successfully' })
+  @ApiResponse({ status: 400, description: 'Bad request' })
+  @UseInterceptors(FileInterceptor('file', uploadConfigs.video))
+  async uploadVideo(
+    @Body() createMediaDto: CreateMediaDto,
+    @UploadedFile() file: Express.Multer.File,
+    @Query() query: CommonQueryDto,
+    @TenantOrg() tenantOrg: { tenantId: string; organisationId: string },
+  ) {
+    if (!file) {
+      throw new BadRequestException('A video file (mp4 or webm) is required.');
+    }
+    createMediaDto.format = LessonFormat.VIDEO;
+    createMediaDto.path = getUploadPath('lessonVideo', file.filename);
+
+    return this.mediaService.uploadMedia(
+      createMediaDto,
       file,
       query.userId,
       tenantOrg.tenantId,
@@ -77,7 +110,7 @@ export class MediaController {
     @Query('format') format?: string,
   ) {
     return this.mediaService.findAll(
-      paginationDto, 
+      paginationDto,
       { type: format },
       tenantOrg.tenantId,
       tenantOrg.organisationId,
@@ -91,12 +124,12 @@ export class MediaController {
   @ApiResponse({ status: 200, description: 'Media retrieved successfully' })
   @ApiResponse({ status: 404, description: 'Media not found' })
   async getMediaById(
-    @Param('mediaId', ParseUUIDPipe) mediaId: string, 
+    @Param('mediaId', ParseUUIDPipe) mediaId: string,
     @TenantOrg() tenantOrg: { tenantId: string; organisationId: string },
   ) {
     return this.mediaService.findOne(
       mediaId,
-      tenantOrg.tenantId, 
+      tenantOrg.tenantId,
       tenantOrg.organisationId
     );
   }
@@ -115,10 +148,10 @@ export class MediaController {
     @TenantOrg() tenantOrg: { tenantId: string; organisationId: string },
   ) {
     return this.mediaService.associateWithLesson(
-      mediaId, 
-      lessonId, 
-      query.userId, 
-      tenantOrg.tenantId, 
+      mediaId,
+      lessonId,
+      query.userId,
+      tenantOrg.tenantId,
       tenantOrg.organisationId
     );
   }
@@ -131,14 +164,14 @@ export class MediaController {
   @ApiResponse({ status: 404, description: 'Media not found' })
   @ApiResponse({ status: 400, description: 'Media is associated with a lesson or associated file and cannot be deleted' })
   async deleteMedia(
-    @Param('mediaId', ParseUUIDPipe) mediaId: string, 
+    @Param('mediaId', ParseUUIDPipe) mediaId: string,
     @Query() query: CommonQueryDto,
     @TenantOrg() tenantOrg: { tenantId: string; organisationId: string },
   ) {
     return this.mediaService.remove(
-      mediaId, 
-      query.userId, 
-      tenantOrg.tenantId, 
+      mediaId,
+      query.userId,
+      tenantOrg.tenantId,
       tenantOrg.organisationId
     );
   }
@@ -157,10 +190,10 @@ export class MediaController {
     @TenantOrg() tenantOrg: { tenantId: string; organisationId: string },
   ) {
     return this.mediaService.removeAssociation(
-      mediaId, 
-      lessonId, 
-      query.userId, 
-      tenantOrg.tenantId, 
+      mediaId,
+      lessonId,
+      query.userId,
+      tenantOrg.tenantId,
       tenantOrg.organisationId
     );
   }

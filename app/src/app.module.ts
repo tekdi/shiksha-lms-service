@@ -16,7 +16,7 @@ import { TrackingModule } from './tracking/tracking.module';
 import { CloudStorageModule } from '@tekdi/nestjs-cloud-storage';
 import { ConfigurationModule } from './configuration/configuration.module';
 import { AspireLeaderModule } from './aspire-leader/aspire-leader.module';
-
+import { CertificateModule } from './certificate/certificate.module';
 @Module({
   imports: [
     // Configuration
@@ -27,16 +27,16 @@ import { AspireLeaderModule } from './aspire-leader/aspire-leader.module';
     // Conditionally import CloudStorageModule if provider is configured
     ...(process.env.CLOUD_STORAGE_PROVIDER
       ? [
-          CloudStorageModule.register({
-            provider: process.env.CLOUD_STORAGE_PROVIDER as 'aws' | 'azure' | 'gcp',
-            region: process.env.CLOUD_STORAGE_REGION,
-            credentials: {
-              accessKeyId: process.env.CLOUD_STORAGE_ACCESS_KEY_ID,
-              secretAccessKey: process.env.CLOUD_STORAGE_SECRET_ACCESS_KEY,
-            },
-            bucket: process.env.CLOUD_STORAGE_BUCKET_NAME,
-          }),
-        ]
+        CloudStorageModule.register({
+          provider: process.env.CLOUD_STORAGE_PROVIDER as 'aws' | 'azure' | 'gcp',
+          region: process.env.CLOUD_STORAGE_REGION,
+          credentials: {
+            accessKeyId: process.env.CLOUD_STORAGE_ACCESS_KEY_ID,
+            secretAccessKey: process.env.CLOUD_STORAGE_SECRET_ACCESS_KEY,
+          },
+          bucket: process.env.CLOUD_STORAGE_BUCKET_NAME,
+        }),
+      ]
       : []),
     BullModule.forRootAsync({
       imports: [ConfigModule],
@@ -61,8 +61,9 @@ import { AspireLeaderModule } from './aspire-leader/aspire-leader.module';
     HealthModule,
     TrackingModule,
     AspireLeaderModule,
+    CertificateModule,
   ],
   controllers: [AppController],
   providers: [AppService],
 })
-export class AppModule {}
+export class AppModule { }
