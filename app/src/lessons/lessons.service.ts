@@ -54,7 +54,7 @@ export class LessonsService {
     private readonly orderingService: OrderingService,
     @Inject(forwardRef(() => RecalculateProgressQueueService))
     private readonly recalculateProgressQueueService: RecalculateProgressQueueService,
-  ) {}
+  ) { }
 
   /**
    * Create a new lesson with optional course association
@@ -314,10 +314,10 @@ export class LessonsService {
         // Invalidate course enrollment cache when lesson is created
         courseId
           ? this.cacheService.invalidateCourseEnrollments(
-              courseId,
-              tenantId,
-              organisationId,
-            )
+            courseId,
+            tenantId,
+            organisationId,
+          )
           : Promise.resolve(),
       ]);
       if (savedLesson.considerForPassing && courseId) {
@@ -768,8 +768,8 @@ export class LessonsService {
       // Get the current media
       const currentMedia = lesson.mediaId
         ? await this.mediaRepository.findOne({
-            where: { mediaId: lesson.mediaId },
-          })
+          where: { mediaId: lesson.mediaId },
+        })
         : null;
 
       // For other formats
@@ -939,6 +939,10 @@ export class LessonsService {
         updateData.moduleId = updateLessonDto.moduleId;
       }
 
+      // Position of the lesson inside its module (the course hierarchy sorts by it)
+      if (updateLessonDto.ordering !== undefined && updateLessonDto.ordering !== null) {
+        updateData.ordering = updateLessonDto.ordering;
+      }
       if (updateLessonDto.considerForPassing !== undefined) {
         updateData.considerForPassing = updateLessonDto.considerForPassing;
       }
@@ -1068,13 +1072,13 @@ export class LessonsService {
       // Use savedLesson's courseId and moduleId as they reflect the actual saved state
       const courseId = savedLesson.courseId;
       const moduleId = savedLesson.moduleId;
-      
+
       const lessonKey = this.cacheConfig.getLessonKey(
         savedLesson.lessonId,
         tenantId,
         organisationId,
       );
-      
+
       // Prepare cache invalidation promises
       const cacheInvalidationPromises = [
         this.cacheService.set(
@@ -1231,10 +1235,10 @@ export class LessonsService {
         // Invalidate course enrollment cache when lesson is deleted
         courseId
           ? this.cacheService.invalidateCourseEnrollments(
-              courseId,
-              tenantId,
-              organisationId,
-            )
+            courseId,
+            tenantId,
+            organisationId,
+          )
           : Promise.resolve(),
       ]);
 
