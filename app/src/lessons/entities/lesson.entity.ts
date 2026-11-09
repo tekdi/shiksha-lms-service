@@ -36,6 +36,12 @@ export enum LessonSubFormat {
   EXTERNAL_URL = 'external.url',
   DISCORD_URL = 'discord.url', // PROJECT SECIFIC - ASPRE_LEADER
   EXTERNAL_ASSESSMENT_URL = 'external.assessment.url', // PROJECT SECIFIC - ASPRE_LEADER
+  // Text-only section blocks (format: text_and_media) - PROJECT SPECIFIC - SWADHAAR
+  TEXT = 'text',
+  TEXT_INTRO = 'text.intro',
+  TEXT_HOOK = 'text.hook',
+  TEXT_CONCEPT = 'text.concept',
+  TEXT_ANALYSIS = 'text.analysis',
 }
 
 export enum LessonStatus {
@@ -62,7 +68,7 @@ export class Lesson {
   @Column({ type: 'uuid', nullable: true })
   @Index()
   tenantId: string;
-  
+
   @Column({ type: 'uuid', nullable: true })
   @Index()
   organisationId: string;
@@ -106,9 +112,9 @@ export class Lesson {
   @Column({ type: 'integer', nullable: true })
   noOfAttempts: number;
 
-  @ApiProperty({ 
+  @ApiProperty({
     description: 'Allow users to resubmit the same attempt multiple times. When true, users can only have one attempt and can submit it multiple times. This configuration will override resume and noOfAttempts',
-    default: false 
+    default: false
   })
   @Column({ type: 'boolean', default: false })
   allowResubmission: boolean;
@@ -121,14 +127,14 @@ export class Lesson {
   })
   attemptsGrade: AttemptsGradeMethod;
 
-  @Column({ 
+  @Column({
     type: 'varchar',
     length: 255,
     enum: LessonFormat
   })
   format: LessonFormat;
 
-  @Column({ 
+  @Column({
     type: 'varchar',
     length: 255,
     enum: LessonSubFormat
@@ -138,8 +144,8 @@ export class Lesson {
   @Column({ type: 'uuid', nullable: true })
   mediaId: string;
 
-  @ApiProperty({ 
-    description: 'Prerequisites for the lesson - array of prerequisite lesson IDs', 
+  @ApiProperty({
+    description: 'Prerequisites for the lesson - array of prerequisite lesson IDs',
     example: ['123e4567-e89b-12d3-a456-426614174000', '987fcdeb-51a2-43c1-b456-426614174000'],
     required: false,
     type: [String],

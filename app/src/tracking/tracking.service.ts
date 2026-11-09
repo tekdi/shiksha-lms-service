@@ -81,7 +81,7 @@ export class TrackingService {
     private readonly enrollmentsService: EnrollmentsService,
     private readonly cacheService: CacheService,
     private readonly lmsNotificationService: LmsNotificationService,
-  ) {}
+  ) { }
 
   /**
    * Get course tracking
@@ -91,19 +91,19 @@ export class TrackingService {
    * @param orgId The organization ID for data isolation
    */
   async getCourseTracking(
-    courseId: string, 
+    courseId: string,
     userId: string,
     tenantId?: string,
     organisationId?: string
   ): Promise<CourseTrack> {
     // Build where clause with required filters
-    const whereClause: any = { 
-      courseId, 
+    const whereClause: any = {
+      courseId,
       userId,
       tenantId,
       organisationId
     };
-          
+
     const courseTrack = await this.courseTrackRepository.findOne({
       where: whereClause,
     });
@@ -124,20 +124,20 @@ export class TrackingService {
    * @param organisationId The organization ID for data isolation
    */
   async updateCourseTracking(
-    courseId: string, 
+    courseId: string,
     userId: string,
     updateCourseTrackingDto: UpdateCourseTrackingDto,
     tenantId?: string,
     organisationId?: string
   ): Promise<CourseTrack> {
     // Build where clause with required filters
-    const whereClause: any = { 
-      courseId, 
+    const whereClause: any = {
+      courseId,
       userId,
       tenantId,
       organisationId
     };
-          
+
     const courseTrack = await this.courseTrackRepository.findOne({
       where: whereClause,
     });
@@ -174,7 +174,7 @@ export class TrackingService {
     if (updateCourseTrackingDto.certGenDate !== undefined) {
       courseTrack.certGenDate = new Date(updateCourseTrackingDto.certGenDate);
     }
-    
+
     // Auto-update status based on completion
     if (courseTrack.completedLessons === courseTrack.noOfLessons && courseTrack.noOfLessons > 0) {
       courseTrack.status = TrackingStatus.COMPLETED;
@@ -182,7 +182,7 @@ export class TrackingService {
         courseTrack.endDatetime = new Date();
       }
     }
-    
+
     // Update last accessed date if not explicitly provided
     if (!updateCourseTrackingDto.lastAccessedDate) {
       courseTrack.lastAccessedDate = new Date();
@@ -223,7 +223,7 @@ export class TrackingService {
   ): Promise<LessonTrack> {
     // OPTIMIZED: Get lesson details first
     const lesson = await this.lessonRepository.findOne({
-      where: { 
+      where: {
         lessonId,
         tenantId,
         organisationId
@@ -235,7 +235,7 @@ export class TrackingService {
     }
 
     const courseId = lesson.courseId;
-    
+
     if (!courseId) {
       throw new NotFoundException(RESPONSE_MESSAGES.ERROR.COURSE_LESSON_NOT_FOUND);
     }
@@ -251,8 +251,8 @@ export class TrackingService {
         organisationId
       ),
       this.lessonTrackRepository.find({
-        where: { 
-          lessonId, 
+        where: {
+          lessonId,
           userId,
           courseId,
           tenantId,
@@ -273,7 +273,10 @@ export class TrackingService {
 
     // REMOVED: Unused courseTrack query (check was commented out)
     // This eliminates an unnecessary database query
-
+    // Text-only lessons have nothing to finish or score: opening one completes it
+    if (lesson.format === LessonFormat.TEXT_AND_MEDIA) {
+      return this.completeTextLessonOnOpen(lesson, existingTracks, userId, tenantId, organisationId, authorization);
+    }
     // If there's an incomplete attempt, return it
     const incompleteAttempt = existingTracks.find(track => track.status !== TrackingStatus.COMPLETED);
     if (incompleteAttempt) {
@@ -281,7 +284,7 @@ export class TrackingService {
       const canResume = lesson.resume ?? true;
       if (canResume) {
         return incompleteAttempt;
-      }      
+      }
     }
     if (lesson.allowResubmission && existingTracks.length > 0) {
       // If resubmission is allowed, always return the existing attempt
@@ -290,7 +293,11 @@ export class TrackingService {
 
     // Check max attempts
     const maxAttempts = lesson.noOfAttempts ?? 1;
-    if (maxAttempts > 0 && existingTracks.length > 0 && existingTracks[0].attempt >= maxAttempts) {
+    const retakeUntilPass =
+      String(process.env.RETAKE_UNTIL_PASS ?? 'true').toLowerCase() !== 'false' &&
+      lesson.format === LessonFormat.ASSESSMENT &&
+      !existingTracks.some((track) => track.status === TrackingStatus.COMPLETED);
+    if (!retakeUntilPass && maxAttempts > 0 && existingTracks.length > 0 && existingTracks[0].attempt >= maxAttempts) {
       throw new BadRequestException(RESPONSE_MESSAGES.ERROR.MAX_ATTEMPTS_REACHED);
     }
 
@@ -310,12 +317,60 @@ export class TrackingService {
       currentPosition: 0,
       timeSpent: 0
     });
-    
+
     // Save lesson track first
     const savedLessonTrack = await this.lessonTrackRepository.save(lessonTrack);
 
     // Update course and module tracking asynchronously (fire and forget) to avoid blocking response
     // This matches the pattern used in updateProgress for consistency
+    if (savedLessonTrack.courseId) {
+      this.updateCourseAndModuleTracking(savedLessonTrack, tenantId, organisationId, authorization)
+        .catch(err => this.logger.error('Failed to update course/module tracking asynchronously', err));
+    }
+
+    return savedLessonTrack;
+  }
+  /**
+    * Text-only lesson (format text_and_media): the attempt is COMPLETED at 100% with no
+    * score as soon as it is opened. Reopening returns the completed attempt, so attempt
+    * limits never apply and no extra attempts are created.
+    */
+  private async completeTextLessonOnOpen(
+    lesson: Lesson,
+    existingTracks: LessonTrack[],
+    userId: string,
+    tenantId: string,
+    organisationId: string,
+    authorization?: string
+  ): Promise<LessonTrack> {
+    const completed = existingTracks.find((track) => track.status === TrackingStatus.COMPLETED);
+    if (completed) {
+      return completed;
+    }
+
+    const now = new Date();
+    // Finish an attempt left open before this rule existed, otherwise create the first one
+    const lessonTrack =
+      existingTracks[0] ??
+      this.lessonTrackRepository.create({
+        userId,
+        lessonId: lesson.lessonId,
+        courseId: lesson.courseId,
+        tenantId,
+        organisationId,
+        attempt: 1,
+        startDatetime: now,
+        timeSpent: 0,
+      });
+    lessonTrack.status = TrackingStatus.COMPLETED;
+    lessonTrack.completionPercentage = 100;
+    lessonTrack.score = 0;
+    lessonTrack.totalContent = 0;
+    lessonTrack.currentPosition = 0;
+    lessonTrack.endDatetime = now;
+
+    const savedLessonTrack = await this.lessonTrackRepository.save(lessonTrack);
+
     if (savedLessonTrack.courseId) {
       this.updateCourseAndModuleTracking(savedLessonTrack, tenantId, organisationId, authorization)
         .catch(err => this.logger.error('Failed to update course/module tracking asynchronously', err));
@@ -341,7 +396,7 @@ export class TrackingService {
     courseId: string,
     tenantId: string,
     organisationId: string
-  ): Promise<{isEligible: boolean, requiredLessons: any[]}> {
+  ): Promise<{ isEligible: boolean, requiredLessons: any[] }> {
     if (!lesson.prerequisites || lesson.prerequisites.length === 0) {
       return {
         isEligible: true,
@@ -378,7 +433,7 @@ export class TrackingService {
 
     // Create a map for quick lookup of completed lessons
     const completedLessonIds = new Set(completedTracks.map(track => track.lessonId));
-    
+
     // Create a map for quick lookup of lesson titles
     const lessonTitleMap = new Map(requiredLessonsData.map(lesson => [lesson.lessonId, lesson.title]));
 
@@ -420,7 +475,7 @@ export class TrackingService {
   ): Promise<LessonTrack> {
     // Get lesson details first
     const lesson = await this.lessonRepository.findOne({
-      where: { 
+      where: {
         lessonId,
         tenantId,
         organisationId
@@ -432,15 +487,15 @@ export class TrackingService {
     }
 
     const courseId = lesson.courseId;
-    
+
     if (!courseId) {
       throw new NotFoundException(RESPONSE_MESSAGES.ERROR.COURSE_LESSON_NOT_FOUND);
     }
-    
+
     // Find existing tracks for course lesson
     const existingTracks = await this.lessonTrackRepository.find({
-      where: { 
-        lessonId, 
+      where: {
+        lessonId,
         userId,
         courseId,
         tenantId,
@@ -453,16 +508,16 @@ export class TrackingService {
     if (existingTracks.length === 0) {
       throw new NotFoundException(RESPONSE_MESSAGES.ERROR.NO_EXISTING_ATTEMPT);
     }
-    
+
 
     const latestTrack = existingTracks[0];
-   
+
     if (action === 'resume') {
       // For resubmission mode, always allow resume regardless of lesson.resume setting
       if (lesson.allowResubmission) {
         return latestTrack;
       }
-      
+
       // Check if lesson allows resume
       const canResume = lesson.resume ?? true;
       if (!canResume) {
@@ -472,7 +527,7 @@ export class TrackingService {
         throw new BadRequestException(RESPONSE_MESSAGES.ERROR.CANNOT_RESUME_COMPLETED);
       }
       return latestTrack;
-    } else { 
+    } else {
       // start over
       if (lesson.allowResubmission) {
         // For resubmission mode, reset the existing attempt instead of creating new one
@@ -483,15 +538,15 @@ export class TrackingService {
         latestTrack.totalContent = 0;
         latestTrack.currentPosition = 0;
         latestTrack.timeSpent = 0;
-        
+
         const savedTracking = await this.lessonTrackRepository.save(latestTrack);
         return savedTracking;
       }
-      
+
       if (latestTrack.status === TrackingStatus.COMPLETED) {
         throw new BadRequestException(RESPONSE_MESSAGES.ERROR.CANNOT_START_COMPLETED);
       }
-      
+
       // Check max attempts
       const maxAttempts = lesson.noOfAttempts || 1;
       if (maxAttempts > 0 && latestTrack.attempt >= maxAttempts) {
@@ -514,9 +569,9 @@ export class TrackingService {
         currentPosition: 0,
         timeSpent: 0
       });
-      
+
       const savedTracking = await this.lessonTrackRepository.save(lessonTrack);
-      
+
       return savedTracking;
     }
   }
@@ -532,7 +587,7 @@ export class TrackingService {
   ): Promise<LessonStatusDto> {
     // Get lesson
     const lesson = await this.lessonRepository.findOne({
-      where: { 
+      where: {
         lessonId,
         tenantId,
         organisationId,
@@ -546,12 +601,12 @@ export class TrackingService {
 
     if (!lesson.courseId) {
       throw new NotFoundException(RESPONSE_MESSAGES.ERROR.COURSE_LESSON_NOT_FOUND);
-    } 
+    }
 
     // Find latest attempt
     const latestTrack = await this.lessonTrackRepository.findOne({
-      where: { 
-        lessonId, 
+      where: {
+        lessonId,
         userId,
         courseId: lesson.courseId,
         tenantId,
@@ -607,6 +662,16 @@ export class TrackingService {
         if ((maxAttempts === 0 || latestTrack.attempt < maxAttempts) && latestTrack.status === TrackingStatus.COMPLETED) {
           status.canReattempt = true;
         }
+        // Retake until pass: a failed test lesson (SUBMITTED = graded, not
+        // passed) can be retaken whatever noOfAttempts says, matching the
+        // assessment service. RETAKE_UNTIL_PASS=false restores the strict limit.
+        if (
+          String(process.env.RETAKE_UNTIL_PASS ?? 'true').toLowerCase() !== 'false' &&
+          lesson.format === LessonFormat.ASSESSMENT &&
+          latestTrack.status === TrackingStatus.SUBMITTED
+        ) {
+          status.canReattempt = true;
+        }
       }
     } else {
       // No attempts yet, can start first attempt
@@ -633,7 +698,7 @@ export class TrackingService {
     // Fetch attempt without lesson relation - tracking data must always be fresh
     // Lesson data may come from cache via LessonsService.findOne()
     const attempt = await this.lessonTrackRepository.findOne({
-      where: { 
+      where: {
         lessonTrackId: attemptId,
         userId,
         tenantId,
@@ -671,7 +736,7 @@ export class TrackingService {
     authorization?: string,
   ): Promise<LessonTrack> {
     const attempt = await this.lessonTrackRepository.findOne({
-      where: { 
+      where: {
         lessonTrackId: attemptId,
         userId,
         tenantId,
@@ -682,6 +747,11 @@ export class TrackingService {
 
     if (!attempt) {
       throw new NotFoundException(RESPONSE_MESSAGES.ERROR.ATTEMPT_NOT_FOUND);
+    }
+    // A text-only lesson is completed (100%, no marks) when opened; later player updates must not change it
+    if (attempt.lesson?.format === LessonFormat.TEXT_AND_MEDIA && attempt.status === TrackingStatus.COMPLETED) {
+      const { lesson, course, ...unchanged } = attempt;
+      return unchanged as unknown as LessonTrack;
     }
 
     // Update progress
@@ -704,8 +774,8 @@ export class TrackingService {
     }
 
     // Update status if completed
-    if (updateProgressDto.currentPosition === updateProgressDto.totalContent || 
-        (updateProgressDto.completionPercentage !== undefined && updateProgressDto.completionPercentage >= 100) ||
+    if (updateProgressDto.currentPosition === updateProgressDto.totalContent ||
+      (updateProgressDto.completionPercentage !== undefined && updateProgressDto.completionPercentage >= 100) ||
       (updateProgressDto.status === TrackingStatus.COMPLETED)) {
       attempt.status = TrackingStatus.COMPLETED;
       attempt.endDatetime = new Date();
@@ -714,10 +784,10 @@ export class TrackingService {
       attempt.status = TrackingStatus.INCOMPLETE;
     }
 
-    if(updateProgressDto.status !== undefined) {
+    if (updateProgressDto.status !== undefined) {
       attempt.status = updateProgressDto.status;
     }
-    
+
     attempt.updatedAt = new Date();
     attempt.updatedBy = userId;
 
@@ -745,8 +815,8 @@ export class TrackingService {
 
     // Get course track
     let courseTrack = await this.courseTrackRepository.findOne({
-      where: { 
-        courseId: lessonTrack.courseId, 
+      where: {
+        courseId: lessonTrack.courseId,
         userId: lessonTrack.userId,
         tenantId,
         organisationId
@@ -754,7 +824,7 @@ export class TrackingService {
     });
 
     if (!courseTrack) {
-      throw new NotFoundException(RESPONSE_MESSAGES.ERROR.COURSE_TRACKING_NOT_FOUND);   
+      throw new NotFoundException(RESPONSE_MESSAGES.ERROR.COURSE_TRACKING_NOT_FOUND);
     }
 
     // Update course track
@@ -764,7 +834,7 @@ export class TrackingService {
     if (lessonTrack.status === TrackingStatus.COMPLETED || courseTrack.status === TrackingStatus.STARTED || lessonTrack.status === TrackingStatus.SUBMITTED) {
       // Get all parent lessons for this course that have considerForPassing = true
       const courseLessons = await this.lessonRepository.find({
-        where: { 
+        where: {
           courseId: lessonTrack.courseId,
           tenantId,
           organisationId,
@@ -783,10 +853,10 @@ export class TrackingService {
         organisationId
       );
 
-      
+
       // Update course track
       courseTrack.completedLessons = completedLessonsCount;
-      
+
       // When lesson is submitted, force incomplete regardless of counts
       if (lessonTrack.status === TrackingStatus.SUBMITTED) {
         courseTrack.status = TrackingStatus.INCOMPLETE;
@@ -966,7 +1036,7 @@ export class TrackingService {
       organisationId,
       status: In([TrackingStatus.COMPLETED, TrackingStatus.SUBMITTED])
     };
-    
+
     // Add courseId filter only if it's provided
     if (courseId) {
       whereClause.courseId = courseId;
@@ -993,6 +1063,13 @@ export class TrackingService {
 
       if (lessonAttempts.length === 0) {
         continue; // No completed attempts
+      }
+      // Text-only lessons carry no marks: any completed attempt completes them, whatever attemptsGrade says
+      if (lesson.format === LessonFormat.TEXT_AND_MEDIA) {
+        if (lessonAttempts.some((attempt) => attempt.status === TrackingStatus.COMPLETED)) {
+          completedLessonsCount++;
+        }
+        continue;
       }
 
       let isLessonCompleted = false;
@@ -1050,83 +1127,83 @@ export class TrackingService {
    * Helper method to update module tracking
    */
   private async updateModuleTracking(moduleId: string, userId: string, tenantId: string, organisationId: string, skipStatusUpdate = false): Promise<void> {
-    
-    try {
-    // Get module
-    const module = await this.moduleRepository.findOne({
-      where: { 
-        moduleId,
-        tenantId,
-        organisationId,
-        status: Not(ModuleStatus.ARCHIVED as any)
-      } as FindOptionsWhere<Module>,
-    });
-    
-    if (!module) {
-      throw new NotFoundException(RESPONSE_MESSAGES.ERROR.MODULE_NOT_FOUND);
-    }
 
-    // Get or create module tracking
-    let moduleTrack = await this.moduleTrackRepository.findOne({
-      where: { 
-        moduleId,
+    try {
+      // Get module
+      const module = await this.moduleRepository.findOne({
+        where: {
+          moduleId,
+          tenantId,
+          organisationId,
+          status: Not(ModuleStatus.ARCHIVED as any)
+        } as FindOptionsWhere<Module>,
+      });
+
+      if (!module) {
+        throw new NotFoundException(RESPONSE_MESSAGES.ERROR.MODULE_NOT_FOUND);
+      }
+
+      // Get or create module tracking
+      let moduleTrack = await this.moduleTrackRepository.findOne({
+        where: {
+          moduleId,
+          userId,
+          tenantId,
+          organisationId
+        } as FindOptionsWhere<ModuleTrack>,
+      });
+
+      if (!moduleTrack) {
+        moduleTrack = this.moduleTrackRepository.create({
+          moduleId,
+          userId,
+          tenantId,
+          organisationId,
+          status: ModuleTrackStatus.INCOMPLETE,
+          completedLessons: 0,
+          totalLessons: 0,
+          progress: 0,
+        });
+      }
+
+      // Get all parent lessons in this module with considerForPassing = true
+      const moduleLessons = await this.lessonRepository.find({
+        where: {
+          moduleId,
+          tenantId,
+          organisationId,
+          status: LessonStatus.PUBLISHED,
+          considerForPassing: true,
+          parentId: IsNull() // Only consider parent lessons for completion tracking
+        } as FindOptionsWhere<Lesson>,
+      });
+
+      // Calculate completed lessons based on attemptsGrade
+      const completedLessonsCount = await this.calculateCompletedLessonsBasedOnAttemptsGrade(
+        moduleLessons,
         userId,
+        null, // No courseId for module tracking
         tenantId,
         organisationId
-      } as FindOptionsWhere<ModuleTrack>,
-    });
+      );
 
-    if (!moduleTrack) {
-      moduleTrack = this.moduleTrackRepository.create({
-        moduleId,
-        userId,
-        tenantId,
-        organisationId,
-        status: ModuleTrackStatus.INCOMPLETE,
-        completedLessons: 0,
-        totalLessons: 0,
-        progress: 0,
-      });
-    }
+      // Update module tracking data
+      moduleTrack.completedLessons = completedLessonsCount;
+      moduleTrack.totalLessons = moduleLessons.length;
+      moduleTrack.progress = moduleLessons.length > 0 ? Math.round((completedLessonsCount / moduleLessons.length) * 100) : 0;
 
-    // Get all parent lessons in this module with considerForPassing = true
-    const moduleLessons = await this.lessonRepository.find({
-      where: { 
-        moduleId,
-        tenantId,
-        organisationId,
-        status: LessonStatus.PUBLISHED,
-        considerForPassing: true,
-        parentId: IsNull() // Only consider parent lessons for completion tracking
-      } as FindOptionsWhere<Lesson>,
-    });
-
-    // Calculate completed lessons based on attemptsGrade
-    const completedLessonsCount = await this.calculateCompletedLessonsBasedOnAttemptsGrade(
-      moduleLessons,
-      userId,
-      null, // No courseId for module tracking
-      tenantId,
-      organisationId
-    );
-
-    // Update module tracking data
-    moduleTrack.completedLessons = completedLessonsCount;
-    moduleTrack.totalLessons = moduleLessons.length;
-    moduleTrack.progress = moduleLessons.length > 0 ? Math.round((completedLessonsCount / moduleLessons.length) * 100) : 0;
-
-    // Update module status based on completion (skip when lesson is submitted)
-    if (!skipStatusUpdate) {
-      if (completedLessonsCount === moduleLessons.length && moduleLessons.length > 0) {
-        moduleTrack.status = ModuleTrackStatus.COMPLETED;
+      // Update module status based on completion (skip when lesson is submitted)
+      if (!skipStatusUpdate) {
+        if (completedLessonsCount === moduleLessons.length && moduleLessons.length > 0) {
+          moduleTrack.status = ModuleTrackStatus.COMPLETED;
+        } else {
+          moduleTrack.status = ModuleTrackStatus.INCOMPLETE;
+        }
       } else {
         moduleTrack.status = ModuleTrackStatus.INCOMPLETE;
       }
-    } else {
-      moduleTrack.status = ModuleTrackStatus.INCOMPLETE;
-    }
 
-    await this.moduleTrackRepository.save(moduleTrack);
+      await this.moduleTrackRepository.save(moduleTrack);
 
     } catch (error) {
       this.logger.error(`Error updating module tracking for moduleId: ${moduleId}, userId: ${userId}`, error);
@@ -1294,7 +1371,7 @@ export class TrackingService {
       // Build module update query - use correlated subquery to ensure ALL tracks are updated
       let moduleUpdateSql: string;
       let moduleUpdateParams: any[];
-      
+
       if (moduleIdList.length === 0) {
         // No modules to update
         moduleUpdateSql = `SELECT 0 as count`;
@@ -1357,7 +1434,7 @@ export class TrackingService {
           organisationId,
           courseId
         ]),
-        moduleIdList.length > 0 
+        moduleIdList.length > 0
           ? this.moduleTrackRepository.query(moduleUpdateSql, moduleUpdateParams)
           : Promise.resolve([])
       ]);
@@ -1374,12 +1451,12 @@ export class TrackingService {
         }),
         moduleIdList.length > 0
           ? this.moduleTrackRepository.count({
-              where: {
-                moduleId: In(moduleIdList),
-                tenantId,
-                organisationId
-              } as FindOptionsWhere<ModuleTrack>,
-            })
+            where: {
+              moduleId: In(moduleIdList),
+              tenantId,
+              organisationId
+            } as FindOptionsWhere<ModuleTrack>,
+          })
           : Promise.resolve(0)
       ]);
 
@@ -1504,7 +1581,7 @@ export class TrackingService {
       )
     `;
     const eligibleCourseParams = [allEnrolledCourseIds, LessonStatus.PUBLISHED];
-    
+
     const eligibleCourseRows: { courseId: string }[] =
       await this.lessonRepository.query(eligibleCourseSql, eligibleCourseParams);
     const eligibleCourseIdSet = new Set(eligibleCourseRows.map((r) => r.courseId));
@@ -1773,8 +1850,8 @@ export class TrackingService {
           if (payload && typeof payload.isImported === 'boolean') {
             const gradingType =
               payload.gradingType != null &&
-              typeof payload.gradingType === 'string' &&
-              payload.gradingType.length > 0
+                typeof payload.gradingType === 'string' &&
+                payload.gradingType.length > 0
                 ? payload.gradingType
                 : null;
             map.set(testId, { isImported: payload.isImported, gradingType });
