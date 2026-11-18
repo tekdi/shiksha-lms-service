@@ -1987,7 +1987,7 @@ export class LessonsService {
               relations: ['media', 'associatedFiles.media'],
             },
           );
-
+          console.log(`Original lesson fetched: ${JSON.stringify(originalLesson)}`); // Debug log
           if (!originalLesson) {
             throw new NotFoundException(
               RESPONSE_MESSAGES.ERROR.LESSON_NOT_FOUND,
