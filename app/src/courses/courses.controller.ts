@@ -45,6 +45,11 @@ import { CourseHierarchyFilterDto } from './dto/course-hierarchy-filter.dto';
 import { Headers } from '@nestjs/common';
 import { CloneCourseDto } from './dto/clone-course.dto';
 import { GetNextDto } from './dto/get-next.dto';
+import {
+  CourseTranslationItemDto,
+  CreateCourseTranslationDto,
+  LinkCourseTranslationDto,
+} from './dto/course-translation.dto';
 
 @ApiTags('Courses')
 @Controller('courses')
@@ -545,6 +550,83 @@ export class CoursesController {
       requestBody.newPathwayId,
     );
     return copiedCourse;
+  }
+
+  @Get(':courseId/translations')
+  @ApiId(API_IDS.GET_COURSE_TRANSLATIONS)
+  @ApiOperation({
+    summary: 'List the language versions of a course',
+    description:
+      'Task 35: every live (not archived) version of the course in English, Hindi or Marathi, the course itself included.',
+  })
+  @ApiParam({ name: 'courseId', type: 'string', format: 'uuid' })
+  @ApiResponse({ status: 200, type: [CourseTranslationItemDto] })
+  @ApiResponse({ status: 404, description: 'Course not found' })
+  async getCourseTranslations(
+    @Param('courseId', ParseUUIDPipe) courseId: string,
+    @TenantOrg() tenantOrg: { tenantId: string; organisationId: string },
+  ) {
+    return this.coursesService.getTranslations(
+      courseId,
+      tenantOrg.tenantId,
+      tenantOrg.organisationId,
+    );
+  }
+
+  @Post(':courseId/translations')
+  @ApiId(API_IDS.CREATE_COURSE_TRANSLATION)
+  @ApiOperation({
+    summary: 'Create a language version of a course',
+    description:
+      'Task 35: copies the course with its sections, lessons and media as an unpublished version in another language, in the same version group.',
+  })
+  @ApiParam({ name: 'courseId', type: 'string', format: 'uuid' })
+  @ApiBody({ type: CreateCourseTranslationDto })
+  @ApiResponse({ status: 201, type: Course })
+  @ApiResponse({ status: 404, description: 'Course not found' })
+  @ApiResponse({ status: 409, description: 'The course already has a version in that language' })
+  async createCourseTranslation(
+    @Param('courseId', ParseUUIDPipe) courseId: string,
+    @Body() dto: CreateCourseTranslationDto,
+    @Query() query: CommonQueryDto,
+    @TenantOrg() tenantOrg: { tenantId: string; organisationId: string },
+    @Headers('authorization') authorization: string,
+  ) {
+    return this.coursesService.createTranslation(
+      courseId,
+      dto,
+      query.userId,
+      tenantOrg.tenantId,
+      tenantOrg.organisationId,
+      authorization,
+    );
+  }
+
+  @Patch(':courseId/translation-group')
+  @ApiId(API_IDS.LINK_COURSE_TRANSLATION)
+  @ApiOperation({
+    summary: 'Link a course as a language version of another course, or unlink it',
+    description:
+      'Task 35: versionOfCourseId = the course whose versions this course joins; null takes it out of its group. Returns the versions of its group.',
+  })
+  @ApiParam({ name: 'courseId', type: 'string', format: 'uuid' })
+  @ApiBody({ type: LinkCourseTranslationDto })
+  @ApiResponse({ status: 200, type: [CourseTranslationItemDto] })
+  @ApiResponse({ status: 404, description: 'Course not found' })
+  @ApiResponse({ status: 409, description: 'The other course already has a version in this language' })
+  async linkCourseTranslation(
+    @Param('courseId', ParseUUIDPipe) courseId: string,
+    @Body() dto: LinkCourseTranslationDto,
+    @Query() query: CommonQueryDto,
+    @TenantOrg() tenantOrg: { tenantId: string; organisationId: string },
+  ) {
+    return this.coursesService.linkTranslation(
+      courseId,
+      dto.versionOfCourseId ?? null,
+      query.userId,
+      tenantOrg.tenantId,
+      tenantOrg.organisationId,
+    );
   }
 
   @Put('/order/structure')

@@ -23,6 +23,25 @@ export enum RewardType {
   BADGE = 'badge',
 }
 
+/**
+ * Content languages of a course (Task 34). Stored as a short code; the admin app shows
+ * English / Hindi / Marathi. A course is written in exactly one language.
+ */
+export const COURSE_LANGUAGES = ['en', 'hi', 'mr'] as const;
+export type CourseLanguage = (typeof COURSE_LANGUAGES)[number];
+export const DEFAULT_COURSE_LANGUAGE: CourseLanguage = 'en';
+
+/** Older courses keep the language in params.language as a word; maps it (or a code) to a code */
+export const toCourseLanguage = (value: unknown): CourseLanguage | undefined => {
+  const key = String(value ?? '').trim().toLowerCase();
+  const map: Record<string, CourseLanguage> = {
+    en: 'en', english: 'en',
+    hi: 'hi', hindi: 'hi',
+    mr: 'mr', marathi: 'mr',
+  };
+  return map[key];
+};
+
 @Entity('courses')
 export class Course {
   @ApiProperty({ description: 'Unique identifier for the course', example: '123e4567-e89b-12d3-a456-426614174000' })
@@ -119,6 +138,23 @@ export class Course {
   @ApiProperty({ description: 'Additional parameters', required: false })
   @Column({ type: 'jsonb', nullable: true })
   params: Record<string, any>;
+
+  @ApiProperty({ description: 'Content language of the course', enum: COURSE_LANGUAGES, example: 'en', default: DEFAULT_COURSE_LANGUAGE })
+  @Column({ type: 'varchar', length: 10, default: DEFAULT_COURSE_LANGUAGE })
+  language: CourseLanguage;
+
+  @ApiProperty({
+    description: 'Groups the language versions of one course (English, Hindi, Marathi). Equals the courseId of a course with no other versions.',
+    example: '123e4567-e89b-12d3-a456-426614174000',
+    required: false,
+  })
+  // Nullable only while a course is being saved; every saved course has one (Task 34 backfill + create)
+  @Column({ type: 'uuid', nullable: true })
+  translationGroupId: string;
+
+  @ApiProperty({ description: 'Course this version was copied from, when created as a translation', required: false })
+  @Column({ type: 'uuid', nullable: true })
+  sourceCourseId: string | null;
 
   @ApiProperty({ 
     description: 'Course pricing information', 

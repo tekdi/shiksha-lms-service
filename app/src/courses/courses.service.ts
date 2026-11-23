@@ -3,6 +3,7 @@ import {
   NotFoundException,
   Logger,
   BadRequestException,
+  ConflictException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
@@ -17,7 +18,32 @@ import {
   IsNull,
   In,
 } from 'typeorm';
-import { Course, CourseStatus } from './entities/course.entity';
+import {
+  Course,
+  CourseStatus,
+  COURSE_LANGUAGES,
+  CourseLanguage,
+  DEFAULT_COURSE_LANGUAGE,
+  toCourseLanguage,
+} from './entities/course.entity';
+import {
+  CourseTranslationItemDto,
+  CreateCourseTranslationDto,
+} from './dto/course-translation.dto';
+
+/** Language names as older readers expect them in params.language */
+const COURSE_LANGUAGE_WORDS: Record<CourseLanguage, string> = {
+  en: 'english',
+  hi: 'hindi',
+  mr: 'marathi',
+};
+const COURSE_LANGUAGE_NAMES: Record<CourseLanguage, string> = {
+  en: 'English',
+  hi: 'Hindi',
+  mr: 'Marathi',
+};
+/** Postgres unique_violation: uq_courses_translation_group_language (one live course per language in a group) */
+const UNIQUE_VIOLATION = '23505';
 import { Module, ModuleStatus } from '../modules/entities/module.entity';
 import {
   Lesson,
@@ -141,6 +167,13 @@ export class CoursesService {
       organisationId,
     );
 
+    // Task 34: content language from the request, else params.language, else English.
+    // params.language is kept in step for older readers.
+    const language =
+      createCourseDto.language ??
+      toCourseLanguage(createCourseDto.params?.language) ??
+      DEFAULT_COURSE_LANGUAGE;
+
     // Create courseData with only fields that exist in the entity
     const courseData = {
       title: createCourseDto.title,
@@ -151,7 +184,11 @@ export class CoursesService {
       startDatetime: createCourseDto.startDatetime,
       endDatetime: createCourseDto.endDatetime,
       status: createCourseDto.status || CourseStatus.PUBLISHED,
-      params: createCourseDto.params || {},
+      params: {
+        ...(createCourseDto.params || {}),
+        language: COURSE_LANGUAGE_WORDS[language],
+      },
+      language,
       pricing: createCourseDto.pricing || undefined,
       featured:
         createCourseDto.featured !== undefined
@@ -186,6 +223,8 @@ export class CoursesService {
     const course = this.courseRepository.create(courseData);
     const savedCourse = await this.courseRepository.save(course);
     const result = Array.isArray(savedCourse) ? savedCourse[0] : savedCourse;
+    // A new course starts its own group of language versions
+    await this.startOwnTranslationGroup(result);
 
     // Cache the new course and invalidate related caches
     await Promise.all([
@@ -274,9 +313,15 @@ export class CoursesService {
       courses,
       tenantId,
     );
+    // Task 35: the languages each course is available in (its group's live versions)
+    const coursesWithLanguages = await this.withAvailableLanguages(
+      coursesWithCounts,
+      tenantId,
+      organisationId,
+    );
 
     const result: SearchCourseResponseDto = {
-      courses: coursesWithCounts,
+      courses: coursesWithLanguages,
       totalElements: total,
       offset,
       limit,
@@ -324,6 +369,11 @@ export class CoursesService {
     // Creator filter
     if (filters?.createdBy) {
       whereClause.createdBy = filters.createdBy;
+    }
+
+    // Task 35: content language (one or more codes)
+    if (Array.isArray(filters?.language) && filters.language.length > 0) {
+      whereClause.language = In(filters.language);
     }
 
     // Date range filters
@@ -1879,12 +1929,33 @@ export class CoursesService {
         : null;
     }
 
+    // Task 34: a language change keeps params.language in step; translationGroupId and
+    // sourceCourseId change only through the translation APIs.
+    delete updateCourseDto.translationGroupId;
+    delete updateCourseDto.sourceCourseId;
+    if (updateCourseDto.language) {
+      updateCourseDto.params = {
+        ...(updateCourseDto.params ?? course.params ?? {}),
+        language: COURSE_LANGUAGE_WORDS[updateCourseDto.language as CourseLanguage],
+      };
+    }
+
     const updatedCourse = this.courseRepository.merge(course, {
       ...updateCourseDto,
       updatedBy: userId,
     });
 
-    const savedCourse = await this.courseRepository.save(updatedCourse);
+    let savedCourse: Course;
+    try {
+      savedCourse = await this.courseRepository.save(updatedCourse);
+    } catch (error) {
+      if (error?.code === UNIQUE_VIOLATION) {
+        throw new ConflictException(
+          `Another version of this course is already in ${COURSE_LANGUAGE_NAMES[updateCourseDto.language as CourseLanguage] ?? 'this language'}.`,
+        );
+      }
+      throw error;
+    }
 
     // Cache the new course and invalidate related caches
     await Promise.all([
@@ -1999,6 +2070,11 @@ export class CoursesService {
     authorization: string,
     newCohortId?: string,
     newPathwayId?: string,
+    translation?: {
+      language: CourseLanguage;
+      title: string;
+      translationGroupId: string;
+    },
   ): Promise<Course> {
     this.logger.log(`Cloneing course: ${courseId}`);
 
@@ -2030,9 +2106,19 @@ export class CoursesService {
             );
           }
 
-          // Generate title and alias for the copied course
-          const newTitle = `${originalCourse.title} (Copy)`;
-          const newAlias = originalCourse.alias + '-copy';
+          // Generate title and alias for the copied course. A language version (Task 35) keeps
+          // the given title and gets a fresh alias from it.
+          const newTitle = translation
+            ? translation.title
+            : `${originalCourse.title} (Copy)`;
+          const newAlias = translation
+            ? await HelperUtil.generateUniqueAliasWithRepo(
+                `${translation.title}-${translation.language}`,
+                this.courseRepository,
+                tenantId,
+                organisationId,
+              )
+            : originalCourse.alias + '-copy';
 
           const resolvedOrdering =
             await this.orderingService.resolveCloneCourseOrdering(
@@ -2047,8 +2133,16 @@ export class CoursesService {
             ...originalCourse,
             title: newTitle,
             alias: newAlias,
-            status: CourseStatus.PUBLISHED,
+            // A new language version starts unpublished so it can be translated first
+            status: translation
+              ? CourseStatus.UNPUBLISHED
+              : CourseStatus.PUBLISHED,
             ordering: resolvedOrdering,
+            // Task 34: a plain copy is a new course (own group, set after saving);
+            // a language version joins the source course's group
+            language: translation?.language ?? originalCourse.language,
+            translationGroupId: translation?.translationGroupId ?? undefined,
+            sourceCourseId: translation ? originalCourse.courseId : null,
             createdBy: userId,
             updatedBy: userId,
             // Remove properties that should not be copied
@@ -2058,11 +2152,16 @@ export class CoursesService {
             certificateGenDateTime: undefined,
             certificateIssueDateTime: undefined,
             prerequisites: undefined,
-            params: this.buildClonedCourseParams(
-              originalCourse.params,
-              newCohortId,
-              newPathwayId,
-            ),
+            params: {
+              ...(this.buildClonedCourseParams(
+                originalCourse.params,
+                newCohortId,
+                newPathwayId,
+              ) ?? {}),
+              ...(translation && {
+                language: COURSE_LANGUAGE_WORDS[translation.language],
+              }),
+            },
           };
 
           this.logger.log(`Creating new course with title: ${newTitle}`);
@@ -2078,6 +2177,14 @@ export class CoursesService {
           const result = Array.isArray(savedCourse)
             ? savedCourse[0]
             : savedCourse;
+          if (!result.translationGroupId) {
+            result.translationGroupId = result.courseId;
+            await transactionalEntityManager.update(
+              Course,
+              { courseId: result.courseId },
+              { translationGroupId: result.courseId },
+            );
+          }
 
           // Clone modules and their content
           await this.cloneModulesWithTransaction(
@@ -2111,6 +2218,286 @@ export class CoursesService {
 
       throw error;
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Task 35: language versions of a course (English / Hindi / Marathi)
+  // ---------------------------------------------------------------------------
+
+  /** Orders language codes as en, hi, mr */
+  private sortLanguages(languages: Iterable<string>): CourseLanguage[] {
+    const set = new Set(languages);
+    return COURSE_LANGUAGES.filter((l) => set.has(l));
+  }
+
+  /** A course with no group yet becomes its own group (translationGroupId = courseId) */
+  private async startOwnTranslationGroup(course: Course): Promise<void> {
+    if (course.translationGroupId) return;
+    course.translationGroupId = course.courseId;
+    await this.courseRepository.update(
+      { courseId: course.courseId },
+      { translationGroupId: course.courseId },
+    );
+  }
+
+  /** Loads a course straight from the database (the cached copy may predate the language columns) */
+  private async getCourseForTranslation(
+    courseId: string,
+    tenantId: string,
+    organisationId: string,
+  ): Promise<Course> {
+    const where: FindOptionsWhere<Course> = { courseId };
+    if (tenantId) where.tenantId = tenantId;
+    if (organisationId) where.organisationId = organisationId;
+    const course = await this.courseRepository.findOne({ where });
+    if (!course) {
+      throw new NotFoundException(RESPONSE_MESSAGES.ERROR.COURSE_NOT_FOUND);
+    }
+    return course;
+  }
+
+  /** Live (not archived) courses of a group, in en, hi, mr order */
+  private async findGroupVersions(
+    translationGroupId: string,
+    tenantId: string,
+    organisationId: string,
+  ): Promise<Course[]> {
+    const where: FindOptionsWhere<Course> = {
+      translationGroupId,
+      status: Not(CourseStatus.ARCHIVED),
+    };
+    if (tenantId) where.tenantId = tenantId;
+    if (organisationId) where.organisationId = organisationId;
+    const courses = await this.courseRepository.find({ where });
+    return courses.sort(
+      (a, b) =>
+        COURSE_LANGUAGES.indexOf(a.language) - COURSE_LANGUAGES.indexOf(b.language),
+    );
+  }
+
+  /** Adds availableLanguages (the languages of each course's live versions) to search results */
+  private async withAvailableLanguages<T extends Course>(
+    courses: T[],
+    tenantId: string,
+    organisationId: string,
+  ): Promise<(T & { availableLanguages: CourseLanguage[] })[]> {
+    const groupIds = [
+      ...new Set(courses.map((c) => c.translationGroupId).filter(Boolean)),
+    ];
+    const byGroup = new Map<string, string[]>();
+    if (groupIds.length > 0) {
+      const qb = this.courseRepository
+        .createQueryBuilder('course')
+        .select('course.translationGroupId', 'groupId')
+        .addSelect('course.language', 'language')
+        .where('course.translationGroupId IN (:...groupIds)', { groupIds })
+        .andWhere('course.status != :archived', {
+          archived: CourseStatus.ARCHIVED,
+        });
+      if (tenantId) qb.andWhere('course.tenantId = :tenantId', { tenantId });
+      if (organisationId) {
+        qb.andWhere('course.organisationId = :organisationId', {
+          organisationId,
+        });
+      }
+      const rows = await qb.getRawMany();
+      rows.forEach((r) => {
+        byGroup.set(r.groupId, [...(byGroup.get(r.groupId) ?? []), r.language]);
+      });
+    }
+    return courses.map((course) => ({
+      ...course,
+      availableLanguages: this.sortLanguages(
+        byGroup.get(course.translationGroupId) ?? [
+          course.language ?? DEFAULT_COURSE_LANGUAGE,
+        ],
+      ),
+    }));
+  }
+
+  private toTranslationItem(course: Course): CourseTranslationItemDto {
+    return {
+      courseId: course.courseId,
+      title: course.title,
+      language: course.language,
+      status: course.status,
+      sourceCourseId: course.sourceCourseId,
+      translationGroupId: course.translationGroupId,
+    };
+  }
+
+  /** GET courses/:courseId/translations: every live language version of the course, itself included */
+  async getTranslations(
+    courseId: string,
+    tenantId: string,
+    organisationId: string,
+  ): Promise<CourseTranslationItemDto[]> {
+    const course = await this.getCourseForTranslation(
+      courseId,
+      tenantId,
+      organisationId,
+    );
+    await this.startOwnTranslationGroup(course);
+    const versions = await this.findGroupVersions(
+      course.translationGroupId,
+      tenantId,
+      organisationId,
+    );
+    // An archived course still lists itself
+    if (!versions.some((v) => v.courseId === course.courseId)) {
+      versions.unshift(course);
+    }
+    return versions.map((v) => this.toTranslationItem(v));
+  }
+
+  /**
+   * POST courses/:courseId/translations: copies the course (sections, lessons, media) as a new,
+   * unpublished version in another language. 409 when the group already has that language.
+   */
+  async createTranslation(
+    courseId: string,
+    dto: CreateCourseTranslationDto,
+    userId: string,
+    tenantId: string,
+    organisationId: string,
+    authorization: string,
+  ): Promise<Course> {
+    const course = await this.getCourseForTranslation(
+      courseId,
+      tenantId,
+      organisationId,
+    );
+    if (course.status === CourseStatus.ARCHIVED) {
+      throw new BadRequestException(
+        'An archived course cannot get a new language version.',
+      );
+    }
+    await this.startOwnTranslationGroup(course);
+    const versions = await this.findGroupVersions(
+      course.translationGroupId,
+      tenantId,
+      organisationId,
+    );
+    const existing = versions.find((v) => v.language === dto.language);
+    if (existing) {
+      throw new ConflictException(
+        `This course already has a ${COURSE_LANGUAGE_NAMES[dto.language]} version: "${existing.title}".`,
+      );
+    }
+
+    try {
+      const created = await this.cloneCourse(
+        courseId,
+        userId,
+        tenantId,
+        organisationId,
+        authorization,
+        undefined,
+        undefined,
+        {
+          language: dto.language,
+          title: dto.title?.trim() || course.title,
+          translationGroupId: course.translationGroupId,
+        },
+      );
+      await this.invalidateGroupCaches(versions, tenantId, organisationId);
+      return created;
+    } catch (error) {
+      if (error?.code === UNIQUE_VIOLATION) {
+        throw new ConflictException(
+          `This course already has a ${COURSE_LANGUAGE_NAMES[dto.language]} version.`,
+        );
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * PATCH courses/:courseId/translation-group: makes this course a language version of
+   * `versionOfCourseId` (joins its group), or with null takes it out of its group.
+   * 409 when the target group already has a live course in this course's language.
+   */
+  async linkTranslation(
+    courseId: string,
+    versionOfCourseId: string | null,
+    userId: string,
+    tenantId: string,
+    organisationId: string,
+  ): Promise<CourseTranslationItemDto[]> {
+    const course = await this.getCourseForTranslation(
+      courseId,
+      tenantId,
+      organisationId,
+    );
+    await this.startOwnTranslationGroup(course);
+    const oldVersions = await this.findGroupVersions(
+      course.translationGroupId,
+      tenantId,
+      organisationId,
+    );
+
+    let targetGroupId = course.courseId;
+    if (versionOfCourseId) {
+      if (versionOfCourseId === courseId) {
+        throw new BadRequestException('A course cannot be a version of itself.');
+      }
+      const target = await this.getCourseForTranslation(
+        versionOfCourseId,
+        tenantId,
+        organisationId,
+      );
+      await this.startOwnTranslationGroup(target);
+      targetGroupId = target.translationGroupId;
+      if (targetGroupId !== course.translationGroupId) {
+        const clash = (
+          await this.findGroupVersions(targetGroupId, tenantId, organisationId)
+        ).find((v) => v.language === course.language);
+        if (clash) {
+          throw new ConflictException(
+            `"${target.title}" already has a ${COURSE_LANGUAGE_NAMES[course.language]} version: "${clash.title}".`,
+          );
+        }
+      }
+    } else if (course.translationGroupId === course.courseId) {
+      // This course's id is the group id. The other versions keep that id, so this
+      // course leaves under a fresh one (or stays put when it has no other versions).
+      const others = oldVersions.filter((v) => v.courseId !== course.courseId);
+      targetGroupId = others.length > 0 ? HelperUtil.generateUuid() : course.courseId;
+    }
+
+    if (targetGroupId !== course.translationGroupId) {
+      try {
+        await this.courseRepository.update(
+          { courseId: course.courseId },
+          { translationGroupId: targetGroupId, updatedBy: userId },
+        );
+      } catch (error) {
+        if (error?.code === UNIQUE_VIOLATION) {
+          throw new ConflictException(
+            `That course already has a ${COURSE_LANGUAGE_NAMES[course.language]} version.`,
+          );
+        }
+        throw error;
+      }
+      await this.invalidateGroupCaches(
+        [...oldVersions, course],
+        tenantId,
+        organisationId,
+      );
+    }
+    return this.getTranslations(courseId, tenantId, organisationId);
+  }
+
+  /** Clears the cached course, hierarchy and search results of each course in a group */
+  private async invalidateGroupCaches(
+    courses: Course[],
+    tenantId: string,
+    organisationId: string,
+  ): Promise<void> {
+    const ids = [...new Set(courses.map((c) => c.courseId))];
+    await Promise.all(
+      ids.map((id) => this.cacheService.invalidateCourse(id, tenantId, organisationId)),
+    );
   }
 
   /**

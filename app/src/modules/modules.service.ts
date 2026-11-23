@@ -99,25 +99,27 @@ export class ModulesService {
       throw new BadRequestException(RESPONSE_MESSAGES.ERROR.COURSE_OR_PARENT_REQUIRED);
     }
 
-    // Check if a module with the same title already exists in the same context
+    // Check if a module with the same title already exists in the same context:
+    // among the course's top-level modules, or among the parent's submodules.
+    // (Only one clause is built: with parentId undefined, TypeORM drops that condition and the
+    // clause would match a module with this title in any course of the tenant.)
     const existingModule = await this.moduleRepository.findOne({
-      where: [
-        { 
-          title: createModuleDto.title, 
-          courseId: createModuleDto.courseId,
-          parentId: IsNull(),
-          status: Not(ModuleStatus.ARCHIVED),
-          tenantId,
-          organisationId
-        } as FindOptionsWhere<Module>,
-        { 
-          title: createModuleDto.title, 
-          parentId: createModuleDto.parentId,
-          status: Not(ModuleStatus.ARCHIVED),
-          tenantId,
-          organisationId
-        } as FindOptionsWhere<Module>,
-      ],
+      where: createModuleDto.parentId
+        ? ({
+            title: createModuleDto.title,
+            parentId: createModuleDto.parentId,
+            status: Not(ModuleStatus.ARCHIVED),
+            tenantId,
+            organisationId,
+          } as FindOptionsWhere<Module>)
+        : ({
+            title: createModuleDto.title,
+            courseId: createModuleDto.courseId,
+            parentId: IsNull(),
+            status: Not(ModuleStatus.ARCHIVED),
+            tenantId,
+            organisationId,
+          } as FindOptionsWhere<Module>),
     });
 
     if (existingModule) {
