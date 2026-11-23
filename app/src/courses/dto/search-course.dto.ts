@@ -1,7 +1,7 @@
 import { ApiPropertyOptional, ApiProperty } from '@nestjs/swagger';
-import { IsOptional, IsBoolean, IsString, IsEnum, IsUUID, IsDateString, IsNumber, Min } from 'class-validator';
+import { IsOptional, IsBoolean, IsString, IsEnum, IsUUID, IsDateString, IsNumber, Min, IsIn } from 'class-validator';
 import { Transform, Type } from 'class-transformer';
-import { CourseStatus } from '../entities/course.entity';
+import { COURSE_LANGUAGES, CourseLanguage, CourseStatus } from '../entities/course.entity';
 import { Course } from '../entities/course.entity';
 
 export enum SortOrder {
@@ -49,6 +49,19 @@ export class SearchCourseDto {
   @IsOptional()
   @IsEnum(CourseContextType)
   contextType?: CourseContextType;
+
+  @ApiPropertyOptional({
+    description: 'Filter by content language (Task 35): one code or a comma-separated list, e.g. hi or en,mr',
+    example: 'hi',
+  })
+  @IsOptional()
+  @Transform(({ value }) =>
+    (Array.isArray(value) ? value : String(value ?? '').split(','))
+      .map((v: string) => String(v).trim().toLowerCase())
+      .filter(Boolean),
+  )
+  @IsIn(COURSE_LANGUAGES as unknown as string[], { each: true, message: 'language must be one of: en, hi, mr' })
+  language?: CourseLanguage[];
 
   @ApiPropertyOptional({ enum: CourseStatus, description: 'Filter by course status' })
   @IsOptional()

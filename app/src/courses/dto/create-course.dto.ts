@@ -1,7 +1,7 @@
-import { IsNotEmpty, IsString, IsOptional, IsBoolean, IsEnum, IsNumber, IsUUID, IsObject, IsDateString, MinLength, MaxLength, Matches, ValidateIf, Validate, IsArray } from 'class-validator';
+import { IsNotEmpty, IsString, IsOptional, IsBoolean, IsEnum, IsNumber, IsUUID, IsObject, IsDateString, MinLength, MaxLength, Matches, ValidateIf, Validate, IsArray, IsIn } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { CourseStatus, RewardType } from '../entities/course.entity';
+import { COURSE_LANGUAGES, CourseLanguage, CourseStatus, RewardType } from '../entities/course.entity';
 import { HelperUtil, ValidateDatetimeConstraints, ValidateCertificateDateTime } from '../../common/utils/helper.util';
 import { VALIDATION_MESSAGES } from '../../common/constants/response-messages.constant';
 
@@ -161,6 +161,15 @@ export class CreateCourseDto {
   @IsOptional()
   @IsObject({ message: VALIDATION_MESSAGES.COMMON.OBJECT('Additional parameters') })
   params?: Record<string, any>;
+
+  @ApiPropertyOptional({
+    description: 'Content language (Task 34): en, hi or mr. Defaults to params.language, else en.',
+    enum: COURSE_LANGUAGES,
+    example: 'hi',
+  })
+  @IsOptional()
+  @IsIn(COURSE_LANGUAGES as unknown as string[], { message: 'language must be one of: en, hi, mr' })
+  language?: CourseLanguage;
 
   @ApiPropertyOptional({ 
     description: 'Course pricing information',
