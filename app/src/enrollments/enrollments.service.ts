@@ -697,6 +697,9 @@ export class EnrollmentsService {
             'course.status',
             'course.params',
             'course.ordering',
+               // Task 34: the learner app picks the course version in the learner's language
+            'course.language',
+            'course.translationGroupId',
             'course.createdAt',
             'course.updatedAt',
           ])
@@ -732,6 +735,8 @@ export class EnrollmentsService {
             status: course.status,
             params: course.params,
             ordering: course.ordering,
+            language: course.language,
+            translationGroupId: course.translationGroupId,
             prerequisites: course.prerequisites,
             certificateTerm: course.certificateTerm,
             createdAt: course.createdAt,
