@@ -178,6 +178,17 @@ export class EnrollmentsService {
         },
       );
 
+      // An enrollment withdrawn earlier (archived, see withdraw) is made active again, so the learner's progress
+      // on the course comes back instead of the enrolment failing as a duplicate
+      if (existingEnrollment?.status === EnrollmentStatus.ARCHIVED) {
+        existingEnrollment.status = course.adminApproval
+          ? EnrollmentStatus.UNPUBLISHED
+          : createEnrollmentDto.status || EnrollmentStatus.PUBLISHED;
+        const reactivated = await queryRunner.manager.save(existingEnrollment);
+        await queryRunner.commitTransaction();
+        await this.invalidateEnrollmentCaches([reactivated], tenantId, organisationId);
+        return reactivated;
+      }
       if (existingEnrollment) {
         throw new ConflictException(RESPONSE_MESSAGES.ALREADY_ENROLLED);
       }
@@ -384,6 +395,59 @@ export class EnrollmentsService {
     } finally {
       // Release the query runner
       await queryRunner.release();
+    }
+  }
+
+  /**
+   * Withdraws learners from courses: their active enrollments in the courses are archived, so the courses drop out
+   * of the learner's list (users-courses lists published enrollments only). Tracking and progress are kept, and
+   * enrolling the learner again makes the same enrollment active (see enrollSingleCourse).
+   */
+  async withdraw(
+    learnerIds: string[],
+    courseIds: string[],
+    tenantId: string,
+    organisationId: string,
+  ): Promise<{ withdrawnCount: number; withdrawn: Array<{ userId: string; courseId: string }> }> {
+    const enrollments = await this.userEnrollmentRepository.find({
+      where: {
+        userId: In(learnerIds),
+        courseId: In(courseIds),
+        tenantId,
+        organisationId,
+        status: Not(EnrollmentStatus.ARCHIVED),
+      },
+    });
+    if (enrollments.length === 0) {
+      return { withdrawnCount: 0, withdrawn: [] };
+    }
+    await this.userEnrollmentRepository.update(
+      { enrollmentId: In(enrollments.map((e) => e.enrollmentId)) },
+      { status: EnrollmentStatus.ARCHIVED },
+    );
+    await this.invalidateEnrollmentCaches(enrollments, tenantId, organisationId);
+    this.logger.log(`Withdrew ${enrollments.length} enrollment(s) for ${learnerIds.length} learner(s)`);
+    return {
+      withdrawnCount: enrollments.length,
+      withdrawn: enrollments.map((e) => ({ userId: e.userId, courseId: e.courseId })),
+    };
+  }
+
+  /** Clears the cached copies of these enrollments and the enrollment lists (best-effort: Redis errors are logged) */
+  private async invalidateEnrollmentCaches(
+    enrollments: UserEnrollment[],
+    tenantId: string,
+    organisationId: string,
+  ): Promise<void> {
+    try {
+      await Promise.all(
+        enrollments.flatMap((e) => [
+          this.cacheService.invalidateEnrollment(e.userId, e.courseId, tenantId, organisationId),
+          this.cacheService.del(this.cacheConfig.getUserEnrollmentKey(e.enrollmentId, tenantId, organisationId)),
+        ]),
+      );
+    } catch (cacheError) {
+      this.logger.warn(`Failed to invalidate enrollment cache: ${cacheError.message}`);
     }
   }
 
