@@ -23,6 +23,7 @@ import { CreateEnrollmentDto } from './dto/create-enrollment.dto';
 import { UpdateEnrollmentDto } from './dto/update-enrollment.dto';
 import { DeleteEnrollmentDto } from './dto/delete-enrollment.dto';
 import { EnrollCohortDto } from './dto/enroll-cohort.dto';
+import { WithdrawEnrollmentDto } from './dto/withdraw-enrollment.dto';
 import { PaginationDto } from '../common/dto/pagination.dto';
 import { API_IDS } from '../common/constants/api-ids.constant';
 import { UserEnrollment, EnrollmentStatus } from './entities/user-enrollment.entity';
@@ -64,6 +65,39 @@ export class EnrollmentsController {
       query.userId,
       tenantOrg.tenantId,
       tenantOrg.organisationId
+    );
+  }
+  @Post('withdraw')
+  @ApiId(API_IDS.CANCEL_ENROLLMENT)
+  @ApiOperation({
+    summary: 'Withdraw learners from courses',
+    description:
+      'Archives the learners\' active enrollments in the courses. Progress is kept; enrolling again reactivates the enrollment.',
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'Enrollments withdrawn',
+    schema: {
+      properties: {
+        withdrawnCount: { type: 'number' },
+        withdrawn: {
+          type: 'array',
+          items: { properties: { userId: { type: 'string' }, courseId: { type: 'string' } } },
+        },
+      },
+    },
+  })
+  @ApiResponse({ status: 400, description: 'Bad request' })
+  @ApiBody({ type: WithdrawEnrollmentDto })
+  async withdrawEnrollments(
+    @Body() withdrawEnrollmentDto: WithdrawEnrollmentDto,
+    @TenantOrg() tenantOrg: { tenantId: string; organisationId: string },
+  ) {
+    return this.enrollmentsService.withdraw(
+      withdrawEnrollmentDto.learnerIds,
+      withdrawEnrollmentDto.courseIds,
+      tenantOrg.tenantId,
+      tenantOrg.organisationId,
     );
   }
 
