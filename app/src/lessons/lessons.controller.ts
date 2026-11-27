@@ -123,14 +123,17 @@ export class LessonsController {
   @ApiResponse({ status: 200, description: 'Lesson retrieved successfully' })
   @ApiResponse({ status: 404, description: 'Lesson not found' })
   @ApiParam({ name: 'lessonId', type: String, format: 'uuid' })
+  @ApiQuery({ name: 'includeArchived', required: false, type: Boolean, description: 'Also return the lesson if it is archived (admin reports)' })
   async getLessonById(
     @Param('lessonId', ParseUUIDPipe) lessonId: string,
     @TenantOrg() tenantOrg: { tenantId: string; organisationId: string },
+    @Query('includeArchived') includeArchived?: string,
   ) {
     return this.lessonsService.findOne(
       lessonId,
       tenantOrg.tenantId,
-      tenantOrg.organisationId
+      tenantOrg.organisationId,
+      includeArchived === 'true',
     );
   }
 
@@ -140,14 +143,17 @@ export class LessonsController {
   @ApiResponse({ status: 200, description: 'Lessons retrieved successfully' })
   @ApiResponse({ status: 404, description: 'Module not found' })
   @ApiParam({ name: 'moduleId', type: String, format: 'uuid' })
+  @ApiQuery({ name: 'includeArchived', required: false, type: Boolean, description: 'Also return archived lessons (admin reports)' })
   async getLessonsByModule(
     @Param('moduleId', ParseUUIDPipe) moduleId: string,
     @TenantOrg() tenantOrg: { tenantId: string; organisationId: string },
+    @Query('includeArchived') includeArchived?: string,
   ) {
     return this.lessonsService.findByModule(
       moduleId,
       tenantOrg.tenantId,
-      tenantOrg.organisationId
+      tenantOrg.organisationId,
+      includeArchived === 'true',
     );
   }
 

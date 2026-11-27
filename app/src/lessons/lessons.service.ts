@@ -490,6 +490,7 @@ export class LessonsService {
     lessonId: string,
     tenantId: string,
     organisationId: string,
+    includeArchived = false,
   ): Promise<Lesson> {
     // Check Redis cache first (if ENABLE_LMS_CACHE is enabled)
     // Lesson data is globally shared, so cache key doesn't include tenantId/organisationId
@@ -500,7 +501,7 @@ export class LessonsService {
       if (
         cachedLesson.tenantId === tenantId &&
         cachedLesson.organisationId === organisationId &&
-        cachedLesson.status !== LessonStatus.ARCHIVED
+        (includeArchived || cachedLesson.status !== LessonStatus.ARCHIVED)
       ) {
         return cachedLesson;
       }
@@ -515,7 +516,7 @@ export class LessonsService {
       lessonId,
       tenantId: tenantId,
       organisationId: organisationId,
-      status: Not(LessonStatus.ARCHIVED),
+      ...(includeArchived ? {} : { status: Not(LessonStatus.ARCHIVED) }),
     };
 
     const lesson = await this.lessonRepository.findOne({
@@ -528,8 +529,11 @@ export class LessonsService {
     }
 
     // Cache the lesson with global cache key (lms:lesson:{lessonId})
-    // TTL is 600 seconds (10 minutes) as per requirements
-    await this.cacheService.setLessonDetailCached(lessonId, lesson);
+    // TTL is 600 seconds (10 minutes) as per requirements.
+    // Archived lessons (only reachable via includeArchived) are not cached.
+    if (lesson.status !== LessonStatus.ARCHIVED) {
+      await this.cacheService.setLessonDetailCached(lessonId, lesson);
+    }
 
     return lesson;
   }
@@ -544,16 +548,20 @@ export class LessonsService {
     moduleId: string,
     tenantId: string,
     organisationId: string,
+    includeArchived = false,
   ): Promise<Lesson[]> {
-    // Check cache first
+    // Check cache first. The includeArchived variant (admin reports) is never
+    // cached so it cannot leak archived lessons into the learner-facing key.
     const cacheKey = this.cacheConfig.getModuleLessonsPattern(
       moduleId,
       tenantId,
       organisationId,
     );
-    const cachedLessons = await this.cacheService.get<Lesson[]>(cacheKey);
-    if (cachedLessons) {
-      return cachedLessons;
+    if (!includeArchived) {
+      const cachedLessons = await this.cacheService.get<Lesson[]>(cacheKey);
+      if (cachedLessons) {
+        return cachedLessons;
+      }
     }
 
     // Build where clause for module validation
@@ -577,7 +585,7 @@ export class LessonsService {
     const lessons = await this.lessonRepository.find({
       where: {
         moduleId,
-        status: Not(LessonStatus.ARCHIVED),
+        ...(includeArchived ? {} : { status: Not(LessonStatus.ARCHIVED) }),
         tenantId: tenantId,
         organisationId: organisationId,
       },
@@ -585,8 +593,10 @@ export class LessonsService {
       relations: ['media', 'associatedFiles.media'],
     });
 
-    // Cache the lessons
-    await this.cacheService.set(cacheKey, lessons, this.cacheConfig.LESSON_TTL);
+    // Cache the lessons (default, non-archived view only)
+    if (!includeArchived) {
+      await this.cacheService.set(cacheKey, lessons, this.cacheConfig.LESSON_TTL);
+    }
 
     return lessons;
   }
